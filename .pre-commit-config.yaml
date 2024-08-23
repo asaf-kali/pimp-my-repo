@@ -1,0 +1,37 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.1.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+  - repo: local
+    hooks:
+      - id: check-ruff
+        name: check ruff standard
+        entry: "make check-ruff"
+        language: system
+        pass_filenames: false
+      - id: check-black
+        name: check black formatting
+        entry: "make check-black"
+        language: system
+        pass_filenames: false
+      - id: check-isort
+        name: check isort formatting
+        entry: "make check-isort"
+        language: system
+        pass_filenames: false
+      - id: check-mypy
+        name: check mypy typing
+        entry: "make check-mypy"
+        language: system
+        pass_filenames: false
+      - id: check-poetry-lock
+        name: check poetry lock file is synced with pyproject.toml
+        entry: "make lock-check"
+        language: system
+        pass_filenames: false
