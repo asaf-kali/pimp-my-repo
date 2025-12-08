@@ -1,126 +1,85 @@
-# Poetry
+# Project
 
-[tool.poetry]
+[project]
+
 name = "pimp-my-repo"
 version = "0.1.0"
-description = "pimp-my-repo is an open-source tool designed to enhance your Python repositories by adding essential development tools and configurations. It automates the setup of linting and formatting tools, pre-commit hooks, a Makefile with basic commands, and Poetry for dependency management."
-authors = ["Asaf Kali <asaf.kali@mail.huji.ac.il>"]
+description = "🪄 Enhance your Python repository by adding cutting-edge development tools"
+authors = [
+    { name = "Asaf Kali", email = "asaf.kali@mail.huji.ac.il" },
+]
+requires-python = ">=3.14"
 readme = "README.md"
 
-[tool.poetry.scripts]
-pimp-my-repo = "pimp_my_repo.main:main"
+# Dependencies
 
-[tool.poetry.urls]
+dependencies = [
+    "pydantic ~= 2.12",
+]
+
+[dependency-groups]
+test = [
+    "pytest ~= 9.0",
+    "coverage[toml] >= 7.12",
+]
+lint = [
+    "ruff >= 0.14",
+    "mypy >= 1.19",
+]
+dev = [
+    "pre-commit >= 2.17",
+]
+
+# Extra Metadata
+
+[project.urls]
 Homepage = "https://github.com/asaf-kali/pimp-my-repo"
 Repository = "https://github.com/asaf-kali/pimp-my-repo"
 Issues = "https://github.com/asaf-kali/pimp-my-repo/issues"
 
-[tool.poetry.dependencies]
-python = "^3.11"
+# UV
 
-[tool.poetry.group.test.dependencies]
-pytest = "^8.3"
-coverage = "^7.6"
+[tool.uv]
+package = true
 
-[tool.poetry.group.lint.dependencies]
-ruff = "^0.6.2"
-black = "^24.8"
-isort = "^5.12"
-mypy = "^1.2"
-pylint = "^3.0"
-types-requests = "^2.28.11.17"
-
-[tool.poetry.group.dev.dependencies]
-pre-commit = "^3.2"
-twine = "^5.0"
-python-semantic-release = "^9.8"
+[project.scripts]
+pimp-my-repo = "pimp_my_repo.main:main"
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-# Release
-
-[tool.semantic_release]
-version_toml = ["pyproject.toml:tool.poetry.version"]
-commit_parser = "emoji"
-build_command = "make build"
-commit_author = "Semantic release <semantic-release>"
-commit_message = "🤖 Release [{version}] [skip ci]"
-
-[tool.semantic_release.branches.main]
-match = "main"
-prerelease = false
-
-[tool.semantic_release.branches.dev]
-match = ".*"
-prerelease = true
-prerelease_token = "dev"
-
-[tool.semantic_release.commit_parser_options]
-major_tags = [
-    "💥",
-    "🚀",
-    "🎉",
-]
-minor_tags = [
-    "✨",
-    "🔥",
-    "🐲",
-]
-patch_tags = [
-    "📝",
-    "📜",
-    "🏗️",
-    "🛠️",
-    "🐛",
-    "🚑",
-    "📌",
-    "🌴",
-]
 
 # Test
 
 [tool.pytest.ini_options]
-addopts = "-s --disable-pytest-warnings --junitxml=junit.xml"
+pythonpath = "app"
+addopts = "-s --disable-pytest-warnings"
 
 [tool.coverage.run]
-source = ["pimp_my_repo", "tests"]
+omit = ["tests/*"]
+source = ["."]
 
 # Lint
 
 [tool.ruff]
 line-length = 120
-exclude = [".deployment", "build", "dist", "local"]
 
 [tool.ruff.lint]
-select = ["B", "C", "E", "F", "W"]
-ignore = []
-
-[tool.black]
-line-length = 120
-
-[tool.isort]
-skip = ["__init__.py"]
-profile = "black"
+select = ["ALL"]
+ignore = [
+    "COM812",
+    "D100",
+    "D103",
+    "D104",
+    "D203",
+    "D213",
+]
+exclude = [
+    "local/",
+]
 
 [tool.mypy]
-ignore_missing_imports = true
-exclude = ["build", "dist"]
-
-[tool.pylint]
-max-line-length = 120
-good-names = [
-    "by",
-    "e",
-    "i",
-    "n",
-    "x",
+exclude = [
+    "local/",
 ]
-disable = [
-    "C0114",
-    "C0116",
-]
-extension-pkg-allow-list = ["pydantic"]
-
-[tool.pylint.MASTER]
