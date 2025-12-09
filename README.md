@@ -2,6 +2,7 @@
 
 🧙🏼‍♂️ A CLI wizard designed to modernize your Python repositories by adding essential development tools.
 
+[![PyPI](https://img.shields.io/pypi/v/pimp-my-repo)](https://pypi.org/project/pimp-my-repo/)
 [![Test](https://github.com/asaf-kali/pimp-my-repo/actions/workflows/test.yml/badge.svg)](https://github.com/asaf-kali/pimp-my-repo/actions/workflows/test.yml)
 [![Lint](https://github.com/asaf-kali/pimp-my-repo/actions/workflows/lint.yml/badge.svg)](https://github.com/asaf-kali/pimp-my-repo/actions/workflows/lint.yml)
 [![Type Check](https://github.com/asaf-kali/pimp-my-repo/actions/workflows/type-check.yml/badge.svg)](https://github.com/asaf-kali/pimp-my-repo/actions/workflows/type-check.yml)
