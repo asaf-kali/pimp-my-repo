@@ -3,7 +3,7 @@
 [project]
 
 name = "pimp-my-repo"
-version = "0.1.1"
+version = "0.1.2"
 description = "🪄 Enhance your Python repository by adding cutting-edge development tools"
 authors = [
     { name = "Asaf Kali", email = "asaf.kali@mail.huji.ac.il" },
