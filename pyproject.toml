@@ -3,7 +3,7 @@
 [project]
 
 name = "pimp-my-repo"
-version = "0.1.0"
+version = "0.1.1"
 description = "🪄 Enhance your Python repository by adding cutting-edge development tools"
 authors = [
     { name = "Asaf Kali", email = "asaf.kali@mail.huji.ac.il" },
@@ -29,6 +29,10 @@ lint = [
 dev = [
     "pre-commit >= 2.17",
 ]
+release = [
+    "python-semantic-release >= 9.18.1",
+    "twine >= 5.0",
+]
 
 # Extra Metadata
 
@@ -49,6 +53,49 @@ pimp-my-repo = "pimp_my_repo.main:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# Release
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+commit_parser = "emoji"
+build_command = """
+    uv lock --upgrade-package "$PACKAGE_NAME"
+    git add uv.lock
+    just build
+"""
+commit_author = "Semantic release <semantic-release>"
+commit_message = "🤖  Release [{version}] [skip ci]"
+
+[tool.semantic_release.branches.main]
+match = "main"
+prerelease = false
+
+[tool.semantic_release.branches.dev]
+match = ".*"
+prerelease = true
+prerelease_token = "dev"
+
+[tool.semantic_release.commit_parser_options]
+major_tags = [
+    "💥",
+    "🚀",
+    "🎉",
+]
+minor_tags = [
+    "✨",
+    "🔥",
+    "🐲",
+]
+patch_tags = [
+    "📝",
+    "📜",
+    "🏗️",
+    "🛠️",
+    "🐛",
+    "🚑",
+    "📌",
+    "🌴",
+]
 
 # Test
 

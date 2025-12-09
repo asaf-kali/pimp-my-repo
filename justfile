@@ -63,3 +63,30 @@ check-mypy:
 
 lint: format
 	uv run pre-commit run --all-files
+
+# Packaging
+
+build:
+	{{DEL_COMMAND}} -f dist/*
+	uv build
+
+upload-test:
+	uv run twine upload --repository testpypi dist/*
+
+upload:
+	uv run twine upload dist/*
+
+build-and-upload: build upload
+
+# Semantic release
+
+semrel:
+	@echo "Releasing version..."
+	uv run semantic-release version
+
+semrel-dev:
+	@echo "Releasing dev version..."
+	uv run semantic-release version --no-commit --no-push
+	# Replace "-dev.1" with epoch time in version
+	sed -i "s/-dev\.1/.dev.$(date +%s)/g" pyproject.toml
+	just build
