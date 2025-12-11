@@ -1,0 +1,41 @@
+{
+    "name": "Pimp My Repo",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": ".."
+    },
+    "postAttachCommand": "bash /workspaces/pimp-my-repo/.devcontainer/post-attach.sh",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "charliermarsh.ruff",
+                "ms-python.mypy-type-checker",
+                "tamasfe.even-better-toml",
+                "ms-vscode.vscode-json"
+            ],
+            "settings": {
+                "python.defaultInterpreterPath": "/usr/local/bin/python",
+                "python.linting.enabled": true,
+                "python.linting.ruffEnabled": true,
+                "python.formatting.provider": "none",
+                "[python]": {
+                    "editor.formatOnSave": true,
+                    "editor.codeActionsOnSave": {
+                        "source.fixAll": "explicit",
+                        "source.organizeImports": "explicit"
+                    },
+                    "editor.defaultFormatter": "charliermarsh.ruff"
+                },
+                "ruff.enable": true,
+                "mypy-type-checker.enable": true
+            }
+        }
+    },
+    "remoteUser": "vscode",
+    "remoteEnv": {
+        "PATH": "${containerEnv:PATH}:/home/vscode/.local/bin"
+    },
+    "workspaceFolder": "/workspaces/pimp-my-repo"
+}
