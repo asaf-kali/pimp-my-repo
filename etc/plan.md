@@ -7,150 +7,110 @@
 
 ## General Flow
 
-For alpha, we will only implement the default flow - all desicions will be made automatically, without prompting for quesitons.
-The design should take into account that in the near future, the interactive wizard could take different flows considering user input.
+### Alpha Version (Non-Interactive)
+- All decisions made automatically, no prompts (except `--path` which defaults to pwd)
+- Design must support future interactive wizard mode
+- CLI flag: `--wizard` (default: false) - enables interactive mode in future
 
-# Some more feature
+### Pre-Flight Checks
+- Verify git state is clean (fail if not)
+- Create and switch to new `pmr` branch
+- Detect existing dependency files (`requirements.txt`, `setup.py`, `pyproject.toml`, etc.)
 
-- before starting, make sure git state is clean. fail otherwise. work on a new `pmr` branch.
-- keep a questioneer answers in a state - give the tool a separate working directory (~/.local or something like this), keep a per-project json file with all the user inputs. the key will be the git origin of the project. this will allow running the tool again from the start on a clean state without asking for input again.
-- each tool integration will be called a **boost**. build the project such that `boost`s can be easly added in the future. we need to decide what is the boost interface, maybe: pre-conditions check, migration, verification. Each boost will run indipendantly of the others, we will start one only after everything before it finished. after a boost is applied, commit the changes.
-- consider strategies of how to verify after each boost the project is still valid - how to use existing project tests.
+### State Management
+- Working directory: `~/.local/share/pimp-my-repo/` (or similar)
+- Per-project JSON state file keyed by git origin URL
+- Store all user inputs/decisions in state file
+- Log all changes in state file
+- Allows re-running tool from clean state without re-prompting
 
-### Questions about the flow:
+### Boost Architecture
+- Each tool integration is a **boost** (modular, extensible design)
+- Boost interface:
+  - Pre-conditions check
+  - Migration/application
+  - Verification (run tool, ensure it works)
+- Boosts run independently and sequentially
+- After each boost: commit changes to `pmr` branch
+- Verify project validity after each boost (use existing project tests if available)
 
-1. **Interaction Mode:**
-   - Should this be an **interactive wizard** (step-by-step prompts asking what to add)? yes
-   - Or a **command-line flags approach** (e.g., `pimp-my-repo --uv --ruff --mypy`)? to be supproted in the future
-   - Or a **hybrid** (default interactive, but flags to skip prompts)? for alpha, support only --wizard: enable interactive mode. this flag is false by default - meaning, excpet for --path (which defaults to pwd), the user will not be prompted with any quesiton - take the option where need to choose.
+## Supported Boosts (Alpha)
 
-2. **Detection & Safety:**
-   - Should the tool **detect existing configs** and warn before overwriting? for alpha - no
-   - Should it create **backups** of existing files before modifying? no need - assume working in git project
-   - Should it support a **dry-run mode** to preview changes? not for alpha - in the future
+### 1. uv Boost
+- Create `pyproject.toml` if it doesn't exist
+- Migrate `requirements.txt` to uv format (if exists)
+- Do NOT add `uv.lock` to `.gitignore`
 
-3. **Dependency Management:**
-   - Should it check if the repo already has `requirements.txt`, `setup.py`, `pyproject.toml`, etc.? yes. check for many combinations.
-   - How should it handle **migration** from existing dependency management (pip, poetry, etc.) to uv? leave this as an open question for later.
+### 2. ruff Boost
+- Enable all rules (`select = ["ALL"]`)
+- Line length: 120
+- Configure both formatting and linting
+- Migration strategy:
+  - Run safe formatting and linting
+  - For each existing error, add `# noqa: <ERROR_ID>` comment on the line
 
-4. **Configuration Generation:**
-   - Should configs be **opinionated defaults** or **customizable**? opinionated defaults for alpha. extendable in the future.
-   - Should it read from a **config file** (e.g., `.pimp-my-repo.toml`) for repeatable setups?
-   - Should it support **presets** (e.g., "minimal", "strict", "relaxed")? no need for start
+### 3. mypy Boost
+- Strict mode: enable all features and checks
+- Configure in `pyproject.toml` (not `mypy.ini`)
+- Add type stubs for common dependencies
 
-5. **Execution Flow:**
-   - Should it run the tools immediately after setup (e.g., run `ruff check` after installing)? yes - this is part of each tool migration, make sure it works.
-   - Should it show a **summary** of what will be done before proceeding? no need for alpha
-   - Should it support **partial runs** (e.g., only add ruff, skip everything else)? no need for alpha
+### 4. pre-commit Boost
+- Use hooks from this project as reference (see `.pre-commit-config.yaml`)
+- Create config file + install hooks immediately
 
-## Supported Configs
+### 5. justfile Boost
+- Use this project's justfile as reference
+- Commands: install, test, lint, format, type-check, etc.
+- Detect existing `Makefile` (for future migration, not in alpha)
 
-### Core Features (from README):
-- ✅ **uv** - Modern dependency management
-- ✅ **ruff** - Linting and formatting
-- ✅ **mypy** - Static type checking
-- ✅ **pre-commit** - Git hooks
-- ✅ **justfile** - Command runner
-- ✅ **CI/CD** - GitHub Actions / GitLab CI
-
-### Questions about configs:
-
-1. **uv Integration:**
-   - Should it create `pyproject.toml` if it doesn't exist? yes
-   - Should it migrate existing `requirements.txt` to `uv` format? yes
-   - Should it add `uv.lock` to `.gitignore`? no
-
-2. **ruff Configuration:**
-   - What **default rules** should be enabled/ignored? enable everything ("ALL")
-   - Should it support different **line length** preferences? default to 120
-   - Should it configure **ruff format** as well as linting? yes
-   - ruff migration: run safe formatting and linting. For each existing error, add a matching `# noqa: <ERROR_ID>` next to the line.
-
-3. **mypy Configuration:**
-   - What **strictness level** (minimal, standard, strict)? strict - enable all features and checks
-   - Should it configure **mypy.ini** or use `pyproject.toml`? use pyproject.toml
-   - Should it add type stubs for common dependencies? yes
-
-4. **pre-commit Hooks:**
-   - Which hooks should be included by default? look at this project
-   - Should it install hooks immediately or just create the config? create config + install
-   - Should it support custom hooks? no
-
-5. **justfile Commands:**
-   - What commands should be included? (install, test, lint, format, type-check, etc.) look at this project for example
-   - Should commands be **customizable** per project type? not for alpha
-   - Should it detect existing `Makefile` and offer to migrate? yes, dont offer for alpha
-
-6. **CI/CD:** - no CI feautre for alpha
-   - Should it detect if it's a GitHub or GitLab repo automatically?
-   - What **jobs** should be included? (test, lint, type-check, build, release?)
-   - Should it support **matrix strategies** (multiple Python versions)?
-   - Should it configure **dependabot/renovate** for dependency updates?
-
-### Additional Features to Consider:
-
-1. **Project Detection:**
-   - Detect project type (library, application, package)?
-   - Detect existing tools and suggest what's missing?
-
-2. **Documentation:**
-   - Generate/update `README.md` with usage instructions?
-   - Add comments to generated configs explaining what they do?
-
-3. **Validation:**
-   - Validate that the repo is a valid Python project?
-   - Check Python version compatibility?
-
-4. **Rollback:**
-   - Support undoing changes if something goes wrong? no - git state
-   - Keep a log of what was changed? - yes, in state file
+### 6. CI/CD Boost
+- **Not included in alpha**
 
 ## Implementation Structure
 
-### Proposed Architecture:
 ```
 pimp_my_repo/
 ├── cli/
 │   ├── __init__.py
-│   ├── main.py          # Entry point, typer app
-│   └── commands/        # Individual command modules
+│   ├── main.py              # Entry point, typer app
+│   └── commands/
 ├── core/
 │   ├── __init__.py
-│   ├── detector.py      # Detect existing configs/tools
-│   ├── generator.py    # Generate config files
-│   └── installer.py    # Install/run tools
-├── templates/           # Jinja2 templates for configs
-│   ├── ruff.toml
-│   ├── mypy.ini
-│   ├── pre-commit.yaml
-│   ├── justfile
-│   └── ci/
-│       ├── github.yml
-│       └── gitlab.yml
+│   ├── git.py              # Git operations (check clean, branch, commit)
+│   ├── state.py            # State management (read/write JSON)
+│   ├── detector.py         # Detect existing configs/tools
+│   └── boost/
+│       ├── __init__.py
+│       ├── base.py         # Boost base class/interface
+│       ├── uv.py
+│       ├── ruff.py
+│       ├── mypy.py
+│       ├── pre_commit.py
+│       └── justfile.py
+├── templates/              # Jinja2 templates for configs
+│   ├── pyproject.toml.j2
+│   ├── ruff.toml.j2
+│   ├── pre-commit.yaml.j2
+│   └── justfile.j2
 └── models/
     ├── __init__.py
-    └── config.py        # Pydantic models for config
+    └── state.py            # Pydantic models for state
 ```
 
-## Questions for You:
+## Boost Interface
 
-1. **What's the primary use case?**
-   - Quick setup for new projects?
-   - Modernizing existing projects?
-   - Both?
+Each boost must implement:
+- `check_preconditions()` - Verify prerequisites (e.g., git clean, files exist)
+- `apply()` - Perform the migration/configuration
+- `verify()` - Run the tool and ensure it works correctly
+- `commit_message()` - Generate commit message for this boost
 
-2. **How opinionated should it be?**
-   - Very opinionated (one way to do things)?
-   - Flexible (many options)?
-
-3. **Should it be idempotent?**
-   - Can you run it multiple times safely?
-   - Should it update existing configs or skip them?
-
-4. **Error handling:**
-   - How should it handle failures?
-   - Should it continue with other configs if one fails?
-
-5. **Output:**
-   - Should it be verbose by default?
-   - Should it support quiet mode?
+## Future Considerations (Not Alpha)
+- Interactive wizard mode
+- Command-line flags for selective boosts
+- Dry-run mode
+- Config file support (`.pimp-my-repo.toml`)
+- Presets (minimal, strict, relaxed)
+- CI/CD integration
+- Makefile migration
+- Rollback support (rely on git for alpha)
