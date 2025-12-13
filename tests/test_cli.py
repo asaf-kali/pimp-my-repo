@@ -1,6 +1,8 @@
 import subprocess
 
-from pimp_my_repo.main import main
+import pytest
+
+from pimp_my_repo.cli.main import main
 
 
 def test_cli_is_working() -> None:
@@ -11,8 +13,10 @@ def test_cli_is_working() -> None:
         text=True,
     )
     assert result.returncode == 0  # noqa: S101
-    assert result.stdout.strip() == "Right now, there is no pimping going on."  # noqa: S101
+    assert result.stdout.strip() == "Pimping repository at: ."  # noqa: S101
 
 
 def test_main_is_working() -> None:
-    main()
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0  # noqa: S101

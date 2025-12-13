@@ -15,6 +15,10 @@ readme = "README.md"
 
 dependencies = [
     "pydantic ~= 2.12",
+    "typer >= 0.12",
+    "rich >= 13.0",
+    "loguru >= 0.7",
+    "jinja2 >= 3.1",
 ]
 
 [dependency-groups]
@@ -47,7 +51,7 @@ Issues = "https://github.com/asaf-kali/pimp-my-repo/issues"
 package = true
 
 [project.scripts]
-pimp-my-repo = "pimp_my_repo.main:main"
+pimp-my-repo = "pimp_my_repo.cli.main:main"
 
 [build-system]
 requires = ["hatchling"]
