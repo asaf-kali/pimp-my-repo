@@ -4,7 +4,7 @@
 
 name = "pimp-my-repo"
 version = "0.1.2"
-description = "🪄 Enhance your Python repository by adding cutting-edge development tools"
+description = "✨ Enhance your Python repository by adding cutting-edge development tools"
 authors = [
     { name = "Asaf Kali", email = "asaf.kali@mail.huji.ac.il" },
 ]
@@ -54,13 +54,13 @@ package = true
 pimp-my-repo = "pimp_my_repo.cli.main:main"
 
 [build-system]
-requires = ["hatchling"]
+requires = [ "hatchling" ]
 build-backend = "hatchling.build"
 
 # Release
 
 [tool.semantic_release]
-version_toml = ["pyproject.toml:project.version"]
+version_toml = [ "pyproject.toml:project.version" ]
 commit_parser = "emoji"
 build_command = """
     uv lock --upgrade-package "$PACKAGE_NAME"
@@ -108,8 +108,8 @@ pythonpath = "app"
 addopts = "-s --disable-pytest-warnings"
 
 [tool.coverage.run]
-omit = ["tests/*"]
-source = ["."]
+omit = [ "tests/*" ]
+source = [ "." ]
 
 # Lint
 
@@ -117,7 +117,7 @@ source = ["."]
 line-length = 120
 
 [tool.ruff.lint]
-select = ["ALL"]
+select = [ "ALL" ]
 ignore = [
     "COM812",
     "D100",
