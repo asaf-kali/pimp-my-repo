@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from pimp_my_repo.models.state import State
+from pimp_my_repo.models.state import ProjectState
 
 
 def _path_safe_project_key(project_key: str) -> str:
@@ -23,15 +23,15 @@ class StateManager:
         self._state_dir.mkdir(parents=True, exist_ok=True)
         return self._state_dir / f"{path_safe_project_key}.json"
 
-    def load_state(self, project_key: str) -> State | None:
+    def load_state(self, project_key: str) -> ProjectState | None:
         """Load state for a project."""
         state_path = self.get_state_path(project_key)
         if not state_path.exists():
             return None
         with state_path.open("r") as f:
-            return State.model_validate_json(f.read())
+            return ProjectState.model_validate_json(f.read())
 
-    def save_state(self, project_key: str, state: State) -> None:
+    def save_state(self, project_key: str, state: ProjectState) -> None:
         """Save state for a project."""
         state_path = self.get_state_path(project_key)
         with state_path.open("w") as f:

@@ -13,7 +13,7 @@ from pimp_my_repo.core.boost import Boost, get_all_boosts
 from pimp_my_repo.core.detector import detect_all
 from pimp_my_repo.core.git import GitManager
 from pimp_my_repo.core.state import StateManager
-from pimp_my_repo.models.state import BoostState, State
+from pimp_my_repo.models.state import BoostState, ProjectState
 from pimp_my_repo.ui import RichUI
 
 if TYPE_CHECKING:
@@ -36,7 +36,7 @@ def _validate_path(repo_path: Path, ui: RichUI) -> None:
         raise Exit(code=1)
 
 
-def _setup_git_and_state(repo_path: Path, ui: RichUI) -> tuple[GitManager, State, StateManager, str]:
+def _setup_git_and_state(repo_path: Path, ui: RichUI) -> tuple[GitManager, ProjectState, StateManager, str]:
     """Set up git manager, state, and project key."""
     git_manager = GitManager(repo_path)
 
@@ -66,7 +66,7 @@ def _setup_git_and_state(repo_path: Path, ui: RichUI) -> tuple[GitManager, State
     state = state_manager.load_state(project_key)
 
     if state is None:
-        state = State(
+        state = ProjectState(
             project_key=project_key,
             repo_path=str(repo_path),
             branch_name="pmr",
@@ -90,7 +90,7 @@ def _setup_git_and_state(repo_path: Path, ui: RichUI) -> tuple[GitManager, State
 def _process_boost(  # noqa: PLR0913
     boost: Boost,
     boost_name: str,
-    state: State,
+    state: ProjectState,
     git_manager: GitManager,
     ui: RichUI,
     progress: Progress,
@@ -143,9 +143,7 @@ def _process_boost(  # noqa: PLR0913
     now = datetime.now(UTC)
     boost_state = BoostState(
         name=boost_name,
-        applied=True,
         applied_at=now,
-        verified=verified,
         verified_at=now if verified else None,
         commit_sha=commit_sha,
     )
@@ -159,7 +157,7 @@ def _process_boost(  # noqa: PLR0913
 def _execute_boosts(  # noqa: PLR0913
     boost_classes: list[type[Boost]],
     repo_path: Path,
-    state: State,
+    state: ProjectState,
     git_manager: GitManager,
     state_manager: StateManager,
     project_key: str,

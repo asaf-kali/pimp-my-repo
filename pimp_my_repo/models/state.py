@@ -9,14 +9,22 @@ class BoostState(BaseModel):
     """State for a single boost."""
 
     name: str
-    applied: bool = False
     applied_at: datetime | None = None
-    verified: bool = False
     verified_at: datetime | None = None
     commit_sha: str | None = None
 
+    @property
+    def applied(self) -> bool:
+        """Whether the boost has been applied."""
+        return self.applied_at is not None
 
-class State(BaseModel):
+    @property
+    def verified(self) -> bool:
+        """Whether the boost has been verified."""
+        return self.verified_at is not None
+
+
+class ProjectState(BaseModel):
     """Overall state for a project."""
 
     project_key: str = Field(..., description="Unique identifier for the project (git origin URL)")

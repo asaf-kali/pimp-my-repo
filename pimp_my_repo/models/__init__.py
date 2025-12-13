@@ -1,5 +1,5 @@
 """Models for pimp-my-repo."""
 
-from pimp_my_repo.models.state import BoostState, State
+from pimp_my_repo.models.state import BoostState, ProjectState
 
-__all__ = ["BoostState", "State"]
+__all__ = ["BoostState", "ProjectState"]
