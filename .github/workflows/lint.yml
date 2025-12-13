@@ -27,9 +27,6 @@ jobs:
     - name: Install just
       uses: extractions/setup-just@v2
 
-    - name: Install just
-      uses: extractions/setup-just@v2
-
     - name: Install dependencies
       run: just install-all
 
