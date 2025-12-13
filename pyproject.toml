@@ -4,7 +4,7 @@
 
 name = "pimp-my-repo"
 version = "0.1.2"
-description = "🪄 Enhance your Python repository by adding cutting-edge development tools"
+description = "✨ Enhance your Python repository by adding cutting-edge development tools"
 authors = [
     { name = "Asaf Kali", email = "asaf.kali@mail.huji.ac.il" },
 ]
@@ -15,6 +15,10 @@ readme = "README.md"
 
 dependencies = [
     "pydantic ~= 2.12",
+    "typer >= 0.12",
+    "rich >= 13.0",
+    "loguru >= 0.7",
+    "jinja2 >= 3.1",
 ]
 
 [dependency-groups]
@@ -47,16 +51,16 @@ Issues = "https://github.com/asaf-kali/pimp-my-repo/issues"
 package = true
 
 [project.scripts]
-pimp-my-repo = "pimp_my_repo.main:main"
+pimp-my-repo = "pimp_my_repo.cli.main:main"
 
 [build-system]
-requires = ["hatchling"]
+requires = [ "hatchling" ]
 build-backend = "hatchling.build"
 
 # Release
 
 [tool.semantic_release]
-version_toml = ["pyproject.toml:project.version"]
+version_toml = [ "pyproject.toml:project.version" ]
 commit_parser = "emoji"
 build_command = """
     uv lock --upgrade-package "$PACKAGE_NAME"
@@ -104,8 +108,8 @@ pythonpath = "app"
 addopts = "-s --disable-pytest-warnings"
 
 [tool.coverage.run]
-omit = ["tests/*"]
-source = ["."]
+omit = [ "tests/*" ]
+source = [ "." ]
 
 # Lint
 
@@ -113,7 +117,7 @@ source = ["."]
 line-length = 120
 
 [tool.ruff.lint]
-select = ["ALL"]
+select = [ "ALL" ]
 ignore = [
     "COM812",
     "D100",
@@ -121,6 +125,8 @@ ignore = [
     "D104",
     "D203",
     "D213",
+    "FBT003",
+    "S101",
 ]
 exclude = [
     "local/",

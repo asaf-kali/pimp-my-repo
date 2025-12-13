@@ -1,0 +1,7 @@
+---
+alwaysApply: true
+---
+
+This project uses `just` as an interface to common operations needed while developing.
+Specifically, make sure to use `just test` and `just lint` after code changes.
+Don't run any python commands directly - always use `just`. See `./justfile` if you need more info.
