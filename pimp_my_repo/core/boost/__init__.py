@@ -14,4 +14,24 @@ __all__ = [
     "PreCommitBoost",
     "RuffBoost",
     "UvBoost",
+    "get_all_boosts",
 ]
+
+# Registry of all boost classes
+_ALL_BOOSTS = [
+    UvBoost,
+    RuffBoost,
+    MypyBoost,
+    PreCommitBoost,
+    JustfileBoost,
+]
+
+
+def get_all_boosts() -> list[type[Boost]]:
+    """Get all available boost classes.
+
+    Returns:
+        List of boost classes
+
+    """
+    return _ALL_BOOSTS.copy()

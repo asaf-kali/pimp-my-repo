@@ -125,6 +125,8 @@ ignore = [
     "D104",
     "D203",
     "D213",
+    "FBT003",
+    "S101",
 ]
 exclude = [
     "local/",

@@ -1,0 +1,6 @@
+---
+alwaysApply: true
+---
+
+When writing code, NEVER use type hints like `list[dict[str, str]]` or `tuple[str, int, int]`.
+In such cases, always use either `dataclass`, `NamedTuple`, `type` definitions, or `pydantic` model for clarity and reuseability.

@@ -14,6 +14,20 @@ class Boost(ABC):
         """Initialize boost with repository path."""
         self.repo_path = repo_path
 
+    @classmethod
+    def get_name(cls) -> str:
+        """Extract boost name from class name.
+
+        Returns:
+            Boost name (e.g., 'UvBoost' -> 'uv')
+
+        """
+        class_name = cls.__name__.lower()
+        # Remove 'boost' suffix
+        if class_name.endswith("boost"):
+            return class_name[:-5]
+        return class_name
+
     @abstractmethod
     def check_preconditions(self) -> bool:
         """Verify prerequisites for applying this boost."""

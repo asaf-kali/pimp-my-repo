@@ -12,8 +12,10 @@ install-run:
 install-test:
 	uv sync --no-default-groups --group test
 
-install-dev:
+install-all:
 	uv sync --all-groups
+
+install-dev: install-all
 	uv run pre-commit install
 
 install: install-dev lint cover-base
@@ -43,6 +45,9 @@ cover-xml: cover-base
 
 cover-html: cover-base
 	uv run coverage html
+
+cover-percentage:
+	uv run coverage report --precision 3 | grep TOTAL | awk '{print $4}' | sed 's/%//'
 
 cover: cover-html
 	{{OPEN_FILE_COMMAND}} htmlcov/index.html &

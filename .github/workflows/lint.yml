@@ -27,8 +27,11 @@ jobs:
     - name: Install just
       uses: extractions/setup-just@v2
 
+    - name: Install just
+      uses: extractions/setup-just@v2
+
     - name: Install dependencies
-      run: uv sync --no-default-groups --group lint
+      run: just install-all
 
     - name: Run ruff checks
       run: just check-ruff

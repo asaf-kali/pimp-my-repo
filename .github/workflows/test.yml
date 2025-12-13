@@ -24,18 +24,18 @@ jobs:
         version: "latest"
         enable-cache: true
 
+    - name: Install just
+      uses: extractions/setup-just@v2
+
     - name: Install dependencies
-      run: uv sync --no-default-groups --group test
+      run: just install-test
 
     - name: Run tests with coverage
-      run: |
-        uv run coverage run -m pytest
-        uv run coverage report
-        uv run coverage xml
+      run: just cover-xml
 
     - name: Extract coverage percentage
       id: coverage
       run: |
-        COVERAGE=$(uv run coverage report | grep TOTAL | awk '{print $4}' | sed 's/%//')
+        COVERAGE=$(just cover-percentage)
         echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
         echo "Coverage: $COVERAGE%"
