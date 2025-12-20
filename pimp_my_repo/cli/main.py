@@ -13,7 +13,6 @@ from rich.table import Table
 from typer import Exit
 
 from pimp_my_repo.core.boost import Boost, get_all_boosts
-from pimp_my_repo.core.detector import detect_all
 from pimp_my_repo.core.git import GitManager
 from pimp_my_repo.core.state import StateManager
 from pimp_my_repo.models.state import BoostState, ProjectState
@@ -227,7 +226,7 @@ def run(
         help="Path to the repository to pimp",
     ),
     wizard: bool = typer.Option(  # noqa: FBT001
-        False,
+        False,  # noqa: FBT003
         "--wizard",
         "-w",
         help="Enable interactive wizard mode (not implemented yet)",
@@ -248,11 +247,6 @@ def run(
 
     # Setup git and state
     git_manager, state, state_manager, project_key = _setup_git_and_state(repo_path, console)
-
-    # Detect existing configs
-    console.print("[cyan]Detecting existing configuration...[/cyan]")
-    detect_all(repo_path)
-    console.print("[green]✓[/green] Detection complete")
 
     # Initialize boosts
     boost_classes = get_all_boosts()
