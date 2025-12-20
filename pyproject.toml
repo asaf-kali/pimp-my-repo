@@ -124,6 +124,7 @@ ignore = [
     "D100",   # Missing docstring in public module
     "D103",   # Missing docstring in public function
     "D104",   # Missing docstring in public class
+    "D107",   # Missing docstring in __init__
     "D203",   # No blank lines allowed after function docstring
     "D213",   # No blank lines allowed after class docstring
     "S101",   # Use of assertion
