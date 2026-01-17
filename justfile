@@ -3,6 +3,7 @@
 PYTHON_TEST_COMMAND := "pytest"
 OPEN_FILE_COMMAND := "wslview"
 DEL_COMMAND := "gio trash"
+RUN := "uv run"
 
 # Install
 
@@ -16,7 +17,7 @@ install-all:
 	uv sync --all-groups
 
 install-dev: install-all
-	uv run pre-commit install
+	{{RUN}} pre-commit install
 
 install: install-dev lint cover-base
 
@@ -34,20 +35,20 @@ lock-check:
 # Test
 
 test:
-	uv run python -m {{PYTHON_TEST_COMMAND}}
+	{{RUN}} python -m {{PYTHON_TEST_COMMAND}}
 
 cover-base:
-	uv run coverage run -m {{PYTHON_TEST_COMMAND}}
-	uv run coverage report
+	{{RUN}} coverage run -m {{PYTHON_TEST_COMMAND}}
+	{{RUN}} coverage report
 
 cover-xml: cover-base
-	uv run coverage xml
+	{{RUN}} coverage xml
 
 cover-html: cover-base
-	uv run coverage html
+	{{RUN}} coverage html
 
 cover-percentage:
-	uv run coverage report --precision 3 | grep TOTAL | awk '{print $4}' | sed 's/%//'
+	{{RUN}} coverage report --precision 3 | grep TOTAL | awk '{print $4}' | sed 's/%//'
 
 cover: cover-html
 	{{OPEN_FILE_COMMAND}} htmlcov/index.html &
@@ -56,18 +57,18 @@ cover: cover-html
 # Lint
 
 format:
-	uv run ruff format
-	uv run ruff check --fix --unsafe-fixes
+	{{RUN}} ruff format
+	{{RUN}} ruff check --fix --unsafe-fixes
 
 check-ruff:
-	uv run ruff format --check
-	uv run ruff check
+	{{RUN}} ruff format --check
+	{{RUN}} ruff check
 
 check-mypy:
-	uv run mypy .
+	{{RUN}} mypy .
 
 lint: format
-	uv run pre-commit run --all-files
+	{{RUN}} pre-commit run --all-files
 
 # Packaging
 
@@ -76,10 +77,10 @@ build:
 	uv build
 
 upload-test:
-	uv run twine upload --repository testpypi dist/*
+	{{RUN}} twine upload --repository testpypi dist/*
 
 upload:
-	uv run twine upload dist/*
+	{{RUN}} twine upload dist/*
 
 build-and-upload: build upload
 
@@ -87,11 +88,11 @@ build-and-upload: build upload
 
 semrel:
 	@echo "Releasing version..."
-	uv run semantic-release version
+	{{RUN}} semantic-release version
 
 semrel-dev:
 	@echo "Releasing dev version..."
-	uv run semantic-release version --no-commit --no-push
+	{{RUN}} semantic-release version --no-commit --no-push
 	# Replace "-dev.1" with epoch time in version
 	sed -i "s/-dev\.1/.dev.$(date +%s)/g" pyproject.toml
 	just build
