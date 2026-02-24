@@ -1,6 +1,45 @@
 # CHANGELOG
 
-<!-- version list -->
+
+## v0.2.0 (2026-02-25)
+
+### Other
+
+- Upgrade lock
+  ([`ac50ef9`](https://github.com/asaf-kali/pimp-my-repo/commit/ac50ef92b0c776bad09607a4ed1ab915a709393b))
+
+### 🐲
+
+- 🐲 Basic project structure implementation ([#1](https://github.com/asaf-kali/pimp-my-repo/pull/1),
+  [`5a9bf5f`](https://github.com/asaf-kali/pimp-my-repo/commit/5a9bf5fd2a84901515e5989917f18d14e713bc90))
+
+### 📌
+
+- 📌 README: add PyPI badge
+  ([`f82d6a1`](https://github.com/asaf-kali/pimp-my-repo/commit/f82d6a19b3660fff421e259a9166d565fe1f9473))
+
+### 🔥
+
+- 🔥 Implement UV boost ([#2](https://github.com/asaf-kali/pimp-my-repo/pull/2),
+  [`a2e7704`](https://github.com/asaf-kali/pimp-my-repo/commit/a2e7704a7018b6c6870d65d6a324b25f12158542))
+
+* Lint fixes, adjsut structure
+
+* Implement uv
+
+* Implement repo test util
+
+* Make use of dmypy
+
+* Add tests
+
+* Code quality fixes
+
+### 🛠️
+
+- 🛠️ Refactor justfile to use RUN variable for command execution
+  ([`de8bac5`](https://github.com/asaf-kali/pimp-my-repo/commit/de8bac51cfc80161ecf284a1968a027a2ab9fb75))
+
 
 ## v0.1.2 (2025-12-10)
 
@@ -30,4 +69,7 @@
 
 ## v0.1.0 (2025-12-10)
 
-- Initial Release
+### 🎉
+
+- 🎉 Initial commit
+  ([`db8d0c9`](https://github.com/asaf-kali/pimp-my-repo/commit/db8d0c9881322d6db2e309e84140f1d3e3fdf6c6))
