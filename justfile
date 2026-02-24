@@ -58,16 +58,17 @@ cover: cover-html
 
 format:
 	{{RUN}} ruff format
-	{{RUN}} ruff check --fix --unsafe-fixes
 
 check-ruff:
 	{{RUN}} ruff format --check
 	{{RUN}} ruff check
 
 check-mypy:
-	{{RUN}} mypy .
+	{{RUN}} dmypy start || true
+	{{RUN}} dmypy run .
 
 lint: format
+	{{RUN}} ruff check --fix --unsafe-fixes
 	{{RUN}} pre-commit run --all-files
 
 # Packaging

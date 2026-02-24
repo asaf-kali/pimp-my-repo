@@ -20,9 +20,14 @@
 - 🏗️ Add CI job configurations for `GitHub Actions` or `GitLab Pipeline` to enforce your rules in a continuous integration
   environment.
 
-## Installation
+## Usage
 
-Install **pimp-my-repo** globally with:
+No hussle. In your repository root, run:
+```bash
+uvx pimp-my-repo
+```
+
+Alternatively, install `pimp-my-repo` globally and use it in any repository:
 
 ```bash
 # With UV:
