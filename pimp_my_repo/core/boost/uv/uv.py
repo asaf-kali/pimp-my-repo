@@ -40,7 +40,7 @@ class UvBoost(Boost):
         """Check if UV is installed."""
         try:
             result = self._run_uv("--version", check=False)
-        except (subprocess.CalledProcessError, OSError, FileNotFoundError):
+        except subprocess.CalledProcessError, OSError, FileNotFoundError:
             return False
         else:
             return result.returncode == 0

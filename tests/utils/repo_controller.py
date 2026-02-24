@@ -59,6 +59,11 @@ class RepositoryController:
         result = self._run_git("status", "--porcelain", check=False)
         return result.returncode == 0 and not result.stdout.strip()
 
+    def commit_count(self) -> int:
+        """Return the number of commits on HEAD."""
+        result = self._run_git("rev-list", "--count", "HEAD")
+        return int(result.stdout.strip())
+
 
 @pytest.fixture
 def mock_repo() -> Generator[RepositoryController]:

@@ -106,7 +106,7 @@ patch_tags = [
 
 [tool.pytest.ini_options]
 pythonpath = "app"
-addopts = "-s --disable-pytest-warnings"
+addopts = "-s --disable-pytest-warnings -v"
 
 [tool.coverage.run]
 omit = [ "tests/*" ]
@@ -122,8 +122,9 @@ select = [ "ALL" ]
 ignore = [
     "COM812", # Trailing comma conflict
     "D100",   # Missing docstring in public module
+    "D101",   # Missing docstring in public class
     "D103",   # Missing docstring in public function
-    "D104",   # Missing docstring in public class
+    "D104",   # Missing docstring in public method
     "D107",   # Missing docstring in __init__
     "D203",   # No blank lines allowed after function docstring
     "D213",   # No blank lines allowed after class docstring
