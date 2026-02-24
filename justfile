@@ -64,7 +64,8 @@ check-ruff:
 	{{RUN}} ruff check
 
 check-mypy:
-	{{RUN}} mypy .
+	{{RUN}} dmypy start || true
+	{{RUN}} dmypy run .
 
 lint: format
 	{{RUN}} ruff check --fix --unsafe-fixes
