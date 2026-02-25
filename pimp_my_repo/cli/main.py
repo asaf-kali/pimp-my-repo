@@ -86,6 +86,7 @@ def _process_boost(
     # Apply boost
     try:
         boost.apply()
+        boost.verify()
     except NotImplementedError:
         progress.update(task_id, description=f"[yellow]Skipping {boost_name} (not implemented)[/yellow]")
         return BoostResult(name=boost_name, status="skipped", message="Not implemented")

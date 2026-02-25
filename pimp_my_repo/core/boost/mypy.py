@@ -109,6 +109,35 @@ class MypyBoost(Boost):
 
             full_path.write_text("".join(lines), encoding="utf-8")
 
+    def _is_package_in_deps(self, package: str) -> bool:
+        """Check if a package is already present in any dependency group in pyproject.toml."""
+        try:
+            data = self._read_pyproject()
+        except OSError, ValueError:
+            return False
+        package_lower = package.lower()
+        for deps in data.get("dependency-groups", {}).values():
+            for dep in deps:
+                if isinstance(dep, str) and re.split(r"[>=<!@\s\[]", dep)[0].lower() == package_lower:
+                    return True
+        for deps in data.get("project", {}).get("optional-dependencies", {}).values():
+            for dep in deps:
+                if isinstance(dep, str) and re.split(r"[>=<!@\s\[]", dep)[0].lower() == package_lower:
+                    return True
+        return False
+
+    def _add_dep_to_pyproject(self, group: str, package: str) -> None:
+        """Add a package to a dependency group directly in pyproject.toml."""
+        data = self._read_pyproject()
+        if "dependency-groups" not in data:
+            data["dependency-groups"] = table()
+        dep_groups: Any = data["dependency-groups"]
+        if group not in dep_groups:
+            dep_groups[group] = [package]
+        else:
+            dep_groups[group].append(package)
+        self._write_pyproject(data)
+
     def check_preconditions(self) -> bool:
         """Verify prerequisites for applying Mypy boost."""
         try:
@@ -129,8 +158,16 @@ class MypyBoost(Boost):
     def apply(self) -> None:
         """Add mypy, configure strict mode, commit, then suppress all violations."""
         # Phase 1: add mypy dep + configure strict mode
-        logger.info("Adding mypy dev dependency...")
-        self._run_uv("add", "--dev", "mypy")
+        if self._is_package_in_deps("mypy"):
+            logger.info("mypy already in dependencies, skipping uv add")
+        else:
+            logger.info("Adding mypy dev dependency...")
+            try:
+                self._run_uv("add", "--dev", "mypy")
+            except subprocess.CalledProcessError:
+                logger.warning("uv add failed, editing pyproject.toml directly")
+                self._add_dep_to_pyproject("dev", "mypy")
+                self._run_uv("lock", check=False)
 
         logger.info("Configuring [tool.mypy] strict = true in pyproject.toml...")
         pyproject_data = self._read_pyproject()
