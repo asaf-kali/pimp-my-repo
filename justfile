@@ -79,6 +79,7 @@ lint: format
 build:
 	{{DEL_COMMAND}} -f dist/*
 	uv build
+	just lock
 
 upload-test:
 	{{RUN}} twine upload --repository testpypi dist/*

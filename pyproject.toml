@@ -65,8 +65,8 @@ version_toml = [ "pyproject.toml:project.version" ]
 commit_parser = "emoji"
 build_command = """
     uv lock --upgrade-package "$PACKAGE_NAME"
-    git add uv.lock
     just build
+    git add uv.lock
 """
 commit_author = "Semantic release <semantic-release>"
 commit_message = "🤖  Release [{version}] [skip ci]"
