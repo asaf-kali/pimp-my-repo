@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.2.1 (2026-02-25)
+
+### 🏗️
+
+- 🏗️ Implement gitignore and mypy boosts ([#3](https://github.com/asaf-kali/pimp-my-repo/pull/3),
+  [`629a879`](https://github.com/asaf-kali/pimp-my-repo/commit/629a879b5ce15359872251f6880ab125992acdb6))
+
+* Implement mypy boost
+
+* Implement gitignore boost
+
+* Mark slow tests
+
+* CI fixes
+
+* Add CI release
+
+
 ## v0.2.0 (2026-02-25)
 
 ### Other
