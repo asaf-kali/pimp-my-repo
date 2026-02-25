@@ -12,9 +12,35 @@ from pimp_my_repo.core.git import COMMIT_AUTHOR
 
 _MAX_MYPY_ITERATIONS = 3
 
+# Type aliases for mypy violation tracking
+ErrorCodes = set[str]
+"""Set of mypy error codes (e.g., {'arg-type', 'return-value'})."""
+
+LineViolations = dict[int, ErrorCodes]
+"""Mapping of line number -> error codes for a single file."""
+
+ViolationLocation = tuple[str, int]
+"""Tuple representing a violation location (filepath, line number)."""
+
+ViolationsByLocation = dict[ViolationLocation, ErrorCodes]
+"""Mapping of (filepath, line number) -> error codes."""
+
+ViolationsByFile = dict[str, LineViolations]
+"""Mapping of filepath -> line violations."""
+
 
 class MypyBoost(Boost):
     """Boost for integrating Mypy type checker in strict mode."""
+
+    def apply(self) -> None:
+        """Add mypy, configure strict mode, commit, then suppress all violations."""
+        self._verify_preconditions()
+        self._configure_mypy()
+        self._apply_ignores()
+
+    def _verify_preconditions(self) -> None:
+        self._verify_uv_present()
+        self._verify_pyproject_present()
 
     def _run_uv(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         cmd = ["uv", *args]
@@ -59,9 +85,9 @@ class MypyBoost(Boost):
         mypy_section["strict"] = True
         return data
 
-    def _parse_violations(self, output: str) -> dict[tuple[str, int], set[str]]:
+    def _parse_violations(self, output: str) -> ViolationsByLocation:
         """Parse mypy output into {(filepath, lineno): {error_codes}}."""
-        violations: dict[tuple[str, int], set[str]] = {}
+        violations: ViolationsByLocation = {}
         for line in output.splitlines():
             match = re.match(r"^(.+?):(\d+):\s+error:.*?\[([^\]]+)\]\s*$", line)
             if match:
@@ -74,9 +100,9 @@ class MypyBoost(Boost):
                 violations[key].add(code)
         return violations
 
-    def _apply_type_ignores(self, violations: dict[tuple[str, int], set[str]]) -> None:
+    def _apply_type_ignores(self, violations: ViolationsByLocation) -> None:
         """Insert or merge # type: ignore[codes] on each violating line."""
-        by_file: dict[str, dict[int, set[str]]] = {}
+        by_file: ViolationsByFile = {}
         for (filepath, lineno), codes in violations.items():
             by_file.setdefault(filepath, {})[lineno] = codes
 
@@ -138,8 +164,57 @@ class MypyBoost(Boost):
             dep_groups[group].append(package)
         self._write_pyproject(data)
 
-    def apply(self) -> None:
-        """Add mypy, configure strict mode, commit, then suppress all violations."""
+    def _apply_ignores(self) -> None:
+        for iteration in range(1, _MAX_MYPY_ITERATIONS + 1):
+            if not self._process_mypy_iteration(iteration):
+                break
+
+    def _process_mypy_iteration(self, iteration: int) -> bool:
+        """Run mypy and apply ignores for one iteration. Returns True if should continue."""
+        logger.info(f"Running mypy (iteration {iteration}/{_MAX_MYPY_ITERATIONS})...")
+        result = self._run_mypy()
+
+        if result.returncode == 0:
+            logger.info("mypy passed with no errors")
+            return False
+
+        violations = self._parse_violations(result.stdout + result.stderr)
+        if not violations:
+            logger.info("No parseable violations found; stopping")
+            return False
+
+        logger.info(f"Found {len(violations)} violations, applying type: ignore comments...")
+        self._apply_type_ignores(violations)
+        return True
+
+    def _configure_mypy(self) -> None:
+        self._add_mypy()
+        logger.info("Configuring [tool.mypy] strict = true in pyproject.toml...")
+        pyproject_data = self._read_pyproject()
+        pyproject_data = self._ensure_mypy_config(pyproject_data)
+        self._write_pyproject(pyproject_data)
+        self._commit_config()
+
+    def _commit_config(self) -> None:
+        self._run_git("add", "-A")
+        if not self._run_git("status", "--porcelain", check=False).stdout.strip():
+            return
+        self._run_git("commit", "--author", COMMIT_AUTHOR, "--no-verify", "-m", "🔧 Configure mypy with strict mode")
+        logger.info("Committed mypy configuration")
+
+    def _add_mypy(self) -> None:
+        if self._is_package_in_deps("mypy"):
+            logger.info("mypy already in dependencies, skipping uv add")
+            return
+        logger.info("Adding mypy dev dependency...")
+        self._run_uv("add", "--dev", "mypy")
+
+    def _verify_pyproject_present(self) -> None:
+        if not (self.repo_path / "pyproject.toml").exists():
+            msg = "No pyproject.toml found"
+            raise BoostSkippedError(msg)
+
+    def _verify_uv_present(self) -> None:
         try:
             result = self._run_uv("--version", check=False)
             if result.returncode != 0:
@@ -148,51 +223,6 @@ class MypyBoost(Boost):
         except (FileNotFoundError, OSError) as e:
             msg = "uv is not installed"
             raise BoostSkippedError(msg) from e
-
-        if not (self.repo_path / "pyproject.toml").exists():
-            msg = "No pyproject.toml found"
-            raise BoostSkippedError(msg)
-
-        # Phase 1: add mypy dep + configure strict mode
-        if self._is_package_in_deps("mypy"):
-            logger.info("mypy already in dependencies, skipping uv add")
-        else:
-            logger.info("Adding mypy dev dependency...")
-            try:
-                self._run_uv("add", "--dev", "mypy")
-            except subprocess.CalledProcessError:
-                logger.warning("uv add failed, editing pyproject.toml directly")
-                self._add_dep_to_pyproject("dev", "mypy")
-                self._run_uv("lock", check=False)
-
-        logger.info("Configuring [tool.mypy] strict = true in pyproject.toml...")
-        pyproject_data = self._read_pyproject()
-        pyproject_data = self._ensure_mypy_config(pyproject_data)
-        self._write_pyproject(pyproject_data)
-
-        self._run_git("add", "-A")
-        if self._run_git("status", "--porcelain", check=False).stdout.strip():
-            self._run_git(
-                "commit", "--author", COMMIT_AUTHOR, "--no-verify", "-m", "🔧 Configure mypy with strict mode"
-            )
-            logger.info("Committed mypy configuration")
-
-        # Phase 2: iteratively suppress violations
-        for iteration in range(1, _MAX_MYPY_ITERATIONS + 1):
-            logger.info(f"Running mypy (iteration {iteration}/{_MAX_MYPY_ITERATIONS})...")
-            result = self._run_mypy()
-
-            if result.returncode == 0:
-                logger.info("mypy passed with no errors")
-                break
-
-            violations = self._parse_violations(result.stdout + result.stderr)
-            if not violations:
-                logger.info("No parseable violations found; stopping")
-                break
-
-            logger.info(f"Found {len(violations)} violations, applying type: ignore comments...")
-            self._apply_type_ignores(violations)
 
     def commit_message(self) -> str:
         """Generate commit message for Mypy boost."""
