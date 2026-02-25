@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pimp_my_repo.core.boost.base import BoostSkippedError
 from pimp_my_repo.core.boost.uv.detector import (
     detect_all,
     detect_dependency_files,
@@ -198,19 +199,16 @@ def patched_uv_boost_installable(uv_boost: UvBoost) -> Generator[UvBoost]:
 # Preconditions tests
 
 
-def test_check_preconditions_when_uv_installed(patched_uv_boost_installed: UvBoost) -> None:
-    """Test that preconditions pass when UV is installed."""
-    assert patched_uv_boost_installed.check_preconditions() is True
+def test_apply_raises_skip_when_uv_not_installed(patched_uv_boost_not_installed: UvBoost) -> None:
+    """Test that apply raises BoostSkippedError when UV is not installed and cannot be installed."""
+    with pytest.raises(BoostSkippedError, match="uv is not installed"):
+        patched_uv_boost_not_installed.apply()
 
 
-def test_check_preconditions_when_uv_not_installed(patched_uv_boost_not_installed: UvBoost) -> None:
-    """Test that preconditions fail when UV is not installed and installation fails."""
-    assert patched_uv_boost_not_installed.check_preconditions() is False
-
-
-def test_check_preconditions_installs_uv_when_missing(patched_uv_boost_installable: UvBoost) -> None:
-    """Test that preconditions attempt to install UV when missing."""
-    assert patched_uv_boost_installable.check_preconditions() is True
+def test_apply_does_not_skip_when_uv_installable(patched_uv_boost_installable: UvBoost) -> None:
+    """Test that apply proceeds when uv can be auto-installed."""
+    with patch.object(patched_uv_boost_installable, "_run_uv"):
+        patched_uv_boost_installable.apply()  # should not raise BoostSkippedError
 
 
 # Migration detection tests
@@ -367,22 +365,10 @@ line-length = 120
     assert "[tool.uv]" in pyproject_content_after
 
 
-# Verify tests
-
-
-def test_verify_success(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    """Test successful verification."""
-    # First apply to create uv.lock
+def test_apply_creates_uv_lock(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+    """Test that apply creates uv.lock."""
     uv_boost.apply()
     assert (mock_repo.path / "uv.lock").exists()
-
-    # Then verify
-    assert uv_boost.verify() is True
-
-
-def test_verify_fails_when_lock_missing(uv_boost: UvBoost) -> None:
-    """Test verification fails when uv.lock is missing."""
-    assert uv_boost.verify() is False
 
 
 # Commit message test
@@ -465,35 +451,6 @@ class TestSubprocessErrorHandling:
         error = subprocess.CalledProcessError(1, "uv lock", stderr="Lock failed")
         with patch.object(uv_boost, "_run_uv", side_effect=error), pytest.raises(subprocess.CalledProcessError):
             uv_boost.apply()
-
-    def test_verify_handles_oserror(self, mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-        """Test that verify handles OSError gracefully."""
-        # Create uv.lock so it passes the first check
-        mock_repo.add_file("uv.lock", "# lock file")
-
-        with patch.object(uv_boost, "_run_uv", side_effect=OSError("Command not found")):
-            result = uv_boost.verify()
-            assert result is False
-
-    def test_verify_handles_file_not_found_error(self, mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-        """Test that verify handles FileNotFoundError gracefully."""
-        mock_repo.add_file("uv.lock", "# lock file")
-
-        with patch.object(uv_boost, "_run_uv", side_effect=FileNotFoundError("uv not found")):
-            result = uv_boost.verify()
-            assert result is False
-
-    def test_verify_returns_false_on_nonzero_exit(self, mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-        """Test that verify returns False when uv sync --dry-run has non-zero exit."""
-        mock_repo.add_file("uv.lock", "# lock file")
-
-        mock_result = MagicMock()
-        mock_result.returncode = 1
-        mock_result.stderr = "Dependency resolution failed"
-
-        with patch.object(uv_boost, "_run_uv", return_value=mock_result):
-            result = uv_boost.verify()
-            assert result is False
 
     def test_check_uv_installed_handles_called_process_error(self, uv_boost: UvBoost) -> None:
         """Test that _check_uv_installed handles CalledProcessError."""
@@ -804,12 +761,3 @@ version = "0.1.0"
     def test_get_name_returns_correct_value(self) -> None:
         """Test that get_name returns 'uv'."""
         assert UvBoost.get_name() == "uv"
-
-    def test_verify_with_valid_lock_and_successful_sync(self, uv_boost: UvBoost) -> None:
-        """Test verify returns True with valid setup."""
-        # First apply to create proper state
-        uv_boost.apply()
-
-        # Verify should succeed
-        result = uv_boost.verify()
-        assert result is True

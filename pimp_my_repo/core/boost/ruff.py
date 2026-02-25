@@ -7,7 +7,7 @@ from typing import Any
 from loguru import logger
 from tomlkit import TOMLDocument, dumps, loads, table
 
-from pimp_my_repo.core.boost.base import Boost
+from pimp_my_repo.core.boost.base import Boost, BoostSkippedError
 from pimp_my_repo.core.git import COMMIT_AUTHOR
 
 _MAX_RUFF_ITERATIONS = 3
@@ -158,25 +158,21 @@ class RuffBoost(Boost):
             dep_groups[group].append(package)
         self._write_pyproject(data)
 
-    def check_preconditions(self) -> bool:
-        """Verify prerequisites for applying Ruff boost."""
+    def apply(self) -> None:
+        """Add ruff, configure it, auto-format, then suppress all check violations."""
         try:
             result = self._run_uv("--version", check=False)
             if result.returncode != 0:
-                logger.warning("uv is not available, skipping ruff boost")
-                return False
-        except FileNotFoundError, OSError:
-            logger.warning("uv is not installed, skipping ruff boost")
-            return False
+                msg = "uv is not available"
+                raise BoostSkippedError(msg)
+        except (FileNotFoundError, OSError) as e:
+            msg = "uv is not installed"
+            raise BoostSkippedError(msg) from e
 
         if not (self.repo_path / "pyproject.toml").exists():
-            logger.warning("No pyproject.toml found, skipping ruff boost")
-            return False
+            msg = "No pyproject.toml found"
+            raise BoostSkippedError(msg)
 
-        return True
-
-    def apply(self) -> None:
-        """Add ruff, configure it, auto-format, then suppress all check violations."""
         # Phase 1: add dep + configure
         if self._is_package_in_deps("ruff"):
             logger.info("ruff already in dependencies, skipping uv add")
@@ -217,15 +213,6 @@ class RuffBoost(Boost):
 
             logger.info(f"Found {len(violations)} violations, applying noqa comments...")
             self._apply_noqa(violations)
-
-    def verify(self) -> bool:
-        """Verify ruff check passes."""
-        result = self._run_ruff_check()
-        if result.returncode == 0:
-            logger.info("ruff check verification passed")
-            return True
-        logger.warning(f"ruff check verification failed:\n{result.stdout}")
-        return False
 
     def commit_message(self) -> str:
         """Generate commit message for Ruff boost."""

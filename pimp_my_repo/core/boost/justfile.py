@@ -1,22 +1,15 @@
 """Justfile boost implementation."""
 
-from pimp_my_repo.core.boost.base import Boost
+from pimp_my_repo.core.boost.base import Boost, BoostSkippedError
 
 
 class JustfileBoost(Boost):
     """Boost for generating justfile with common commands."""
 
-    def check_preconditions(self) -> bool:
-        """Verify prerequisites for applying justfile boost."""
-        raise NotImplementedError
-
     def apply(self) -> None:
         """Generate justfile with common commands."""
-        raise NotImplementedError
-
-    def verify(self) -> bool:
-        """Verify justfile is working correctly."""
-        raise NotImplementedError
+        msg = "Not implemented"
+        raise BoostSkippedError(msg)
 
     def commit_message(self) -> str:
         """Generate commit message for justfile boost."""

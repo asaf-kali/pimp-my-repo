@@ -7,7 +7,7 @@ from typing import Any
 from loguru import logger
 from tomlkit import TOMLDocument, dumps, loads, table
 
-from pimp_my_repo.core.boost.base import Boost
+from pimp_my_repo.core.boost.base import Boost, BoostSkippedError
 from pimp_my_repo.core.git import COMMIT_AUTHOR
 
 _MAX_MYPY_ITERATIONS = 3
@@ -138,25 +138,21 @@ class MypyBoost(Boost):
             dep_groups[group].append(package)
         self._write_pyproject(data)
 
-    def check_preconditions(self) -> bool:
-        """Verify prerequisites for applying Mypy boost."""
+    def apply(self) -> None:
+        """Add mypy, configure strict mode, commit, then suppress all violations."""
         try:
             result = self._run_uv("--version", check=False)
             if result.returncode != 0:
-                logger.warning("uv is not available, skipping mypy boost")
-                return False
-        except FileNotFoundError, OSError:
-            logger.warning("uv is not installed, skipping mypy boost")
-            return False
+                msg = "uv is not available"
+                raise BoostSkippedError(msg)
+        except (FileNotFoundError, OSError) as e:
+            msg = "uv is not installed"
+            raise BoostSkippedError(msg) from e
 
         if not (self.repo_path / "pyproject.toml").exists():
-            logger.warning("No pyproject.toml found, skipping mypy boost")
-            return False
+            msg = "No pyproject.toml found"
+            raise BoostSkippedError(msg)
 
-        return True
-
-    def apply(self) -> None:
-        """Add mypy, configure strict mode, commit, then suppress all violations."""
         # Phase 1: add mypy dep + configure strict mode
         if self._is_package_in_deps("mypy"):
             logger.info("mypy already in dependencies, skipping uv add")
@@ -197,15 +193,6 @@ class MypyBoost(Boost):
 
             logger.info(f"Found {len(violations)} violations, applying type: ignore comments...")
             self._apply_type_ignores(violations)
-
-    def verify(self) -> bool:
-        """Verify mypy passes with strict mode."""
-        result = self._run_mypy()
-        if result.returncode == 0:
-            logger.info("mypy verification passed")
-            return True
-        logger.warning(f"mypy verification failed:\n{result.stdout}")
-        return False
 
     def commit_message(self) -> str:
         """Generate commit message for Mypy boost."""

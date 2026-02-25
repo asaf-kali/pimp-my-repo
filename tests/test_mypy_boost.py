@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pimp_my_repo.core.boost.base import BoostSkippedError
 from pimp_my_repo.core.boost.mypy import _MAX_MYPY_ITERATIONS, MypyBoost
 
 if TYPE_CHECKING:
@@ -45,26 +46,34 @@ def _fail(output: str = "") -> MagicMock:
 # =============================================================================
 
 
-class TestCheckPreconditions:
-    def test_returns_true_when_uv_ok_and_pyproject_exists(self, mypy_boost_with_pyproject: MypyBoost) -> None:
-        with patch.object(mypy_boost_with_pyproject, "_run_uv", return_value=_ok()):
-            assert mypy_boost_with_pyproject.check_preconditions() is True
+class TestApplySkipConditions:
+    def test_raises_skip_when_uv_nonzero(self, mypy_boost_with_pyproject: MypyBoost) -> None:
+        with (
+            patch.object(mypy_boost_with_pyproject, "_run_uv", return_value=_fail()),
+            pytest.raises(BoostSkippedError, match="uv is not available"),
+        ):
+            mypy_boost_with_pyproject.apply()
 
-    def test_returns_false_when_uv_nonzero(self, mypy_boost_with_pyproject: MypyBoost) -> None:
-        with patch.object(mypy_boost_with_pyproject, "_run_uv", return_value=_fail()):
-            assert mypy_boost_with_pyproject.check_preconditions() is False
+    def test_raises_skip_when_uv_raises_file_not_found(self, mypy_boost_with_pyproject: MypyBoost) -> None:
+        with (
+            patch.object(mypy_boost_with_pyproject, "_run_uv", side_effect=FileNotFoundError),
+            pytest.raises(BoostSkippedError, match="uv is not installed"),
+        ):
+            mypy_boost_with_pyproject.apply()
 
-    def test_returns_false_when_uv_raises_file_not_found(self, mypy_boost_with_pyproject: MypyBoost) -> None:
-        with patch.object(mypy_boost_with_pyproject, "_run_uv", side_effect=FileNotFoundError):
-            assert mypy_boost_with_pyproject.check_preconditions() is False
+    def test_raises_skip_when_uv_raises_oserror(self, mypy_boost_with_pyproject: MypyBoost) -> None:
+        with (
+            patch.object(mypy_boost_with_pyproject, "_run_uv", side_effect=OSError),
+            pytest.raises(BoostSkippedError, match="uv is not installed"),
+        ):
+            mypy_boost_with_pyproject.apply()
 
-    def test_returns_false_when_uv_raises_oserror(self, mypy_boost_with_pyproject: MypyBoost) -> None:
-        with patch.object(mypy_boost_with_pyproject, "_run_uv", side_effect=OSError):
-            assert mypy_boost_with_pyproject.check_preconditions() is False
-
-    def test_returns_false_when_no_pyproject(self, mypy_boost: MypyBoost) -> None:
-        with patch.object(mypy_boost, "_run_uv", return_value=_ok()):
-            assert mypy_boost.check_preconditions() is False
+    def test_raises_skip_when_no_pyproject(self, mypy_boost: MypyBoost) -> None:
+        with (
+            patch.object(mypy_boost, "_run_uv", return_value=_ok()),
+            pytest.raises(BoostSkippedError, match=r"No pyproject\.toml found"),
+        ):
+            mypy_boost.apply()
 
 
 # =============================================================================
@@ -332,16 +341,6 @@ class TestApply:
 # =============================================================================
 # VERIFY
 # =============================================================================
-
-
-class TestVerify:
-    def test_returns_true_when_mypy_passes(self, mypy_boost: MypyBoost) -> None:
-        with patch.object(mypy_boost, "_run_mypy", return_value=_ok()):
-            assert mypy_boost.verify() is True
-
-    def test_returns_false_when_mypy_fails(self, mypy_boost: MypyBoost) -> None:
-        with patch.object(mypy_boost, "_run_mypy", return_value=_fail("Found 1 error")):
-            assert mypy_boost.verify() is False
 
 
 # =============================================================================

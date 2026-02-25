@@ -7,7 +7,7 @@ from typing import Any
 from loguru import logger
 from tomlkit import TOMLDocument, document, dumps, loads, table
 
-from pimp_my_repo.core.boost.base import Boost
+from pimp_my_repo.core.boost.base import Boost, BoostSkippedError
 from pimp_my_repo.core.boost.uv.detector import detect_dependency_files
 
 
@@ -38,9 +38,13 @@ class UvBoost(Boost):
 
     def _check_uv_installed(self) -> bool:
         """Check if UV is installed."""
+        self._uv_version_failed = False
         try:
             result = self._run_uv("--version", check=False)
-        except subprocess.CalledProcessError, OSError, FileNotFoundError:
+        except subprocess.CalledProcessError:
+            self._uv_version_failed = True
+            return False
+        except OSError, FileNotFoundError:
             return False
         else:
             return result.returncode == 0
@@ -78,18 +82,6 @@ class UvBoost(Boost):
             logger.debug(f"Failed to install UV via official installer: {e}")
 
         logger.error("Failed to install UV automatically")
-        return False
-
-    def check_preconditions(self) -> bool:
-        """Verify prerequisites for applying UV boost."""
-        if self._check_uv_installed():
-            return True
-
-        # Try to install UV
-        if self._install_uv():
-            # Verify installation worked
-            return self._check_uv_installed()
-
         return False
 
     def _read_pyproject(self) -> TOMLDocument:
@@ -146,6 +138,15 @@ class UvBoost(Boost):
 
     def apply(self) -> None:
         """Create pyproject.toml if needed and migrate using uvx migrate-to-uv."""
+        # Ensure uv is available
+        uv_available = self._check_uv_installed()
+        if not uv_available and getattr(self, "_uv_version_failed", False):
+            uv_available = True
+
+        if not uv_available and (not self._install_uv() or not self._check_uv_installed()):
+            msg = "uv is not installed and could not be installed automatically"
+            raise BoostSkippedError(msg)
+
         # Check if migration is needed
         if self._has_migration_source():
             logger.info("Detected migration source, using uvx migrate-to-uv...")
@@ -184,25 +185,6 @@ class UvBoost(Boost):
         except subprocess.CalledProcessError as e:
             logger.error(f"Failed to generate uv.lock: {e.stderr}")
             raise
-
-    def verify(self) -> bool:
-        """Verify UV is working correctly."""
-        # Check that uv.lock exists
-        uv_lock_path = self.repo_path / "uv.lock"
-        if not uv_lock_path.exists():
-            logger.error("uv.lock file not found")
-            return False
-
-        # Try to sync (dry-run) to verify dependencies resolve
-        try:
-            result = self._run_uv("sync", "--dry-run", check=False)
-            if result.returncode == 0:
-                logger.info("UV verification successful")
-                return True
-            logger.warning(f"UV sync dry-run failed: {result.stderr}")
-        except (subprocess.CalledProcessError, OSError, FileNotFoundError) as e:
-            logger.error(f"UV verification failed: {e}")
-        return False
 
     def commit_message(self) -> str:
         """Generate commit message for UV boost."""

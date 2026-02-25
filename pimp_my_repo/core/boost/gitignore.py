@@ -52,8 +52,8 @@ class GitignoreBoost(Boost):
         try:
             with urllib.request.urlopen(url, timeout=10) as response:  # noqa: S310
                 return response.read().decode("utf-8")  # type: ignore[no-any-return]
-        except (urllib.error.URLError, OSError, TimeoutError) as e:
-            logger.warning(f"Failed to fetch .gitignore from gitignore.io: {e}")
+        except (urllib.error.URLError, urllib.error.HTTPError, OSError) as exc:
+            logger.warning(f"Failed to fetch .gitignore from gitignore.io: {exc}")
             return None
 
     def _append_gitignore(self, generated: str) -> None:
@@ -75,10 +75,6 @@ class GitignoreBoost(Boost):
         self._run_git("rm", "-r", "--cached", ".")
         self._run_git("add", "-A")
 
-    def check_preconditions(self) -> bool:
-        """Always applicable — a .gitignore can be created for any repo."""  # noqa: D401
-        return True
-
     def apply(self) -> None:
         """Fetch .gitignore from gitignore.io, commit it, then reset git tracking."""
         templates = self._detect_templates()
@@ -86,9 +82,8 @@ class GitignoreBoost(Boost):
 
         generated = self._fetch_gitignore(templates)
         if generated is None:
-            logger.warning("Could not fetch .gitignore content, skipping gitignore boost")
+            logger.warning("Skipping .gitignore boost due to fetch failure")
             return
-
         self._append_gitignore(generated)
         logger.info("Written .gitignore")
 
@@ -100,10 +95,6 @@ class GitignoreBoost(Boost):
         # Reset tracking so gitignored files are evicted from the index
         logger.info("Resetting git tracking to honour new .gitignore rules...")
         self._reset_git_tracking()
-
-    def verify(self) -> bool:
-        """Verify that .gitignore exists."""
-        return (self.repo_path / ".gitignore").exists()
 
     def commit_message(self) -> str:
         """Generate commit message for Gitignore boost."""

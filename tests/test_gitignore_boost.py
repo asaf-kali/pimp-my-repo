@@ -22,15 +22,6 @@ def gitignore_boost(mock_repo: RepositoryController) -> GitignoreBoost:
 
 
 # =============================================================================
-# PRECONDITIONS
-# =============================================================================
-
-
-def test_check_preconditions_always_true(gitignore_boost: GitignoreBoost) -> None:
-    assert gitignore_boost.check_preconditions() is True
-
-
-# =============================================================================
 # TEMPLATE DETECTION
 # =============================================================================
 
@@ -255,17 +246,6 @@ class TestApply:
 # =============================================================================
 # VERIFY
 # =============================================================================
-
-
-class TestVerify:
-    def test_returns_true_when_gitignore_exists(
-        self, mock_repo: RepositoryController, gitignore_boost: GitignoreBoost
-    ) -> None:
-        mock_repo.add_file(".gitignore", "*.pyc\n")
-        assert gitignore_boost.verify() is True
-
-    def test_returns_false_when_gitignore_missing(self, gitignore_boost: GitignoreBoost) -> None:
-        assert gitignore_boost.verify() is False
 
 
 # =============================================================================

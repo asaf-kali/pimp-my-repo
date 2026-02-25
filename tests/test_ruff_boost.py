@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pimp_my_repo.core.boost.base import BoostSkippedError
 from pimp_my_repo.core.boost.ruff import _MAX_RUFF_ITERATIONS, RuffBoost
 
 if TYPE_CHECKING:
@@ -43,26 +44,34 @@ def _fail(output: str = "") -> MagicMock:
 # =============================================================================
 
 
-class TestCheckPreconditions:
-    def test_returns_true_when_uv_ok_and_pyproject_exists(self, ruff_boost_with_pyproject: RuffBoost) -> None:
-        with patch.object(ruff_boost_with_pyproject, "_run_uv", return_value=_ok()):
-            assert ruff_boost_with_pyproject.check_preconditions() is True
+class TestApplySkipConditions:
+    def test_raises_skip_when_uv_nonzero(self, ruff_boost_with_pyproject: RuffBoost) -> None:
+        with (
+            patch.object(ruff_boost_with_pyproject, "_run_uv", return_value=_fail()),
+            pytest.raises(BoostSkippedError, match="uv is not available"),
+        ):
+            ruff_boost_with_pyproject.apply()
 
-    def test_returns_false_when_uv_nonzero(self, ruff_boost_with_pyproject: RuffBoost) -> None:
-        with patch.object(ruff_boost_with_pyproject, "_run_uv", return_value=_fail()):
-            assert ruff_boost_with_pyproject.check_preconditions() is False
+    def test_raises_skip_when_uv_raises_file_not_found(self, ruff_boost_with_pyproject: RuffBoost) -> None:
+        with (
+            patch.object(ruff_boost_with_pyproject, "_run_uv", side_effect=FileNotFoundError),
+            pytest.raises(BoostSkippedError, match="uv is not installed"),
+        ):
+            ruff_boost_with_pyproject.apply()
 
-    def test_returns_false_when_uv_raises_file_not_found(self, ruff_boost_with_pyproject: RuffBoost) -> None:
-        with patch.object(ruff_boost_with_pyproject, "_run_uv", side_effect=FileNotFoundError):
-            assert ruff_boost_with_pyproject.check_preconditions() is False
+    def test_raises_skip_when_uv_raises_oserror(self, ruff_boost_with_pyproject: RuffBoost) -> None:
+        with (
+            patch.object(ruff_boost_with_pyproject, "_run_uv", side_effect=OSError),
+            pytest.raises(BoostSkippedError, match="uv is not installed"),
+        ):
+            ruff_boost_with_pyproject.apply()
 
-    def test_returns_false_when_uv_raises_oserror(self, ruff_boost_with_pyproject: RuffBoost) -> None:
-        with patch.object(ruff_boost_with_pyproject, "_run_uv", side_effect=OSError):
-            assert ruff_boost_with_pyproject.check_preconditions() is False
-
-    def test_returns_false_when_no_pyproject(self, ruff_boost: RuffBoost) -> None:
-        with patch.object(ruff_boost, "_run_uv", return_value=_ok()):
-            assert ruff_boost.check_preconditions() is False
+    def test_raises_skip_when_no_pyproject(self, ruff_boost: RuffBoost) -> None:
+        with (
+            patch.object(ruff_boost, "_run_uv", return_value=_ok()),
+            pytest.raises(BoostSkippedError, match=r"No pyproject\.toml found"),
+        ):
+            ruff_boost.apply()
 
 
 # =============================================================================
@@ -330,16 +339,6 @@ class TestApply:
 # =============================================================================
 # VERIFY
 # =============================================================================
-
-
-class TestVerify:
-    def test_returns_true_when_ruff_passes(self, ruff_boost: RuffBoost) -> None:
-        with patch.object(ruff_boost, "_run_ruff_check", return_value=_ok()):
-            assert ruff_boost.verify() is True
-
-    def test_returns_false_when_ruff_fails(self, ruff_boost: RuffBoost) -> None:
-        with patch.object(ruff_boost, "_run_ruff_check", return_value=_fail("Found 1 error")):
-            assert ruff_boost.verify() is False
 
 
 # =============================================================================
