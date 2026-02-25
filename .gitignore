@@ -1,5 +1,6 @@
 .idea/
 junit.xml
+test-results.xml
 
 # Created by https://www.toptal.com/developers/gitignore/api/pycharm,linux,python
 # Edit at https://www.toptal.com/developers/gitignore?templates=pycharm,linux,python
