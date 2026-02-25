@@ -2,6 +2,7 @@
 
 from typing import TYPE_CHECKING
 
+import pytest
 from rich.console import Console
 
 from pimp_my_repo.cli.main import run_boosts
@@ -10,6 +11,7 @@ if TYPE_CHECKING:
     from tests.utils.repo_controller import RepositoryController
 
 
+@pytest.mark.slow
 def test_e2e_boosts_applied_then_idempotent(mock_repo: RepositoryController) -> None:
     """End-to-end: boosts apply on first run and make no changes on second run."""
     # Set up a simple Python project (no requirements.txt to stay on the minimal path)

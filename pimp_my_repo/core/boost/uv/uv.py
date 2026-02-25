@@ -163,7 +163,7 @@ class UvBoost(Boost):
             logger.info("No pyproject.toml found, creating minimal one...")
             pyproject_data = document()
             # Try to infer project name from directory
-            project_name = self.repo_path.name.lower().replace(" ", "-").replace("_", "-")
+            project_name = self.repo_path.name.lower().replace(" ", "-").replace("_", "-").strip("-")
             project_table = table()
             project_table["name"] = project_name
             project_table["version"] = "0.1.0"

@@ -34,6 +34,9 @@ lock-check:
 
 # Test
 
+test-fast:
+	{{RUN}} python -m {{PYTHON_TEST_COMMAND}} -m "not slow"
+
 test:
 	{{RUN}} python -m {{PYTHON_TEST_COMMAND}}
 

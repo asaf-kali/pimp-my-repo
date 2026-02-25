@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from tests.utils.repo_controller import RepositoryController
 
 
+@pytest.mark.slow
 def test_cli_is_working(mock_repo: RepositoryController) -> None:
     result = subprocess.run(  # noqa: S603
         ["pimp-my-repo", "--path", str(mock_repo.path)],  # noqa: S607
@@ -26,6 +27,7 @@ def test_cli_is_working(mock_repo: RepositoryController) -> None:
     )
 
 
+@pytest.mark.slow
 def test_main_is_working(mock_repo: RepositoryController) -> None:
     """Test that main function exits properly."""
     # Mock sys.argv to pass the path argument
@@ -40,6 +42,7 @@ def test_main_is_working(mock_repo: RepositoryController) -> None:
         sys.argv = original_argv
 
 
+@pytest.mark.slow
 def test_cli_with_clean_git(mock_repo: RepositoryController) -> None:
     """Test CLI with a clean git repository."""
     # Run CLI on clean repo

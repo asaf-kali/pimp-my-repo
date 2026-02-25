@@ -1,5 +1,6 @@
 """Tests for UV boost implementation."""
 
+import re
 import subprocess
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
@@ -761,9 +762,15 @@ pytest = ">=7.0.0"
         pyproject_path = mock_repo.path / "pyproject.toml"
         content = pyproject_path.read_text()
 
-        # Project name should be derived from directory name
+        # Project name should be derived from directory name and be a valid PyPI name
         assert "[project]" in content
         assert "name = " in content
+
+        name_match = re.search(r'name = "([^"]+)"', content)
+        assert name_match, "Could not find project name in pyproject.toml"
+        project_name = name_match.group(1)
+        assert project_name[0].isalnum(), f"Project name must start with alphanumeric, got: {project_name!r}"
+        assert project_name[-1].isalnum(), f"Project name must end with alphanumeric, got: {project_name!r}"
 
 
 # =============================================================================
