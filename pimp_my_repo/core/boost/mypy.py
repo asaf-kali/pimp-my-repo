@@ -113,7 +113,7 @@ class MypyBoost(Boost):
         """Check if a package is already present in any dependency group in pyproject.toml."""
         try:
             data = self._read_pyproject()
-        except OSError, ValueError:
+        except (OSError, ValueError):  # fmt: skip
             return False
         package_lower = package.lower()
         for deps in data.get("dependency-groups", {}).values():

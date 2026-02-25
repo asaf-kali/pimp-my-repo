@@ -14,7 +14,7 @@ from typer import Exit
 
 from pimp_my_repo.core.boost import Boost, BoostSkippedError, get_all_boosts
 from pimp_my_repo.core.git import GitManager
-from pimp_my_repo.models.result import BoostResult
+from pimp_my_repo.core.result import BoostResult
 
 if TYPE_CHECKING:
     from rich.progress import TaskID

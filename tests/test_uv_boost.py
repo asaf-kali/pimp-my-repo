@@ -33,12 +33,12 @@ class TestDetectDependencyFiles:
         """Test detection in empty repository (only README.md exists)."""
         result = detect_dependency_files(mock_repo.path)
 
-        assert result["requirements.txt"] is False
-        assert result["setup.py"] is False
-        assert result["pyproject.toml"] is False
-        assert result["Pipfile"] is False
-        assert result["poetry.lock"] is False
-        assert result["Pipfile.lock"] is False
+        assert result.requirements_txt is False
+        assert result.setup_py is False
+        assert result.pyproject_toml is False
+        assert result.pipfile is False
+        assert result.poetry_lock is False
+        assert result.pipfile_lock is False
 
     def test_all_files_present(self, mock_repo: RepositoryController) -> None:
         """Test detection when all dependency files exist."""
@@ -51,12 +51,12 @@ class TestDetectDependencyFiles:
 
         result = detect_dependency_files(mock_repo.path)
 
-        assert result["requirements.txt"] is True
-        assert result["setup.py"] is True
-        assert result["pyproject.toml"] is True
-        assert result["Pipfile"] is True
-        assert result["poetry.lock"] is True
-        assert result["Pipfile.lock"] is True
+        assert result.requirements_txt is True
+        assert result.setup_py is True
+        assert result.pyproject_toml is True
+        assert result.pipfile is True
+        assert result.poetry_lock is True
+        assert result.pipfile_lock is True
 
     def test_partial_files(self, mock_repo: RepositoryController) -> None:
         """Test detection with only some files present."""
@@ -65,10 +65,10 @@ class TestDetectDependencyFiles:
 
         result = detect_dependency_files(mock_repo.path)
 
-        assert result["requirements.txt"] is True
-        assert result["pyproject.toml"] is True
-        assert result["setup.py"] is False
-        assert result["Pipfile"] is False
+        assert result.requirements_txt is True
+        assert result.pyproject_toml is True
+        assert result.setup_py is False
+        assert result.pipfile is False
 
     def test_pipfile_lock_detected(self, mock_repo: RepositoryController) -> None:
         """Test that Pipfile.lock is detected separately from Pipfile."""
@@ -76,8 +76,8 @@ class TestDetectDependencyFiles:
 
         result = detect_dependency_files(mock_repo.path)
 
-        assert result["Pipfile.lock"] is True
-        assert result["Pipfile"] is False
+        assert result.pipfile_lock is True
+        assert result.pipfile is False
 
 
 class TestDetectExistingConfigs:
@@ -87,13 +87,13 @@ class TestDetectExistingConfigs:
         """Test detection in empty repository."""
         result = detect_existing_configs(mock_repo.path)
 
-        assert result[".ruff.toml"] is False
-        assert result["ruff.toml"] is False
-        assert result["mypy.ini"] is False
-        assert result[".mypy.ini"] is False
-        assert result[".pre-commit-config.yaml"] is False
-        assert result["justfile"] is False
-        assert result["Makefile"] is False
+        assert result.ruff_dot_toml is False
+        assert result.ruff_toml is False
+        assert result.mypy_ini is False
+        assert result.mypy_dot_ini is False
+        assert result.pre_commit_config_dot_yaml is False
+        assert result.justfile is False
+        assert result.makefile is False
 
     def test_all_configs_present(self, mock_repo: RepositoryController) -> None:
         """Test detection when all config files exist."""
@@ -109,15 +109,15 @@ class TestDetectExistingConfigs:
 
         result = detect_existing_configs(mock_repo.path)
 
-        assert result[".ruff.toml"] is True
-        assert result["ruff.toml"] is True
-        assert result["mypy.ini"] is True
-        assert result[".mypy.ini"] is True
-        assert result[".pre-commit-config.yaml"] is True
-        assert result["pre-commit-config.yaml"] is True
-        assert result["justfile"] is True
-        assert result["Makefile"] is True
-        assert result["makefile"] is True
+        assert result.ruff_dot_toml is True
+        assert result.ruff_toml is True
+        assert result.mypy_ini is True
+        assert result.mypy_dot_ini is True
+        assert result.pre_commit_config_dot_yaml is True
+        assert result.pre_commit_config_yaml is True
+        assert result.justfile is True
+        assert result.makefile is True
+        assert result.makefile_lower is True
 
     def test_partial_configs(self, mock_repo: RepositoryController) -> None:
         """Test detection with only some config files present."""
@@ -126,10 +126,10 @@ class TestDetectExistingConfigs:
 
         result = detect_existing_configs(mock_repo.path)
 
-        assert result["ruff.toml"] is True
-        assert result["justfile"] is True
-        assert result[".ruff.toml"] is False
-        assert result["Makefile"] is False
+        assert result.ruff_toml is True
+        assert result.justfile is True
+        assert result.ruff_dot_toml is False
+        assert result.makefile is False
 
 
 class TestDetectAll:
@@ -139,10 +139,8 @@ class TestDetectAll:
         """Test that detect_all returns both dependencies and configs."""
         result = detect_all(mock_repo.path)
 
-        assert "dependencies" in result
-        assert "configs" in result
-        assert isinstance(result["dependencies"], dict)
-        assert isinstance(result["configs"], dict)
+        assert result.dependencies is not None
+        assert result.configs is not None
 
     def test_integration_with_files(self, mock_repo: RepositoryController) -> None:
         """Test detect_all with actual files present."""
@@ -151,10 +149,10 @@ class TestDetectAll:
 
         result = detect_all(mock_repo.path)
 
-        assert result["dependencies"]["requirements.txt"] is True
-        assert result["configs"]["ruff.toml"] is True
-        assert result["dependencies"]["Pipfile"] is False
-        assert result["configs"]["justfile"] is False
+        assert result.dependencies.requirements_txt is True
+        assert result.configs.ruff_toml is True
+        assert result.dependencies.pipfile is False
+        assert result.configs.justfile is False
 
 
 # =============================================================================

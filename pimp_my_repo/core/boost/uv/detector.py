@@ -2,11 +2,13 @@
 
 from typing import TYPE_CHECKING
 
+from pimp_my_repo.core.boost.uv.models import ConfigFiles, DependencyFiles, DetectionResult
+
 if TYPE_CHECKING:
     from pathlib import Path
 
 
-def detect_dependency_files(repo_path: Path) -> dict[str, bool]:
+def detect_dependency_files(repo_path: Path) -> DependencyFiles:
     """Detect existing dependency management files.
 
     Args:
@@ -29,10 +31,10 @@ def detect_dependency_files(repo_path: Path) -> dict[str, bool]:
         file_path = repo_path / file_name
         dependency_files[file_name] = file_path.exists()
 
-    return dependency_files
+    return DependencyFiles.model_validate(dependency_files)
 
 
-def detect_existing_configs(repo_path: Path) -> dict[str, bool]:
+def detect_existing_configs(repo_path: Path) -> ConfigFiles:
     """Detect existing configuration files for tools.
 
     Args:
@@ -58,10 +60,10 @@ def detect_existing_configs(repo_path: Path) -> dict[str, bool]:
         file_path = repo_path / file_name
         config_files[file_name] = file_path.exists()
 
-    return config_files
+    return ConfigFiles.model_validate(config_files)
 
 
-def detect_all(repo_path: Path) -> dict[str, dict[str, bool]]:
+def detect_all(repo_path: Path) -> DetectionResult:
     """Detect all existing files (dependencies and configs).
 
     Args:
@@ -71,7 +73,7 @@ def detect_all(repo_path: Path) -> dict[str, dict[str, bool]]:
         Dictionary with 'dependencies' and 'configs' keys
 
     """
-    return {
-        "dependencies": detect_dependency_files(repo_path),
-        "configs": detect_existing_configs(repo_path),
-    }
+    return DetectionResult(
+        dependencies=detect_dependency_files(repo_path),
+        configs=detect_existing_configs(repo_path),
+    )
