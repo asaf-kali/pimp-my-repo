@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.2.2 (2026-02-25)
+
+### 🐛
+
+- 🐛 Fix release job
+  ([`fc82372`](https://github.com/asaf-kali/pimp-my-repo/commit/fc82372f4849090a0c15e896e990dd15897c95b7))
+
+
 ## v0.2.1 (2026-02-25)
 
 ### 🏗️
