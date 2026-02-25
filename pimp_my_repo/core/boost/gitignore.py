@@ -51,7 +51,7 @@ class GitignoreBoost(Boost):
         url = f"{_GITIGNORE_API}/{','.join(templates)}"
         try:
             with urllib.request.urlopen(url, timeout=10) as response:  # noqa: S310
-                return response.read().decode("utf-8")
+                return response.read().decode("utf-8")  # type: ignore[no-any-return]
         except (urllib.error.URLError, OSError, TimeoutError) as e:
             logger.warning(f"Failed to fetch .gitignore from gitignore.io: {e}")
             return None
