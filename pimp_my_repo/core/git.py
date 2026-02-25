@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
+COMMIT_AUTHOR = "pmr <pimp-my-repo@pypi.org>"
+
 
 class GitManager:
     """Manages git operations for the repository."""
@@ -44,7 +46,7 @@ class GitManager:
     def commit(self, message: str, *, no_verify: bool = True) -> None:
         """Commit changes with the given message."""
         self._run_git("add", "-A")
-        commit_args = ["commit", "-m", message]
+        commit_args = ["commit", "--author", COMMIT_AUTHOR, "-m", message]
         if no_verify:
             commit_args.append("--no-verify")
         self._run_git(*commit_args)

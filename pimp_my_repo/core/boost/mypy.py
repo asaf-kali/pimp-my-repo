@@ -8,6 +8,7 @@ from loguru import logger
 from tomlkit import TOMLDocument, dumps, loads, table
 
 from pimp_my_repo.core.boost.base import Boost
+from pimp_my_repo.core.git import COMMIT_AUTHOR
 
 _MAX_MYPY_ITERATIONS = 3
 
@@ -137,8 +138,11 @@ class MypyBoost(Boost):
         self._write_pyproject(pyproject_data)
 
         self._run_git("add", "-A")
-        self._run_git("commit", "-m", "🔧 Configure mypy with strict mode")
-        logger.info("Committed mypy configuration")
+        if self._run_git("status", "--porcelain", check=False).stdout.strip():
+            self._run_git(
+                "commit", "--author", COMMIT_AUTHOR, "--no-verify", "-m", "🔧 Configure mypy with strict mode"
+            )
+            logger.info("Committed mypy configuration")
 
         # Phase 2: iteratively suppress violations
         for iteration in range(1, _MAX_MYPY_ITERATIONS + 1):

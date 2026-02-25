@@ -1,6 +1,7 @@
 """Boost modules for pimp-my-repo."""
 
 from pimp_my_repo.core.boost.base import Boost
+from pimp_my_repo.core.boost.gitignore import GitignoreBoost
 from pimp_my_repo.core.boost.justfile import JustfileBoost
 from pimp_my_repo.core.boost.mypy import MypyBoost
 from pimp_my_repo.core.boost.pre_commit import PreCommitBoost
@@ -9,6 +10,7 @@ from pimp_my_repo.core.boost.uv import UvBoost
 
 __all__ = [
     "Boost",
+    "GitignoreBoost",
     "JustfileBoost",
     "MypyBoost",
     "PreCommitBoost",
@@ -19,6 +21,7 @@ __all__ = [
 
 # Registry of all boost classes
 _ALL_BOOSTS = [
+    GitignoreBoost,
     UvBoost,
     RuffBoost,
     MypyBoost,
