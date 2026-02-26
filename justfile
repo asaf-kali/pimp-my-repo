@@ -35,10 +35,10 @@ lock-check:
 # Test
 
 test-fast:
-	{{RUN}} python -m {{PYTHON_TEST_COMMAND}} -m "not slow"
+	{{RUN}} python -m {{PYTHON_TEST_COMMAND}} -s -q -m "not slow"
 
-test:
-	{{RUN}} python -m {{PYTHON_TEST_COMMAND}} -s -q
+test *args:
+	{{RUN}} python -m {{PYTHON_TEST_COMMAND}} -s -q {{args}}
 
 cover-base:
 	{{RUN}} coverage run -m {{PYTHON_TEST_COMMAND}}

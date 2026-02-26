@@ -17,6 +17,8 @@ from pimp_my_repo.core.git import GitManager
 from pimp_my_repo.core.result import BoostResult
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
+
     from rich.progress import TaskID
 
 app = typer.Typer(
@@ -67,6 +69,18 @@ def _setup_git(repo_path: Path, console: Console, branch_name: str | None = None
     return git_manager
 
 
+@contextlib.contextmanager
+def _git_revert_context(git_manager: GitManager) -> Generator[None]:
+    """Context manager to revert git changes."""
+    sha_before = git_manager.get_current_commit_sha()
+    try:
+        yield
+    except:
+        logger.debug(f"Reverting git changes to {sha_before}")
+        git_manager.reset_hard(sha_before)
+        raise
+
+
 def _process_boost(
     boost: Boost,
     boost_name: str,
@@ -79,23 +93,21 @@ def _process_boost(
     Captures the git HEAD before calling apply().  On any non-skip failure,
     resets hard back to that ref so the repo is left in a clean state.
     """
-    pre_boost_sha = git_manager.get_current_commit_sha()
-
     try:
-        boost.apply()
+        with _git_revert_context(git_manager):
+            boost.apply()
+            committed = git_manager.commit(boost.commit_message())
     except BoostSkippedError as e:
         progress.update(task_id, description=f"[yellow]⊘ Skipping {boost_name}: {e.reason}[/yellow]")
         return BoostResult(name=boost_name, status="skipped", message=e.reason)
     except Exception as e:  # noqa: BLE001
         logger.exception(f"Error applying {boost_name} boost")
-        with contextlib.suppress(subprocess.CalledProcessError, OSError):
-            git_manager.reset_hard(pre_boost_sha)
         progress.update(task_id, description=f"[red]✗ {boost_name} failed[/red]")
         return BoostResult(name=boost_name, status="failed", message=str(e))
 
-    # Commit any remaining staged changes
-    with contextlib.suppress(subprocess.CalledProcessError, OSError):
-        git_manager.commit(boost.commit_message())
+    if not committed:
+        progress.update(task_id, description=f"[yellow]⊘ Skipping {boost_name}: no changes[/yellow]")
+        return BoostResult(name=boost_name, status="skipped", message="No changes to commit")
 
     progress.update(task_id, description=f"[green]✓ {boost_name} applied[/green]")
     return BoostResult(name=boost_name, status="applied", message="Success")

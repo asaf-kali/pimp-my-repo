@@ -43,13 +43,19 @@ class GitManager:
             # Create new branch
             self._run_git("checkout", "-b", branch_name)
 
-    def commit(self, message: str, *, no_verify: bool = True) -> None:
-        """Commit changes with the given message."""
+    def commit(self, message: str, *, no_verify: bool = True) -> bool:
+        """Commit changes with the given message.
+
+        Returns True if a commit was created, False if there was nothing to commit.
+        """
         self._run_git("add", "-A")
+        if self.is_clean():
+            return False
         commit_args = ["commit", "--author", COMMIT_AUTHOR, "-m", message]
         if no_verify:
             commit_args.append("--no-verify")
         self._run_git(*commit_args)
+        return True
 
     def get_origin_url(self) -> str:
         """Get the git origin URL."""
