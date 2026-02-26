@@ -52,32 +52,31 @@ class GitignoreBoost(Boost):
         try:
             with urllib.request.urlopen(url, timeout=10) as response:  # noqa: S310
                 return response.read().decode("utf-8")  # type: ignore[no-any-return]
-        except (urllib.error.URLError, OSError, TimeoutError) as e:
-            logger.warning(f"Failed to fetch .gitignore from gitignore.io: {e}")
+        except (urllib.error.URLError, urllib.error.HTTPError, OSError) as exc:
+            logger.warning(f"Failed to fetch .gitignore from gitignore.io: {exc}")
             return None
 
     def _append_gitignore(self, generated: str) -> None:
         """Append generated content to .gitignore, or create it if absent."""
         gitignore_path = self.repo_path / ".gitignore"
-        if gitignore_path.exists():
-            existing = gitignore_path.read_text(encoding="utf-8")
-            if _GITIGNORE_HEADER in existing:
-                logger.info(".gitignore already contains generated content, skipping append")
-                return
-            separator = "" if existing.endswith("\n") else "\n"
-            content = f"{existing}{separator}\n{_GITIGNORE_HEADER}\n{generated}"
-        else:
-            content = f"{_GITIGNORE_HEADER}\n{generated}"
+
+        if not gitignore_path.exists():
+            gitignore_path.write_text(f"{_GITIGNORE_HEADER}\n{generated}", encoding="utf-8")
+            return
+
+        existing = gitignore_path.read_text(encoding="utf-8")
+        if _GITIGNORE_HEADER in existing:
+            logger.info(".gitignore already contains generated content, skipping append")
+            return
+
+        separator = "" if existing.endswith("\n") else "\n"
+        content = f"{existing}{separator}\n{_GITIGNORE_HEADER}\n{generated}"
         gitignore_path.write_text(content, encoding="utf-8")
 
     def _reset_git_tracking(self) -> None:
         """Untrack all files then re-add, so gitignored files leave the index."""
         self._run_git("rm", "-r", "--cached", ".")
         self._run_git("add", "-A")
-
-    def check_preconditions(self) -> bool:
-        """Always applicable — a .gitignore can be created for any repo."""  # noqa: D401
-        return True
 
     def apply(self) -> None:
         """Fetch .gitignore from gitignore.io, commit it, then reset git tracking."""
@@ -86,24 +85,22 @@ class GitignoreBoost(Boost):
 
         generated = self._fetch_gitignore(templates)
         if generated is None:
-            logger.warning("Could not fetch .gitignore content, skipping gitignore boost")
+            logger.warning("Skipping .gitignore boost due to fetch failure")
             return
 
         self._append_gitignore(generated)
         logger.info("Written .gitignore")
+        self._commit_gitignore()
 
-        # Commit the .gitignore addition (only if something changed)
-        self._run_git("add", ".gitignore")
-        if self._run_git("status", "--porcelain", check=False).stdout.strip():
-            self._run_git("commit", "--author", COMMIT_AUTHOR, "--no-verify", "-m", "✨ Add .gitignore")
-
-        # Reset tracking so gitignored files are evicted from the index
         logger.info("Resetting git tracking to honour new .gitignore rules...")
         self._reset_git_tracking()
 
-    def verify(self) -> bool:
-        """Verify that .gitignore exists."""
-        return (self.repo_path / ".gitignore").exists()
+    def _commit_gitignore(self) -> None:
+        """Commit the .gitignore addition if something changed."""
+        self._run_git("add", ".gitignore")
+        if not self._run_git("status", "--porcelain", check=False).stdout.strip():
+            return
+        self._run_git("commit", "--author", COMMIT_AUTHOR, "--no-verify", "-m", "✨ Add .gitignore")
 
     def commit_message(self) -> str:
         """Generate commit message for Gitignore boost."""

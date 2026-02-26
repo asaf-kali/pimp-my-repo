@@ -1,6 +1,6 @@
 """Boost modules for pimp-my-repo."""
 
-from pimp_my_repo.core.boost.base import Boost
+from pimp_my_repo.core.boost.base import Boost, BoostSkippedError
 from pimp_my_repo.core.boost.gitignore import GitignoreBoost
 from pimp_my_repo.core.boost.justfile import JustfileBoost
 from pimp_my_repo.core.boost.mypy import MypyBoost
@@ -10,6 +10,7 @@ from pimp_my_repo.core.boost.uv import UvBoost
 
 __all__ = [
     "Boost",
+    "BoostSkippedError",
     "GitignoreBoost",
     "JustfileBoost",
     "MypyBoost",

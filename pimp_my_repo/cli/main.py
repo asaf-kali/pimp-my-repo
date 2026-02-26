@@ -1,5 +1,6 @@
 """CLI entry point for pimp-my-repo."""
 
+import contextlib
 import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -11,9 +12,9 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 from typer import Exit
 
-from pimp_my_repo.core.boost import Boost, get_all_boosts
+from pimp_my_repo.core.boost import Boost, BoostSkippedError, get_all_boosts
 from pimp_my_repo.core.git import GitManager
-from pimp_my_repo.models.result import BoostResult
+from pimp_my_repo.core.result import BoostResult
 
 if TYPE_CHECKING:
     from rich.progress import TaskID
@@ -73,29 +74,28 @@ def _process_boost(
     progress: Progress,
     task_id: TaskID,
 ) -> BoostResult:
-    """Process a single boost and return result."""
-    # Check preconditions
-    try:
-        if not boost.check_preconditions():
-            progress.update(task_id, description=f"[yellow]Skipping {boost_name} (preconditions not met)[/yellow]")
-            return BoostResult(name=boost_name, status="skipped", message="Preconditions not met")
-    except NotImplementedError:
-        progress.update(task_id, description=f"[yellow]Skipping {boost_name} (not implemented)[/yellow]")
-        return BoostResult(name=boost_name, status="skipped", message="Not implemented")
+    """Process a single boost and return result.
 
-    # Apply boost
+    Captures the git HEAD before calling apply().  On any non-skip failure,
+    resets hard back to that ref so the repo is left in a clean state.
+    """
+    pre_boost_sha = git_manager.get_current_commit_sha()
+
     try:
         boost.apply()
-    except NotImplementedError:
-        progress.update(task_id, description=f"[yellow]Skipping {boost_name} (not implemented)[/yellow]")
-        return BoostResult(name=boost_name, status="skipped", message="Not implemented")
+    except BoostSkippedError as e:
+        progress.update(task_id, description=f"[yellow]⊘ Skipping {boost_name}: {e.reason}[/yellow]")
+        return BoostResult(name=boost_name, status="skipped", message=e.reason)
+    except Exception as e:  # noqa: BLE001
+        logger.exception(f"Error applying {boost_name} boost")
+        with contextlib.suppress(subprocess.CalledProcessError, OSError):
+            git_manager.reset_hard(pre_boost_sha)
+        progress.update(task_id, description=f"[red]✗ {boost_name} failed[/red]")
+        return BoostResult(name=boost_name, status="failed", message=str(e))
 
-    # Commit changes
-    commit_message = boost.commit_message()
-    try:
-        git_manager.commit(commit_message)
-    except subprocess.CalledProcessError, OSError:
-        logger.exception(f"Failed to commit changes for {boost_name}")
+    # Commit any remaining staged changes
+    with contextlib.suppress(subprocess.CalledProcessError, OSError):
+        git_manager.commit(boost.commit_message())
 
     progress.update(task_id, description=f"[green]✓ {boost_name} applied[/green]")
     return BoostResult(name=boost_name, status="applied", message="Success")
@@ -124,7 +124,7 @@ def _execute_boosts(
                 result = _process_boost(boost, boost_name, git_manager, progress, task_id)
                 results.append(result)
 
-            except (NotImplementedError, subprocess.CalledProcessError, OSError) as e:
+            except (subprocess.CalledProcessError, OSError) as e:
                 logger.exception(f"Error processing {boost_name} boost")
                 progress.update(task_id, description=f"[red]✗ {boost_name} failed[/red]")
                 results.append(BoostResult(name=boost_name, status="failed", message=str(e)))

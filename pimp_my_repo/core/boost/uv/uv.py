@@ -7,12 +7,24 @@ from typing import Any
 from loguru import logger
 from tomlkit import TOMLDocument, document, dumps, loads, table
 
-from pimp_my_repo.core.boost.base import Boost
+from pimp_my_repo.core.boost.base import Boost, BoostSkippedError
 from pimp_my_repo.core.boost.uv.detector import detect_dependency_files
 
 
 class UvBoost(Boost):
     """Boost for integrating UV dependency management."""
+
+    _uv_version_failed: bool = False
+
+    def _uv_is_available(self) -> bool:
+        if self._check_uv_installed():
+            return True
+        # uv binary exists but returned non-zero — treat as available (version mismatch, etc.)
+        if self._uv_version_failed:
+            return True
+        if not self._install_uv():
+            return False
+        return self._check_uv_installed()
 
     def _run_uv(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         """Run a uv command in the repository directory."""
@@ -38,17 +50,27 @@ class UvBoost(Boost):
 
     def _check_uv_installed(self) -> bool:
         """Check if UV is installed."""
+        self._uv_version_failed = False
         try:
             result = self._run_uv("--version", check=False)
-        except subprocess.CalledProcessError, OSError, FileNotFoundError:
+        except subprocess.CalledProcessError:
+            self._uv_version_failed = True
             return False
-        else:
-            return result.returncode == 0
+        except OSError:
+            return False
+        return result.returncode == 0
 
     def _install_uv(self) -> bool:
         """Attempt to install UV automatically."""
         logger.info("UV not found, attempting to install...")
-        # Try pip install first
+        if self._try_pip_install():
+            return True
+        if self._try_script_install():
+            return True
+        logger.error("Failed to install UV automatically")
+        return False
+
+    def _try_pip_install(self) -> bool:
         try:
             result = subprocess.run(  # noqa: S603
                 [sys.executable, "-m", "pip", "install", "uv"],
@@ -56,41 +78,30 @@ class UvBoost(Boost):
                 text=True,
                 check=False,
             )
-            if result.returncode == 0:
-                logger.info("Successfully installed UV via pip")
-                return True
         except (subprocess.CalledProcessError, OSError) as e:
             logger.debug(f"Failed to install UV via pip: {e}")
+            return False
+        if result.returncode != 0:
+            return False
+        logger.info("Successfully installed UV via pip")
+        return True
 
-        # Fallback to official installer script
+    def _try_script_install(self) -> bool:
+        installer_url = "https://astral.sh/uv/install.sh"
         try:
-            installer_url = "https://astral.sh/uv/install.sh"
             result = subprocess.run(  # noqa: S603
                 ["sh", "-c", f"curl -LsSf {installer_url} | sh"],  # noqa: S607
                 capture_output=True,
                 text=True,
                 check=False,
             )
-            if result.returncode == 0:
-                logger.info("Successfully installed UV via official installer")
-                return True
         except (subprocess.CalledProcessError, OSError) as e:
             logger.debug(f"Failed to install UV via official installer: {e}")
-
-        logger.error("Failed to install UV automatically")
-        return False
-
-    def check_preconditions(self) -> bool:
-        """Verify prerequisites for applying UV boost."""
-        if self._check_uv_installed():
-            return True
-
-        # Try to install UV
-        if self._install_uv():
-            # Verify installation worked
-            return self._check_uv_installed()
-
-        return False
+            return False
+        if result.returncode != 0:
+            return False
+        logger.info("Successfully installed UV via official installer")
+        return True
 
     def _read_pyproject(self) -> TOMLDocument:
         """Read existing pyproject.toml if it exists."""
@@ -125,84 +136,65 @@ class UvBoost(Boost):
     def _has_migration_source(self) -> bool:
         """Check if there are any migration sources (Poetry, requirements.txt, etc.)."""
         detected = detect_dependency_files(self.repo_path)
-        pyproject_path = self.repo_path / "pyproject.toml"
 
-        # Check for Poetry
-        if detected.get("poetry.lock", False):
+        if detected.poetry_lock:
             return True
-        if pyproject_path.exists():
-            pyproject_data = self._read_pyproject()
-            tool_section: Any = pyproject_data.get("tool", {})
-            if isinstance(tool_section, dict) and tool_section.get("poetry"):
-                return True
+        if detected.pipfile or detected.pipfile_lock:
+            return True
+        if self._has_poetry_config():
+            return True
 
-        # Check for requirements.txt files
         requirements_files = list(self.repo_path.rglob("requirements*.txt"))
-        if requirements_files:
-            return True
+        return bool(requirements_files)
 
-        # Check for other package managers
-        return bool(detected.get("Pipfile", False) or detected.get("Pipfile.lock", False))
-
-    def apply(self) -> None:
-        """Create pyproject.toml if needed and migrate using uvx migrate-to-uv."""
-        # Check if migration is needed
-        if self._has_migration_source():
-            logger.info("Detected migration source, using uvx migrate-to-uv...")
-            try:
-                # Run uvx migrate-to-uv to handle migration automatically
-                self._run_uvx("migrate-to-uv")
-                logger.info("Migration completed successfully")
-            except subprocess.CalledProcessError as e:
-                logger.error(f"Migration failed: {e.stderr}")
-                raise
-
-        # Ensure pyproject.toml exists (migrate-to-uv should create it, but ensure it's there)
+    def _has_poetry_config(self) -> bool:
         pyproject_path = self.repo_path / "pyproject.toml"
         if not pyproject_path.exists():
-            logger.info("No pyproject.toml found, creating minimal one...")
-            pyproject_data = document()
-            # Try to infer project name from directory
-            project_name = self.repo_path.name.lower().replace(" ", "-").replace("_", "-").strip("-")
-            project_table = table()
-            project_table["name"] = project_name
-            project_table["version"] = "0.1.0"
-            project_table["requires-python"] = ">=3.8"
-            pyproject_data["project"] = project_table
-            self._write_pyproject(pyproject_data)
+            return False
+        pyproject_data = self._read_pyproject()
+        tool_section: Any = pyproject_data.get("tool", {})
+        return isinstance(tool_section, dict) and bool(tool_section.get("poetry"))
 
-        # Ensure UV config is present
+    def _run_migration_if_needed(self) -> None:
+        if not self._has_migration_source():
+            return
+        logger.info("Detected migration source, using uvx migrate-to-uv...")
+        self._run_uvx("migrate-to-uv")
+        logger.info("Migration completed successfully")
+
+    def _ensure_pyproject_exists(self) -> None:
+        pyproject_path = self.repo_path / "pyproject.toml"
+        if pyproject_path.exists():
+            return
+        logger.info("No pyproject.toml found, creating minimal one...")
+        pyproject_data = document()
+        project_name = self.repo_path.name.lower().replace(" ", "-").replace("_", "-").strip("-")
+        project_table = table()
+        project_table["name"] = project_name
+        project_table["version"] = "0.1.0"
+        project_table["requires-python"] = ">=3.8"
+        pyproject_data["project"] = project_table
+        self._write_pyproject(pyproject_data)
+
+    def _ensure_uv_config_present(self) -> None:
         pyproject_data = self._read_pyproject()
         pyproject_data = self._ensure_uv_config(pyproject_data)
         self._write_pyproject(pyproject_data)
 
-        # Generate uv.lock
+    def _generate_uv_lock(self) -> None:
         logger.info("Generating uv.lock...")
-        try:
-            self._run_uv("lock")
-            logger.info("Successfully generated uv.lock")
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to generate uv.lock: {e.stderr}")
-            raise
+        self._run_uv("lock")
+        logger.info("Successfully generated uv.lock")
 
-    def verify(self) -> bool:
-        """Verify UV is working correctly."""
-        # Check that uv.lock exists
-        uv_lock_path = self.repo_path / "uv.lock"
-        if not uv_lock_path.exists():
-            logger.error("uv.lock file not found")
-            return False
-
-        # Try to sync (dry-run) to verify dependencies resolve
-        try:
-            result = self._run_uv("sync", "--dry-run", check=False)
-            if result.returncode == 0:
-                logger.info("UV verification successful")
-                return True
-            logger.warning(f"UV sync dry-run failed: {result.stderr}")
-        except (subprocess.CalledProcessError, OSError, FileNotFoundError) as e:
-            logger.error(f"UV verification failed: {e}")
-        return False
+    def apply(self) -> None:
+        """Create pyproject.toml if needed and migrate using uvx migrate-to-uv."""
+        if not self._uv_is_available():
+            msg = "uv is not installed and could not be installed automatically"
+            raise BoostSkippedError(msg)
+        self._run_migration_if_needed()
+        self._ensure_pyproject_exists()
+        self._ensure_uv_config_present()
+        self._generate_uv_lock()
 
     def commit_message(self) -> str:
         """Generate commit message for UV boost."""

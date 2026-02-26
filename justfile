@@ -38,7 +38,7 @@ test-fast:
 	{{RUN}} python -m {{PYTHON_TEST_COMMAND}} -m "not slow"
 
 test:
-	{{RUN}} python -m {{PYTHON_TEST_COMMAND}}
+	{{RUN}} python -m {{PYTHON_TEST_COMMAND}} -s -q
 
 cover-base:
 	{{RUN}} coverage run -m {{PYTHON_TEST_COMMAND}}

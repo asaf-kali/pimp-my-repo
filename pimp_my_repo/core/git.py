@@ -66,3 +66,7 @@ class GitManager:
             msg = "Git commit SHA is empty"
             raise ValueError(msg)
         return result.stdout.strip()
+
+    def reset_hard(self, sha: str) -> None:
+        """Reset the working tree and index to the given commit SHA."""
+        self._run_git("reset", "--hard", sha)

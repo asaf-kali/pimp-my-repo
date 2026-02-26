@@ -1,10 +1,23 @@
 """Base boost interface."""
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+class BoostSkippedError(Exception):
+    """Raised inside apply() to signal that the boost should be skipped.
+
+    The boost must not have made any changes before raising this exception.
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
 
 
 class Boost(ABC):
@@ -29,18 +42,13 @@ class Boost(ABC):
         return class_name
 
     @abstractmethod
-    def check_preconditions(self) -> bool:
-        """Verify prerequisites for applying this boost."""
-        raise NotImplementedError
-
-    @abstractmethod
     def apply(self) -> None:
-        """Perform the migration/configuration."""
-        raise NotImplementedError
+        """Apply the boost.
 
-    @abstractmethod
-    def verify(self) -> bool:
-        """Run the tool and ensure it works correctly."""
+        Raise BoostSkippedError (before making any changes) if the boost cannot
+        or should not be applied. Any other exception signals a failure; the
+        caller will reset the git state back to before this method was called.
+        """
         raise NotImplementedError
 
     @abstractmethod
