@@ -1,0 +1,23 @@
+---
+alwaysApply: true
+---
+
+## Python Standards
+- **Version:** Always target Python 3.14+ features and syntax.
+- **Arguments:** Always use keyword arguments (**kwargs**) for function calls and definitions.
+- **Modeling:** Use Pydantic models for structured data; never use `tuple`. Break complex types into small, named models.
+- **Type Hinting:** Use strict type hints. Use `typing.Protocol` for unknown third-party interfaces.
+
+## Logic & Control Flow
+- **Guard Clauses:** Use "reverse-if" logic (Early Returns).
+    - *Bad:* `if condition: [long block of code]`
+    - *Good:* `if not condition: return/raise`. Then proceed with logic at the top level of the function.
+- **Indentation:** Maximum of **2 levels** of indentation per function. Use guard clauses and helper functions to maintain this.
+
+## Error Handling
+- Use exceptions. Do not "log and raise"—either handle and log, or propagate.
+
+## Quality & Testing
+- **Tooling:** You must run `just lint` after changes; do not finish until it passes.
+- **Testing:** Use `pytest` fixtures for mocks (avoid patching directly in tests). Use `mock.patch.object` for targeted patching. Use function tests (no class tests).
+- **Privacy:** Accessing private members (`_member`) is permitted **only** in unit tests. Use `# noqa: SLF001` or directory-level linting overrides.

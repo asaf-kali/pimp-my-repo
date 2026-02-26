@@ -14,10 +14,13 @@ from pimp_my_repo.core.boost.uv.detector import detect_dependency_files
 class UvBoost(Boost):
     """Boost for integrating UV dependency management."""
 
+    _uv_version_failed: bool = False
+
     def _uv_is_available(self) -> bool:
         if self._check_uv_installed():
             return True
-        if getattr(self, "_uv_version_failed", False):
+        # uv binary exists but returned non-zero — treat as available (version mismatch, etc.)
+        if self._uv_version_failed:
             return True
         if not self._install_uv():
             return False
@@ -60,6 +63,14 @@ class UvBoost(Boost):
     def _install_uv(self) -> bool:
         """Attempt to install UV automatically."""
         logger.info("UV not found, attempting to install...")
+        if self._try_pip_install():
+            return True
+        if self._try_script_install():
+            return True
+        logger.error("Failed to install UV automatically")
+        return False
+
+    def _try_pip_install(self) -> bool:
         try:
             result = subprocess.run(  # noqa: S603
                 [sys.executable, "-m", "pip", "install", "uv"],
@@ -67,27 +78,30 @@ class UvBoost(Boost):
                 text=True,
                 check=False,
             )
-            if result.returncode == 0:
-                logger.info("Successfully installed UV via pip")
-                return True
         except (subprocess.CalledProcessError, OSError) as e:
             logger.debug(f"Failed to install UV via pip: {e}")
+            return False
+        if result.returncode != 0:
+            return False
+        logger.info("Successfully installed UV via pip")
+        return True
+
+    def _try_script_install(self) -> bool:
+        installer_url = "https://astral.sh/uv/install.sh"
         try:
-            installer_url = "https://astral.sh/uv/install.sh"
             result = subprocess.run(  # noqa: S603
                 ["sh", "-c", f"curl -LsSf {installer_url} | sh"],  # noqa: S607
                 capture_output=True,
                 text=True,
                 check=False,
             )
-            if result.returncode == 0:
-                logger.info("Successfully installed UV via official installer")
-                return True
         except (subprocess.CalledProcessError, OSError) as e:
             logger.debug(f"Failed to install UV via official installer: {e}")
-
-        logger.error("Failed to install UV automatically")
-        return False
+            return False
+        if result.returncode != 0:
+            return False
+        logger.info("Successfully installed UV via official installer")
+        return True
 
     def _read_pyproject(self) -> TOMLDocument:
         """Read existing pyproject.toml if it exists."""
@@ -122,24 +136,24 @@ class UvBoost(Boost):
     def _has_migration_source(self) -> bool:
         """Check if there are any migration sources (Poetry, requirements.txt, etc.)."""
         detected = detect_dependency_files(self.repo_path)
-        pyproject_path = self.repo_path / "pyproject.toml"
 
-        # Check for Poetry
         if detected.poetry_lock:
             return True
-        if pyproject_path.exists():
-            pyproject_data = self._read_pyproject()
-            tool_section: Any = pyproject_data.get("tool", {})
-            if isinstance(tool_section, dict) and tool_section.get("poetry"):
-                return True
-
-        # Check for requirements.txt files
-        requirements_files = list(self.repo_path.rglob("requirements*.txt"))
-        if requirements_files:
+        if detected.pipfile or detected.pipfile_lock:
+            return True
+        if self._has_poetry_config():
             return True
 
-        # Check for other package managers
-        return detected.pipfile or detected.pipfile_lock
+        requirements_files = list(self.repo_path.rglob("requirements*.txt"))
+        return bool(requirements_files)
+
+    def _has_poetry_config(self) -> bool:
+        pyproject_path = self.repo_path / "pyproject.toml"
+        if not pyproject_path.exists():
+            return False
+        pyproject_data = self._read_pyproject()
+        tool_section: Any = pyproject_data.get("tool", {})
+        return isinstance(tool_section, dict) and bool(tool_section.get("poetry"))
 
     def _run_migration_if_needed(self) -> None:
         if not self._has_migration_source():

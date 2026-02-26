@@ -59,15 +59,18 @@ class GitignoreBoost(Boost):
     def _append_gitignore(self, generated: str) -> None:
         """Append generated content to .gitignore, or create it if absent."""
         gitignore_path = self.repo_path / ".gitignore"
-        if gitignore_path.exists():
-            existing = gitignore_path.read_text(encoding="utf-8")
-            if _GITIGNORE_HEADER in existing:
-                logger.info(".gitignore already contains generated content, skipping append")
-                return
-            separator = "" if existing.endswith("\n") else "\n"
-            content = f"{existing}{separator}\n{_GITIGNORE_HEADER}\n{generated}"
-        else:
-            content = f"{_GITIGNORE_HEADER}\n{generated}"
+
+        if not gitignore_path.exists():
+            gitignore_path.write_text(f"{_GITIGNORE_HEADER}\n{generated}", encoding="utf-8")
+            return
+
+        existing = gitignore_path.read_text(encoding="utf-8")
+        if _GITIGNORE_HEADER in existing:
+            logger.info(".gitignore already contains generated content, skipping append")
+            return
+
+        separator = "" if existing.endswith("\n") else "\n"
+        content = f"{existing}{separator}\n{_GITIGNORE_HEADER}\n{generated}"
         gitignore_path.write_text(content, encoding="utf-8")
 
     def _reset_git_tracking(self) -> None:
@@ -84,17 +87,20 @@ class GitignoreBoost(Boost):
         if generated is None:
             logger.warning("Skipping .gitignore boost due to fetch failure")
             return
+
         self._append_gitignore(generated)
         logger.info("Written .gitignore")
+        self._commit_gitignore()
 
-        # Commit the .gitignore addition (only if something changed)
-        self._run_git("add", ".gitignore")
-        if self._run_git("status", "--porcelain", check=False).stdout.strip():
-            self._run_git("commit", "--author", COMMIT_AUTHOR, "--no-verify", "-m", "✨ Add .gitignore")
-
-        # Reset tracking so gitignored files are evicted from the index
         logger.info("Resetting git tracking to honour new .gitignore rules...")
         self._reset_git_tracking()
+
+    def _commit_gitignore(self) -> None:
+        """Commit the .gitignore addition if something changed."""
+        self._run_git("add", ".gitignore")
+        if not self._run_git("status", "--porcelain", check=False).stdout.strip():
+            return
+        self._run_git("commit", "--author", COMMIT_AUTHOR, "--no-verify", "-m", "✨ Add .gitignore")
 
     def commit_message(self) -> str:
         """Generate commit message for Gitignore boost."""

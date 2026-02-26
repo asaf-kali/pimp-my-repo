@@ -2,7 +2,7 @@
 
 import re
 import subprocess
-from typing import Any
+from typing import Any, NamedTuple
 
 from loguru import logger
 from tomlkit import TOMLDocument, dumps, loads, table
@@ -12,21 +12,35 @@ from pimp_my_repo.core.git import COMMIT_AUTHOR
 
 _MAX_MYPY_ITERATIONS = 3
 
-# Type aliases for mypy violation tracking
-ErrorCodes = set[str]
-"""Set of mypy error codes (e.g., {'arg-type', 'return-value'})."""
 
-LineViolations = dict[int, ErrorCodes]
-"""Mapping of line number -> error codes for a single file."""
+class ViolationLocation(NamedTuple):
+    """A single violation location: file path and line number."""
 
-ViolationLocation = tuple[str, int]
-"""Tuple representing a violation location (filepath, line number)."""
+    filepath: str
+    lineno: int
 
-ViolationsByLocation = dict[ViolationLocation, ErrorCodes]
-"""Mapping of (filepath, line number) -> error codes."""
 
-ViolationsByFile = dict[str, LineViolations]
-"""Mapping of filepath -> line violations."""
+type ErrorCodes = set[str]
+type ViolationsByLocation = dict[ViolationLocation, ErrorCodes]
+type LineViolations = dict[int, ErrorCodes]
+type ViolationsByFile = dict[str, LineViolations]
+
+
+def _merge_type_ignore(*, raw_line: str, codes: ErrorCodes) -> str:
+    """Merge type: ignore codes into a source line, preserving or creating the comment."""
+    line = raw_line.rstrip("\n").rstrip("\r")
+    eol = raw_line[len(line) :]
+
+    ignore_match = re.search(r"#\s*type:\s*ignore(?:\[([^\]]*)\])?", line)
+    if not ignore_match:
+        return f"{line}  # type: ignore[{', '.join(sorted(codes))}]{eol}"
+
+    existing_str = ignore_match.group(1) or ""
+    existing = {c.strip() for c in existing_str.split(",") if c.strip()}
+    all_codes = existing | codes
+    new_ignore = f"# type: ignore[{', '.join(sorted(all_codes))}]"
+    merged = re.sub(r"#\s*type:\s*ignore(?:\[([^\]]*)\])?", new_ignore, line)
+    return f"{merged}{eol}"
 
 
 class MypyBoost(Boost):
@@ -86,54 +100,39 @@ class MypyBoost(Boost):
         return data
 
     def _parse_violations(self, output: str) -> ViolationsByLocation:
-        """Parse mypy output into {(filepath, lineno): {error_codes}}."""
+        """Parse mypy output into {ViolationLocation: {error_codes}}."""
         violations: ViolationsByLocation = {}
         for line in output.splitlines():
             match = re.match(r"^(.+?):(\d+):\s+error:.*?\[([^\]]+)\]\s*$", line)
-            if match:
-                filepath = match.group(1)
-                lineno = int(match.group(2))
-                code = match.group(3)
-                key = (filepath, lineno)
-                if key not in violations:
-                    violations[key] = set()
-                violations[key].add(code)
+            if not match:
+                continue
+            key = ViolationLocation(filepath=match.group(1), lineno=int(match.group(2)))
+            violations.setdefault(key, set()).add(match.group(3))
         return violations
 
     def _apply_type_ignores(self, violations: ViolationsByLocation) -> None:
         """Insert or merge # type: ignore[codes] on each violating line."""
         by_file: ViolationsByFile = {}
-        for (filepath, lineno), codes in violations.items():
-            by_file.setdefault(filepath, {})[lineno] = codes
+        for location, codes in violations.items():
+            by_file.setdefault(location.filepath, {})[location.lineno] = codes
 
         for filepath, line_violations in by_file.items():
-            full_path = self.repo_path / filepath
-            if not full_path.exists():
-                logger.warning(f"File not found, skipping: {full_path}")
+            self._apply_type_ignores_to_file(filepath=filepath, line_violations=line_violations)
+
+    def _apply_type_ignores_to_file(self, *, filepath: str, line_violations: LineViolations) -> None:
+        full_path = self.repo_path / filepath
+        if not full_path.exists():
+            logger.warning(f"File not found, skipping: {full_path}")
+            return
+
+        lines = full_path.read_text(encoding="utf-8").splitlines(keepends=True)
+        for lineno, codes in sorted(line_violations.items()):
+            idx = lineno - 1
+            if idx >= len(lines):
                 continue
+            lines[idx] = _merge_type_ignore(raw_line=lines[idx], codes=codes)
 
-            lines = full_path.read_text(encoding="utf-8").splitlines(keepends=True)
-            for lineno, codes in sorted(line_violations.items()):
-                idx = lineno - 1
-                if idx >= len(lines):
-                    continue
-                raw = lines[idx]
-                line = raw.rstrip("\n").rstrip("\r")
-                eol = raw[len(line) :]
-
-                ignore_match = re.search(r"#\s*type:\s*ignore(?:\[([^\]]*)\])?", line)
-                if ignore_match:
-                    existing_str = ignore_match.group(1) or ""
-                    existing = {c.strip() for c in existing_str.split(",") if c.strip()}
-                    all_codes = existing | codes
-                    new_ignore = f"# type: ignore[{', '.join(sorted(all_codes))}]"
-                    line = re.sub(r"#\s*type:\s*ignore(?:\[([^\]]*)\])?", new_ignore, line)
-                else:
-                    line = f"{line}  # type: ignore[{', '.join(sorted(codes))}]"
-
-                lines[idx] = line + eol
-
-            full_path.write_text("".join(lines), encoding="utf-8")
+        full_path.write_text("".join(lines), encoding="utf-8")
 
     def _is_package_in_deps(self, package: str) -> bool:
         """Check if a package is already present in any dependency group in pyproject.toml."""
