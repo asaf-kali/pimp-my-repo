@@ -14,8 +14,7 @@ from typer import Exit
 
 from pimp_my_repo.core.boosts import Boost, BoostSkippedError, get_all_boosts
 from pimp_my_repo.core.result import BoostResult
-from pimp_my_repo.core.tools.boost_tools import BoostTools
-from pimp_my_repo.core.tools.git import GitController
+from pimp_my_repo.core.tools import BoostTools, GitController
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -132,8 +131,7 @@ def _execute_boosts(
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
-        git_controller = GitController(repo_path=repo_path)
-        boost_tools = BoostTools(git_controller=git_controller)
+        boost_tools = BoostTools.create(repo_path)
         for boost_class in boost_classes:
             boost_name = boost_class.get_name()
             task_id = progress.add_task(f"Processing {boost_name} boost...", total=None)

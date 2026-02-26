@@ -27,6 +27,50 @@ class GitController:
             check=check,
         )
 
+    def run(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+        """Run a git command in the repository directory."""
+        return self._run_git(*args, check=check)
+
+    def add(self, *paths: str) -> None:
+        """Stage files for commit."""
+        if paths:
+            self._run_git("add", *paths)
+        else:
+            self._run_git("add", "-A")
+
+    def commit(self, message: str, *, no_verify: bool = True, author: str = COMMIT_AUTHOR) -> bool:
+        """Commit changes with the given message.
+
+        Args:
+            message: Commit message
+            no_verify: Skip git hooks
+            author: Author string (defaults to COMMIT_AUTHOR)
+
+        Returns:
+            True if a commit was created, False if there was nothing to commit.
+
+        """
+        self._run_git("add", "-A")
+        if self.is_clean():
+            return False
+        commit_args = ["commit", "--author", author, "-m", message]
+        if no_verify:
+            commit_args.append("--no-verify")
+        self._run_git(*commit_args)
+        return True
+
+    def status(self, *, porcelain: bool = False) -> subprocess.CompletedProcess[str]:
+        """Get git status."""
+        args = ["status"]
+        if porcelain:
+            args.append("--porcelain")
+        return self._run_git(*args, check=False)
+
+    def reset_tracking(self) -> None:
+        """Untrack all files then re-add, so gitignored files leave the index."""
+        self._run_git("rm", "-r", "--cached", ".")
+        self._run_git("add", "-A")
+
     def is_clean(self) -> bool:
         """Check if git working directory is clean."""
         result = self._run_git("status", "--porcelain", check=False)
@@ -42,20 +86,6 @@ class GitController:
         else:
             # Create new branch
             self._run_git("checkout", "-b", branch_name)
-
-    def commit(self, message: str, *, no_verify: bool = True) -> bool:
-        """Commit changes with the given message.
-
-        Returns True if a commit was created, False if there was nothing to commit.
-        """
-        self._run_git("add", "-A")
-        if self.is_clean():
-            return False
-        commit_args = ["commit", "--author", COMMIT_AUTHOR, "-m", message]
-        if no_verify:
-            commit_args.append("--no-verify")
-        self._run_git(*commit_args)
-        return True
 
     def get_origin_url(self) -> str:
         """Get the git origin URL."""

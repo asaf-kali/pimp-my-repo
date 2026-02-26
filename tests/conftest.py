@@ -82,5 +82,5 @@ def git_controller(mock_repo: RepositoryController) -> GitController:
 
 
 @pytest.fixture
-def boost_tools(git_controller: GitController) -> BoostTools:
-    return BoostTools(git_controller=git_controller)
+def boost_tools(mock_repo: RepositoryController) -> BoostTools:
+    return BoostTools.create(mock_repo.path)

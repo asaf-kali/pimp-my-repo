@@ -6,17 +6,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from loguru import logger
 from tomlkit import TOMLDocument, table
 
-from pimp_my_repo.core.boosts.add_package import (
-    add_package_with_uv,
-    read_pyproject,
-    run_git,
-    run_uv,
-    verify_pyproject_present,
-    verify_uv_present,
-    write_pyproject,
-)
 from pimp_my_repo.core.boosts.base import Boost
-from pimp_my_repo.core.tools.git import COMMIT_AUTHOR
 
 if TYPE_CHECKING:
     import subprocess
@@ -64,23 +54,11 @@ class MypyBoost(Boost):
         self._apply_ignores()
 
     def _verify_preconditions(self) -> None:
-        self._verify_uv_present()
-        self._verify_pyproject_present()
-
-    def _run_uv(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-        return run_uv(self.tools.repo_controller.path, *args, check=check)
-
-    def _run_git(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-        return run_git(self.tools.repo_controller.path, *args, check=check)
+        self.tools.uv.verify_present()
+        self.tools.pyproject.verify_present()
 
     def _run_mypy(self) -> subprocess.CompletedProcess[str]:
-        return self._run_uv("run", "mypy", ".", check=False)
-
-    def _read_pyproject(self) -> TOMLDocument:
-        return read_pyproject(self.tools.repo_controller.path)
-
-    def _write_pyproject(self, data: TOMLDocument) -> None:
-        write_pyproject(self.tools.repo_controller.path, data)
+        return self.tools.uv.run("run", "mypy", ".", check=False)
 
     def _ensure_mypy_config(self, data: TOMLDocument) -> TOMLDocument:
         if "tool" not in data:
@@ -113,7 +91,7 @@ class MypyBoost(Boost):
             self._apply_type_ignores_to_file(filepath=filepath, line_violations=line_violations)
 
     def _apply_type_ignores_to_file(self, *, filepath: str, line_violations: LineViolations) -> None:
-        full_path = self.tools.repo_controller.path / filepath
+        full_path = self.tools.repo_path / filepath
         if not full_path.exists():
             logger.warning(f"File not found, skipping: {full_path}")
             return
@@ -148,34 +126,25 @@ class MypyBoost(Boost):
 
         logger.info(f"Found {len(violations)} violations, applying type: ignore comments...")
         self._apply_type_ignores(violations)
-        self._run_git("add", "-A")
-        if self._run_git("status", "--porcelain", check=False).stdout.strip():
-            self._run_git("commit", "--author", COMMIT_AUTHOR, "--no-verify", "-m", "✅ Silence mypy violations")
+        self.tools.git.add()
+        if self.tools.git.status(porcelain=True).stdout.strip():
+            self.tools.git.commit("✅ Silence mypy violations", no_verify=True)
         return True
 
     def _configure_mypy(self) -> None:
         self._add_mypy()
         logger.info("Configuring [tool.mypy] strict = true in pyproject.toml...")
-        pyproject_data = self._read_pyproject()
+        pyproject_data = self.tools.pyproject.read()
         pyproject_data = self._ensure_mypy_config(pyproject_data)
-        self._write_pyproject(pyproject_data)
+        self.tools.pyproject.write(pyproject_data)
         self._commit_config()
 
     def _commit_config(self) -> None:
-        self._run_git("add", "-A")
-        if not self._run_git("status", "--porcelain", check=False).stdout.strip():
-            return
-        self._run_git("commit", "--author", COMMIT_AUTHOR, "--no-verify", "-m", "🔧 Configure mypy with strict mode")
-        logger.info("Committed mypy configuration")
+        if self.tools.git.commit("🔧 Configure mypy with strict mode", no_verify=True):
+            logger.info("Committed mypy configuration")
 
     def _add_mypy(self) -> None:
-        add_package_with_uv(self.tools.repo_controller.path, "mypy", dev=True)
-
-    def _verify_pyproject_present(self) -> None:
-        verify_pyproject_present(self.tools.repo_controller.path)
-
-    def _verify_uv_present(self) -> None:
-        verify_uv_present(self.tools.repo_controller.path)
+        self.tools.uv.add_package("mypy", dev=True)
 
     def commit_message(self) -> str:
         """Generate commit message for Mypy boost."""

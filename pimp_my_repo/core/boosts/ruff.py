@@ -6,17 +6,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from loguru import logger
 from tomlkit import TOMLDocument, table
 
-from pimp_my_repo.core.boosts.add_package import (
-    add_package_with_uv,
-    read_pyproject,
-    run_git,
-    run_uv,
-    verify_pyproject_present,
-    verify_uv_present,
-    write_pyproject,
-)
 from pimp_my_repo.core.boosts.base import Boost
-from pimp_my_repo.core.tools.git import COMMIT_AUTHOR
 
 if TYPE_CHECKING:
     import subprocess
@@ -57,35 +47,23 @@ def _merge_noqa(*, raw_line: str, codes: ErrorCodes) -> str:
 class RuffBoost(Boost):
     """Boost for integrating Ruff linter and formatter."""
 
-    def _run_uv(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-        return run_uv(self.tools.repo_controller.path, *args, check=check)
-
-    def _run_git(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-        return run_git(self.tools.repo_controller.path, *args, check=check)
-
     def _has_uncommitted_changes(self) -> bool:
-        result = self._run_git("status", "--porcelain", check=False)
+        result = self.tools.git.status(porcelain=True)
         return bool(result.stdout.strip())
 
     def _commit_if_changes(self, message: str) -> None:
         """Stage all changes and commit only if there is something to commit."""
-        self._run_git("add", "-A")
+        self.tools.git.add()
         if self._has_uncommitted_changes():
-            self._run_git("commit", "--author", COMMIT_AUTHOR, "--no-verify", "-m", message)
+            self.tools.git.commit(message, no_verify=True)
         else:
             logger.debug(f"Nothing to commit for: {message!r}")
 
     def _run_ruff_format(self) -> subprocess.CompletedProcess[str]:
-        return self._run_uv("run", "ruff", "format", ".", check=False)
+        return self.tools.uv.run("run", "ruff", "format", ".", check=False)
 
     def _run_ruff_check(self) -> subprocess.CompletedProcess[str]:
-        return self._run_uv("run", "ruff", "check", ".", check=False)
-
-    def _read_pyproject(self) -> TOMLDocument:
-        return read_pyproject(self.tools.repo_controller.path)
-
-    def _write_pyproject(self, data: TOMLDocument) -> None:
-        write_pyproject(self.tools.repo_controller.path, data)
+        return self.tools.uv.run("run", "ruff", "check", ".", check=False)
 
     def _ensure_ruff_config(self, data: TOMLDocument) -> TOMLDocument:
         if "tool" not in data:
@@ -122,7 +100,7 @@ class RuffBoost(Boost):
             self._apply_noqa_to_file(filepath=filepath, line_violations=line_violations)
 
     def _apply_noqa_to_file(self, *, filepath: str, line_violations: LineViolations) -> None:
-        full_path = self.tools.repo_controller.path / filepath
+        full_path = self.tools.repo_path / filepath
         if not full_path.exists():
             logger.warning(f"File not found, skipping: {full_path}")
             return
@@ -138,16 +116,16 @@ class RuffBoost(Boost):
 
     def apply(self) -> None:
         """Add ruff, configure it, auto-format, then suppress all check violations."""
-        verify_uv_present(self.tools.repo_controller.path)
-        verify_pyproject_present(self.tools.repo_controller.path)
+        self.tools.uv.verify_present()
+        self.tools.pyproject.verify_present()
 
         # Phase 1: add dep + configure
-        add_package_with_uv(self.tools.repo_controller.path, "ruff", group="lint")
+        self.tools.uv.add_package("ruff", group="lint")
 
         logger.info("Configuring [tool.ruff.lint] select = ['ALL'] in pyproject.toml...")
-        pyproject_data = self._read_pyproject()
+        pyproject_data = self.tools.pyproject.read()
         pyproject_data = self._ensure_ruff_config(pyproject_data)
-        self._write_pyproject(pyproject_data)
+        self.tools.pyproject.write(pyproject_data)
 
         self._commit_if_changes("🔧 Configure ruff")
 
