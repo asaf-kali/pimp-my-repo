@@ -1,12 +1,12 @@
 """Boost modules for pimp-my-repo."""
 
-from pimp_my_repo.core.boost.base import Boost, BoostSkippedError
-from pimp_my_repo.core.boost.gitignore import GitignoreBoost
-from pimp_my_repo.core.boost.justfile import JustfileBoost
-from pimp_my_repo.core.boost.mypy import MypyBoost
-from pimp_my_repo.core.boost.pre_commit import PreCommitBoost
-from pimp_my_repo.core.boost.ruff import RuffBoost
-from pimp_my_repo.core.boost.uv import UvBoost
+from pimp_my_repo.core.boosts.base import Boost, BoostSkippedError
+from pimp_my_repo.core.boosts.gitignore import GitignoreBoost
+from pimp_my_repo.core.boosts.justfile import JustfileBoost
+from pimp_my_repo.core.boosts.mypy import MypyBoost
+from pimp_my_repo.core.boosts.pre_commit import PreCommitBoost
+from pimp_my_repo.core.boosts.ruff import RuffBoost
+from pimp_my_repo.core.boosts.uv import UvBoost
 
 __all__ = [
     "Boost",

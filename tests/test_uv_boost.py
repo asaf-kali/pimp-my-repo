@@ -7,18 +7,19 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pimp_my_repo.core.boost.base import BoostSkippedError
-from pimp_my_repo.core.boost.uv.detector import (
+from pimp_my_repo.core.boosts import BoostSkippedError
+from pimp_my_repo.core.boosts.uv.detector import (
     detect_all,
     detect_dependency_files,
     detect_existing_configs,
 )
-from pimp_my_repo.core.boost.uv.uv import UvBoost
+from pimp_my_repo.core.boosts.uv.uv import UvBoost
 
 if TYPE_CHECKING:
     from collections.abc import Generator
 
-    from tests.utils.repo_controller import RepositoryController
+    from pimp_my_repo.core.tools.boost_tools import BoostTools
+    from tests.repo_controller import RepositoryController
 
 
 # =============================================================================
@@ -140,8 +141,8 @@ def test_detect_all_integration_with_files(mock_repo: RepositoryController) -> N
 
 
 @pytest.fixture
-def uv_boost(mock_repo: RepositoryController) -> UvBoost:
-    return UvBoost(mock_repo.path)
+def uv_boost(boost_tools: BoostTools) -> UvBoost:
+    return UvBoost(boost_tools)
 
 
 @pytest.fixture

@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from pimp_my_repo.core.tools import BoostTools
 
 
 class BoostSkippedError(Exception):
@@ -23,9 +23,9 @@ class BoostSkippedError(Exception):
 class Boost(ABC):
     """Abstract base class for all boosts."""
 
-    def __init__(self, repo_path: Path) -> None:
+    def __init__(self, tools: BoostTools) -> None:
         """Initialize boost with repository path."""
-        self.repo_path = repo_path
+        self.tools = tools
 
     @classmethod
     def get_name(cls) -> str:

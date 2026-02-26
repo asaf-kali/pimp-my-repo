@@ -1,14 +1,25 @@
 """Ruff boost implementation."""
 
 import re
-import subprocess
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from loguru import logger
-from tomlkit import TOMLDocument, dumps, loads, table
+from tomlkit import TOMLDocument, table
 
-from pimp_my_repo.core.boost.base import Boost, BoostSkippedError
-from pimp_my_repo.core.git import COMMIT_AUTHOR
+from pimp_my_repo.core.boosts.add_package import (
+    add_package_with_uv,
+    read_pyproject,
+    run_git,
+    run_uv,
+    verify_pyproject_present,
+    verify_uv_present,
+    write_pyproject,
+)
+from pimp_my_repo.core.boosts.base import Boost
+from pimp_my_repo.core.tools.git import COMMIT_AUTHOR
+
+if TYPE_CHECKING:
+    import subprocess
 
 _MAX_RUFF_ITERATIONS = 3
 
@@ -47,24 +58,10 @@ class RuffBoost(Boost):
     """Boost for integrating Ruff linter and formatter."""
 
     def _run_uv(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-        cmd = ["uv", *args]
-        return subprocess.run(  # noqa: S603
-            cmd,
-            cwd=self.repo_path,
-            capture_output=True,
-            text=True,
-            check=check,
-        )
+        return run_uv(self.tools.repo_controller.path, *args, check=check)
 
     def _run_git(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-        cmd = ["git", *args]
-        return subprocess.run(  # noqa: S603
-            cmd,
-            cwd=self.repo_path,
-            capture_output=True,
-            text=True,
-            check=check,
-        )
+        return run_git(self.tools.repo_controller.path, *args, check=check)
 
     def _has_uncommitted_changes(self) -> bool:
         result = self._run_git("status", "--porcelain", check=False)
@@ -85,14 +82,10 @@ class RuffBoost(Boost):
         return self._run_uv("run", "ruff", "check", ".", check=False)
 
     def _read_pyproject(self) -> TOMLDocument:
-        pyproject_path = self.repo_path / "pyproject.toml"
-        with pyproject_path.open(encoding="utf-8") as f:
-            return loads(f.read())
+        return read_pyproject(self.tools.repo_controller.path)
 
     def _write_pyproject(self, data: TOMLDocument) -> None:
-        pyproject_path = self.repo_path / "pyproject.toml"
-        with pyproject_path.open("w", encoding="utf-8") as f:
-            f.write(dumps(data))
+        write_pyproject(self.tools.repo_controller.path, data)
 
     def _ensure_ruff_config(self, data: TOMLDocument) -> TOMLDocument:
         if "tool" not in data:
@@ -129,7 +122,7 @@ class RuffBoost(Boost):
             self._apply_noqa_to_file(filepath=filepath, line_violations=line_violations)
 
     def _apply_noqa_to_file(self, *, filepath: str, line_violations: LineViolations) -> None:
-        full_path = self.repo_path / filepath
+        full_path = self.tools.repo_controller.path / filepath
         if not full_path.exists():
             logger.warning(f"File not found, skipping: {full_path}")
             return
@@ -143,61 +136,13 @@ class RuffBoost(Boost):
 
         full_path.write_text("".join(lines), encoding="utf-8")
 
-    def _is_package_in_deps(self, package: str) -> bool:
-        """Check if a package is already present in any dependency group in pyproject.toml."""
-        try:
-            data = self._read_pyproject()
-        except (OSError, ValueError):  # fmt: skip
-            return False
-        package_lower = package.lower()
-        for deps in data.get("dependency-groups", {}).values():
-            for dep in deps:
-                if isinstance(dep, str) and re.split(r"[>=<!@\s\[]", dep)[0].lower() == package_lower:
-                    return True
-        for deps in data.get("project", {}).get("optional-dependencies", {}).values():
-            for dep in deps:
-                if isinstance(dep, str) and re.split(r"[>=<!@\s\[]", dep)[0].lower() == package_lower:
-                    return True
-        return False
-
-    def _add_dep_to_pyproject(self, group: str, package: str) -> None:
-        """Add a package to a dependency group directly in pyproject.toml."""
-        data = self._read_pyproject()
-        if "dependency-groups" not in data:
-            data["dependency-groups"] = table()
-        dep_groups: Any = data["dependency-groups"]
-        if group not in dep_groups:
-            dep_groups[group] = [package]
-        else:
-            dep_groups[group].append(package)
-        self._write_pyproject(data)
-
     def apply(self) -> None:
         """Add ruff, configure it, auto-format, then suppress all check violations."""
-        try:
-            result = self._run_uv("--version", check=False)
-            if result.returncode != 0:
-                msg = "uv is not available"
-                raise BoostSkippedError(msg)
-        except (FileNotFoundError, OSError) as e:
-            msg = "uv is not installed"
-            raise BoostSkippedError(msg) from e
-
-        if not (self.repo_path / "pyproject.toml").exists():
-            msg = "No pyproject.toml found"
-            raise BoostSkippedError(msg)
+        verify_uv_present(self.tools.repo_controller.path)
+        verify_pyproject_present(self.tools.repo_controller.path)
 
         # Phase 1: add dep + configure
-        if self._is_package_in_deps("ruff"):
-            logger.info("ruff already in dependencies, skipping uv add")
-        else:
-            logger.info("Adding ruff dev dependency...")
-            try:
-                self._run_uv("add", "--group", "lint", "ruff")
-            except subprocess.CalledProcessError:
-                logger.warning("uv add failed, editing pyproject.toml directly")
-                self._add_dep_to_pyproject("lint", "ruff")
-                self._run_uv("lock", check=False)
+        add_package_with_uv(self.tools.repo_controller.path, "ruff", group="lint")
 
         logger.info("Configuring [tool.ruff.lint] select = ['ALL'] in pyproject.toml...")
         pyproject_data = self._read_pyproject()
@@ -232,6 +177,7 @@ class RuffBoost(Boost):
 
         logger.info(f"Found {len(violations)} violations, applying noqa comments...")
         self._apply_noqa(violations)
+        self._commit_if_changes("✅ Silence ruff violations")
         return True
 
     def commit_message(self) -> str:

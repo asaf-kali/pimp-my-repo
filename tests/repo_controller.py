@@ -1,14 +1,10 @@
 """Utility for creating mock git repositories in tests."""
 
 import subprocess
-from pathlib import Path
-from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING
 
-import pytest
-
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from pathlib import Path
 
 
 class RepositoryController:
@@ -63,29 +59,3 @@ class RepositoryController:
         """Return the number of commits on HEAD."""
         result = self._run_git("rev-list", "--count", "HEAD")
         return int(result.stdout.strip())
-
-
-@pytest.fixture
-def mock_repo() -> Generator[RepositoryController]:
-    """Create a temporary directory with an initialized git repository."""
-    tmp_dir = TemporaryDirectory()
-    tmp_path = Path(tmp_dir.name)
-
-    # Initialize git repo
-    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)  # noqa: S607
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],  # noqa: S607
-        cwd=tmp_path,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test User"],  # noqa: S607
-        cwd=tmp_path,
-        check=True,
-        capture_output=True,
-    )
-    repo = RepositoryController(tmp_path)
-    repo.add_and_commit(relative_path="README.md", content="# Test", message="Initial commit")
-    yield repo
-    tmp_dir.cleanup()

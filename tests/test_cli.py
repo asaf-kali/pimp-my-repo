@@ -7,7 +7,7 @@ import pytest
 from pimp_my_repo.cli.main import main
 
 if TYPE_CHECKING:
-    from tests.utils.repo_controller import RepositoryController
+    from tests.repo_controller import RepositoryController
 
 
 @pytest.mark.slow

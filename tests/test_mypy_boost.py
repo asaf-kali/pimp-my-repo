@@ -1,35 +1,35 @@
 """Tests for Mypy boost implementation."""
 
-import subprocess
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pimp_my_repo.core.boost.base import BoostSkippedError
-from pimp_my_repo.core.boost.mypy import _MAX_MYPY_ITERATIONS, MypyBoost, ViolationLocation
+from pimp_my_repo.core.boosts.base import BoostSkippedError
+from pimp_my_repo.core.boosts.mypy import _MAX_MYPY_ITERATIONS, MypyBoost, ViolationLocation
 
 if TYPE_CHECKING:
     from collections.abc import Generator
 
+    from pimp_my_repo.core.tools.boost_tools import BoostTools
     from tests.conftest import SubprocessResultFactory
-    from tests.utils.repo_controller import RepositoryController
+    from tests.repo_controller import RepositoryController
 
 _vl = ViolationLocation
 
 
 @pytest.fixture
-def mypy_boost(mock_repo: RepositoryController) -> MypyBoost:
+def mypy_boost(boost_tools: BoostTools) -> MypyBoost:
     """Create a MypyBoost instance without pyproject.toml."""
-    return MypyBoost(mock_repo.path)
+    return MypyBoost(boost_tools)
 
 
 @pytest.fixture
-def mypy_boost_with_pyproject(mock_repo: RepositoryController) -> MypyBoost:
+def mypy_boost_with_pyproject(repo_controller: RepositoryController, boost_tools: BoostTools) -> MypyBoost:
     """Create a MypyBoost instance with a minimal pyproject.toml."""
-    mock_repo.add_file("pyproject.toml", "[project]\nname = 'test'\nversion = '0.1.0'\n")
-    return MypyBoost(mock_repo.path)
+    repo_controller.add_file("pyproject.toml", "[project]\nname = 'test'\nversion = '0.1.0'\n")
+    return MypyBoost(boost_tools)
 
 
 @dataclass
@@ -70,7 +70,7 @@ def test_raises_skip_when_uv_nonzero(
     mypy_boost_with_pyproject: MypyBoost, fail_result: SubprocessResultFactory
 ) -> None:
     with (
-        patch.object(mypy_boost_with_pyproject, "_run_uv", return_value=fail_result()),
+        patch("pimp_my_repo.core.boosts.add_package.run_uv", return_value=fail_result()),
         pytest.raises(BoostSkippedError, match="uv is not available"),
     ):
         mypy_boost_with_pyproject.apply()
@@ -78,7 +78,7 @@ def test_raises_skip_when_uv_nonzero(
 
 def test_raises_skip_when_uv_raises_file_not_found(mypy_boost_with_pyproject: MypyBoost) -> None:
     with (
-        patch.object(mypy_boost_with_pyproject, "_run_uv", side_effect=FileNotFoundError),
+        patch("pimp_my_repo.core.boosts.add_package.run_uv", side_effect=FileNotFoundError),
         pytest.raises(BoostSkippedError, match="uv is not installed"),
     ):
         mypy_boost_with_pyproject.apply()
@@ -86,7 +86,7 @@ def test_raises_skip_when_uv_raises_file_not_found(mypy_boost_with_pyproject: My
 
 def test_raises_skip_when_uv_raises_oserror(mypy_boost_with_pyproject: MypyBoost) -> None:
     with (
-        patch.object(mypy_boost_with_pyproject, "_run_uv", side_effect=OSError),
+        patch("pimp_my_repo.core.boosts.add_package.run_uv", side_effect=OSError),
         pytest.raises(BoostSkippedError, match="uv is not installed"),
     ):
         mypy_boost_with_pyproject.apply()
@@ -281,34 +281,9 @@ def test_sets_strict_true_on_existing_mypy_section(mock_repo: RepositoryControll
 
 
 def test_apply_calls_uv_add_mypy(patched_mypy_apply: PatchedMypyApply) -> None:
-    patched_mypy_apply.boost.apply()
-    patched_mypy_apply.mock_uv.assert_any_call("add", "--dev", "mypy")
-
-
-def test_apply_falls_back_to_manual_add_when_uv_add_fails(
-    mock_repo: RepositoryController, mypy_boost_with_pyproject: MypyBoost
-) -> None:
-    """When uv add fails (e.g., package can't be built), fall back to manual pyproject.toml edit."""
-    with (
-        patch.object(mypy_boost_with_pyproject, "_run_uv") as mock_uv,
-        patch.object(mypy_boost_with_pyproject, "_run_git"),
-        patch.object(mypy_boost_with_pyproject, "_run_mypy", return_value=MagicMock(returncode=0)),
-    ):
-        # First call (check uv version) succeeds, second call (uv add) fails
-        mock_uv.side_effect = [
-            MagicMock(returncode=0),  # uv --version
-            subprocess.CalledProcessError(1, ["uv", "add", "--dev", "mypy"]),  # uv add fails
-            MagicMock(returncode=0),  # uv lock
-        ]
-        mypy_boost_with_pyproject.apply()
-
-    # Should have called uv lock after manual edit
-    lock_calls = [c for c in mock_uv.call_args_list if c.args[0] == "lock"]
-    assert len(lock_calls) >= 1
-
-    # Should have added mypy to pyproject.toml manually
-    content = (mock_repo.path / "pyproject.toml").read_text()
-    assert "mypy" in content.lower()
+    with patch("pimp_my_repo.core.boosts.add_package.add_package_with_uv") as mock_add:
+        patched_mypy_apply.boost.apply()
+        mock_add.assert_called_once_with(patched_mypy_apply.boost.tools.repo_controller.path, "mypy", dev=True)
 
 
 def test_apply_writes_strict_config_to_pyproject(

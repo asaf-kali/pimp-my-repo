@@ -9,11 +9,11 @@ if TYPE_CHECKING:
 COMMIT_AUTHOR = "pmr <pimp-my-repo@pypi.org>"
 
 
-class GitManager:
+class GitController:
     """Manages git operations for the repository."""
 
     def __init__(self, repo_path: Path) -> None:
-        """Initialize GitManager with repository path."""
+        """Initialize GitController with repository path."""
         self.repo_path = repo_path
 
     def _run_git(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:

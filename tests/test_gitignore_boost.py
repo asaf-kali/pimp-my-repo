@@ -6,19 +6,20 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from pimp_my_repo.core.boost.gitignore import (
+from pimp_my_repo.core.boosts.gitignore import (
     _ALWAYS_TEMPLATES,
     _GITIGNORE_HEADER,
     GitignoreBoost,
 )
 
 if TYPE_CHECKING:
-    from tests.utils.repo_controller import RepositoryController
+    from pimp_my_repo.core.tools.boost_tools import BoostTools
+    from tests.repo_controller import RepositoryController
 
 
 @pytest.fixture
-def gitignore_boost(mock_repo: RepositoryController) -> GitignoreBoost:
-    return GitignoreBoost(mock_repo.path)
+def gitignore_boost(boost_tools: BoostTools) -> GitignoreBoost:
+    return GitignoreBoost(boost_tools)
 
 
 # =============================================================================
@@ -129,7 +130,9 @@ def test_url_contains_all_templates(gitignore_boost: GitignoreBoost) -> None:
 
     with patch("urllib.request.urlopen", return_value=mock_response) as mock_open:
         gitignore_boost._fetch_gitignore(["python", "macos", "linux"])  # noqa: SLF001
-        called_url = mock_open.call_args[0][0]
+        called_request = mock_open.call_args[0][0]
+        # Handle both Request object and string URL
+        called_url = called_request.full_url if hasattr(called_request, "full_url") else str(called_request)
     assert "python" in called_url
     assert "macos" in called_url
     assert "linux" in called_url

@@ -7,8 +7,8 @@ from typing import Any
 from loguru import logger
 from tomlkit import TOMLDocument, document, dumps, loads, table
 
-from pimp_my_repo.core.boost.base import Boost, BoostSkippedError
-from pimp_my_repo.core.boost.uv.detector import detect_dependency_files
+from pimp_my_repo.core.boosts.base import Boost, BoostSkippedError
+from pimp_my_repo.core.boosts.uv.detector import detect_dependency_files
 
 
 class UvBoost(Boost):
@@ -31,7 +31,7 @@ class UvBoost(Boost):
         cmd = ["uv", *args]
         return subprocess.run(  # noqa: S603
             cmd,
-            cwd=self.repo_path,
+            cwd=self.tools.repo_controller.path,
             capture_output=True,
             text=True,
             check=check,
@@ -42,7 +42,7 @@ class UvBoost(Boost):
         cmd = ["uvx", *args]
         return subprocess.run(  # noqa: S603
             cmd,
-            cwd=self.repo_path,
+            cwd=self.tools.repo_controller.path,
             capture_output=True,
             text=True,
             check=check,
@@ -105,7 +105,7 @@ class UvBoost(Boost):
 
     def _read_pyproject(self) -> TOMLDocument:
         """Read existing pyproject.toml if it exists."""
-        pyproject_path = self.repo_path / "pyproject.toml"
+        pyproject_path = self.tools.repo_controller.path / "pyproject.toml"
         if not pyproject_path.exists():
             return document()
 
@@ -118,7 +118,7 @@ class UvBoost(Boost):
 
     def _write_pyproject(self, data: TOMLDocument) -> None:
         """Write pyproject.toml file."""
-        pyproject_path = self.repo_path / "pyproject.toml"
+        pyproject_path = self.tools.repo_controller.path / "pyproject.toml"
         with pyproject_path.open("w", encoding="utf-8") as f:
             f.write(dumps(data))
 
@@ -135,7 +135,7 @@ class UvBoost(Boost):
 
     def _has_migration_source(self) -> bool:
         """Check if there are any migration sources (Poetry, requirements.txt, etc.)."""
-        detected = detect_dependency_files(self.repo_path)
+        detected = detect_dependency_files(self.tools.repo_controller.path)
 
         if detected.poetry_lock:
             return True
@@ -144,11 +144,11 @@ class UvBoost(Boost):
         if self._has_poetry_config():
             return True
 
-        requirements_files = list(self.repo_path.rglob("requirements*.txt"))
+        requirements_files = list(self.tools.repo_controller.path.rglob("requirements*.txt"))
         return bool(requirements_files)
 
     def _has_poetry_config(self) -> bool:
-        pyproject_path = self.repo_path / "pyproject.toml"
+        pyproject_path = self.tools.repo_controller.path / "pyproject.toml"
         if not pyproject_path.exists():
             return False
         pyproject_data = self._read_pyproject()
@@ -163,12 +163,12 @@ class UvBoost(Boost):
         logger.info("Migration completed successfully")
 
     def _ensure_pyproject_exists(self) -> None:
-        pyproject_path = self.repo_path / "pyproject.toml"
+        pyproject_path = self.tools.repo_controller.path / "pyproject.toml"
         if pyproject_path.exists():
             return
         logger.info("No pyproject.toml found, creating minimal one...")
         pyproject_data = document()
-        project_name = self.repo_path.name.lower().replace(" ", "-").replace("_", "-").strip("-")
+        project_name = self.tools.repo_controller.path.name.lower().replace(" ", "-").replace("_", "-").strip("-")
         project_table = table()
         project_table["name"] = project_name
         project_table["version"] = "0.1.0"
