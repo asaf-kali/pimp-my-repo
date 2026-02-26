@@ -1,5 +1,6 @@
 """Tests for Mypy boost implementation."""
 
+import subprocess
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
@@ -282,6 +283,32 @@ def test_sets_strict_true_on_existing_mypy_section(mock_repo: RepositoryControll
 def test_apply_calls_uv_add_mypy(patched_mypy_apply: PatchedMypyApply) -> None:
     patched_mypy_apply.boost.apply()
     patched_mypy_apply.mock_uv.assert_any_call("add", "--dev", "mypy")
+
+
+def test_apply_falls_back_to_manual_add_when_uv_add_fails(
+    mock_repo: RepositoryController, mypy_boost_with_pyproject: MypyBoost
+) -> None:
+    """When uv add fails (e.g., package can't be built), fall back to manual pyproject.toml edit."""
+    with (
+        patch.object(mypy_boost_with_pyproject, "_run_uv") as mock_uv,
+        patch.object(mypy_boost_with_pyproject, "_run_git"),
+        patch.object(mypy_boost_with_pyproject, "_run_mypy", return_value=MagicMock(returncode=0)),
+    ):
+        # First call (check uv version) succeeds, second call (uv add) fails
+        mock_uv.side_effect = [
+            MagicMock(returncode=0),  # uv --version
+            subprocess.CalledProcessError(1, ["uv", "add", "--dev", "mypy"]),  # uv add fails
+            MagicMock(returncode=0),  # uv lock
+        ]
+        mypy_boost_with_pyproject.apply()
+
+    # Should have called uv lock after manual edit
+    lock_calls = [c for c in mock_uv.call_args_list if c.args[0] == "lock"]
+    assert len(lock_calls) >= 1
+
+    # Should have added mypy to pyproject.toml manually
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert "mypy" in content.lower()
 
 
 def test_apply_writes_strict_config_to_pyproject(

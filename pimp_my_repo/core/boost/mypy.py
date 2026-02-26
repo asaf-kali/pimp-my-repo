@@ -206,7 +206,12 @@ class MypyBoost(Boost):
             logger.info("mypy already in dependencies, skipping uv add")
             return
         logger.info("Adding mypy dev dependency...")
-        self._run_uv("add", "--dev", "mypy")
+        try:
+            self._run_uv("add", "--dev", "mypy")
+        except subprocess.CalledProcessError:
+            logger.warning("uv add failed, editing pyproject.toml directly")
+            self._add_dep_to_pyproject("dev", "mypy")
+            self._run_uv("lock", check=False)
 
     def _verify_pyproject_present(self) -> None:
         if not (self.repo_path / "pyproject.toml").exists():

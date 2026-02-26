@@ -85,8 +85,8 @@ class GitignoreBoost(Boost):
 
         generated = self._fetch_gitignore(templates)
         if generated is None:
-            logger.warning("Skipping .gitignore boost due to fetch failure")
-            return
+            msg = "Could not fetch .gitignore content from gitignore.io"
+            raise RuntimeError(msg)
 
         self._append_gitignore(generated)
         logger.info("Written .gitignore")

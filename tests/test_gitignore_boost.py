@@ -226,10 +226,12 @@ def test_apply_resets_tracking(gitignore_boost: GitignoreBoost) -> None:
     assert ("add", "-A") in all_args
 
 
-def test_apply_skips_when_fetch_fails(mock_repo: RepositoryController, gitignore_boost: GitignoreBoost) -> None:
+def test_apply_fails_when_fetch_fails(mock_repo: RepositoryController, gitignore_boost: GitignoreBoost) -> None:
+    """When gitignore.io API fails, boost should fail (not skip)."""
     with (
         patch.object(gitignore_boost, "_fetch_gitignore", return_value=None),
         patch.object(gitignore_boost, "_run_git") as mock_git,
+        pytest.raises(RuntimeError, match=r"Could not fetch \.gitignore"),
     ):
         gitignore_boost.apply()
     mock_git.assert_not_called()
