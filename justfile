@@ -21,7 +21,7 @@ install-dev: install-all
 
 install: install-dev lint cover-base
 
-# UV
+# Depndencies
 
 lock:
 	uv lock
@@ -29,7 +29,7 @@ lock:
 lock-upgrade:
 	uv lock --upgrade
 
-lock-check:
+check-lock:
 	uv lock --check
 
 # Test
