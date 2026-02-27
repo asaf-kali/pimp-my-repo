@@ -239,9 +239,9 @@ def test_type_ignore_preserves_existing_line_content(mock_repo: RepositoryContro
 
 def test_adds_mypy_section_when_missing(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
     mock_repo.add_file("pyproject.toml", "[project]\nname = 'test'\n")
-    data = mypy_boost._read_pyproject()  # noqa: SLF001
+    data = mypy_boost.tools.pyproject.read()
     data = mypy_boost._ensure_mypy_config(data)  # noqa: SLF001
-    mypy_boost._write_pyproject(data)  # noqa: SLF001
+    mypy_boost.tools.pyproject.write(data)
     content = (mock_repo.path / "pyproject.toml").read_text()
     assert "[tool.mypy]" in content
     assert "strict = true" in content
@@ -249,7 +249,7 @@ def test_adds_mypy_section_when_missing(mock_repo: RepositoryController, mypy_bo
 
 def test_adds_tool_section_when_fully_absent(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
     mock_repo.add_file("pyproject.toml", "[project]\nname = 'test'\n")
-    data = mypy_boost._read_pyproject()  # noqa: SLF001
+    data = mypy_boost.tools.pyproject.read()
     data = mypy_boost._ensure_mypy_config(data)  # noqa: SLF001
     assert "tool" in data
     assert "mypy" in data["tool"]  # type: ignore[operator]
@@ -257,9 +257,9 @@ def test_adds_tool_section_when_fully_absent(mock_repo: RepositoryController, my
 
 def test_preserves_existing_tool_sections(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
     mock_repo.add_file("pyproject.toml", "[project]\nname = 'test'\n\n[tool.ruff]\nline-length = 120\n")
-    data = mypy_boost._read_pyproject()  # noqa: SLF001
+    data = mypy_boost.tools.pyproject.read()
     data = mypy_boost._ensure_mypy_config(data)  # noqa: SLF001
-    mypy_boost._write_pyproject(data)  # noqa: SLF001
+    mypy_boost.tools.pyproject.write(data)
     content = (mock_repo.path / "pyproject.toml").read_text()
     assert "[tool.ruff]" in content
     assert "line-length = 120" in content
@@ -268,9 +268,9 @@ def test_preserves_existing_tool_sections(mock_repo: RepositoryController, mypy_
 
 def test_sets_strict_true_on_existing_mypy_section(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
     mock_repo.add_file("pyproject.toml", "[tool.mypy]\nstrict = false\n")
-    data = mypy_boost._read_pyproject()  # noqa: SLF001
+    data = mypy_boost.tools.pyproject.read()
     data = mypy_boost._ensure_mypy_config(data)  # noqa: SLF001
-    mypy_boost._write_pyproject(data)  # noqa: SLF001
+    mypy_boost.tools.pyproject.write(data)
     content = (mock_repo.path / "pyproject.toml").read_text()
     assert "strict = true" in content
 

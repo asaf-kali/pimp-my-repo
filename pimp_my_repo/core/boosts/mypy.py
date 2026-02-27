@@ -60,7 +60,7 @@ class MypyBoost(Boost):
 
     def _verify_uv_present(self) -> None:
         try:
-            result = self.tools.uv.run("--version", check=False)
+            result = self.uv.run("--version", check=False)
             if result.returncode != 0:
                 msg = "uv is not available"
                 raise BoostSkippedError(msg)
@@ -70,13 +70,13 @@ class MypyBoost(Boost):
 
     def _verify_pyproject_present(self) -> None:
         try:
-            self.tools.pyproject.verify_present()
+            self.pyproject.verify_present()
         except PyProjectNotFoundError as exc:
             msg = "No pyproject.toml found"
             raise BoostSkippedError(msg) from exc
 
     def _run_mypy(self) -> subprocess.CompletedProcess[str]:
-        return self.tools.uv.run("run", "mypy", ".", check=False)
+        return self.uv.run("run", "mypy", ".", check=False)
 
     def _ensure_mypy_config(self, data: TOMLDocument) -> TOMLDocument:
         if "tool" not in data:
@@ -109,7 +109,7 @@ class MypyBoost(Boost):
             self._apply_type_ignores_to_file(filepath=filepath, line_violations=line_violations)
 
     def _apply_type_ignores_to_file(self, *, filepath: str, line_violations: LineViolations) -> None:
-        full_path = self.tools.repo_path / filepath
+        full_path = self.repo_path / filepath
         if not full_path.exists():
             logger.warning(f"File not found, skipping: {full_path}")
             return
@@ -144,20 +144,20 @@ class MypyBoost(Boost):
 
         logger.info(f"Found {len(violations)} violations, applying type: ignore comments...")
         self._apply_type_ignores(violations)
-        self.tools.git.commit("✅ Silence mypy violations", no_verify=True)
+        self.git.commit("✅ Silence mypy violations", no_verify=True)
         return True
 
     def _configure_mypy(self) -> None:
         self._add_mypy()
         logger.info("Configuring [tool.mypy] strict = true in pyproject.toml...")
-        pyproject_data = self._read_pyproject()
+        pyproject_data = self.pyproject.read()
         pyproject_data = self._ensure_mypy_config(pyproject_data)
-        self._write_pyproject(pyproject_data)
-        self.tools.git.commit("🔧 Configure mypy with strict mode", no_verify=True)
+        self.pyproject.write(pyproject_data)
+        self.git.commit("🔧 Configure mypy with strict mode", no_verify=True)
         logger.info("Committed mypy configuration")
 
     def _add_mypy(self) -> None:
-        self.tools.uv.add_package("mypy", group="lint")
+        self.uv.add_package("mypy", dev=True)
 
     def commit_message(self) -> str:
         """Generate commit message for Mypy boost."""

@@ -50,7 +50,7 @@ class RuffBoost(Boost):
 
     def _verify_uv_present(self) -> None:
         try:
-            result = self.tools.uv.run("--version", check=False)
+            result = self.uv.run("--version", check=False)
             if result.returncode != 0:
                 msg = "uv is not available"
                 raise BoostSkippedError(msg)
@@ -60,16 +60,16 @@ class RuffBoost(Boost):
 
     def _verify_pyproject_present(self) -> None:
         try:
-            self.tools.pyproject.verify_present()
+            self.pyproject.verify_present()
         except PyProjectNotFoundError as exc:
             msg = "No pyproject.toml found"
             raise BoostSkippedError(msg) from exc
 
     def _run_ruff_format(self) -> subprocess.CompletedProcess[str]:
-        return self.tools.uv.run("run", "ruff", "format", ".", check=False)
+        return self.uv.run("run", "ruff", "format", ".", check=False)
 
     def _run_ruff_check(self) -> subprocess.CompletedProcess[str]:
-        return self.tools.uv.run("run", "ruff", "check", ".", check=False)
+        return self.uv.run("run", "ruff", "check", ".", check=False)
 
     def _ensure_ruff_config(self, data: TOMLDocument) -> TOMLDocument:
         if "tool" not in data:
@@ -106,7 +106,7 @@ class RuffBoost(Boost):
             self._apply_noqa_to_file(filepath=filepath, line_violations=line_violations)
 
     def _apply_noqa_to_file(self, *, filepath: str, line_violations: LineViolations) -> None:
-        full_path = self.tools.repo_path / filepath
+        full_path = self.repo_path / filepath
         if not full_path.exists():
             logger.warning(f"File not found, skipping: {full_path}")
             return
@@ -125,18 +125,18 @@ class RuffBoost(Boost):
         self._verify_uv_present()
         self._verify_pyproject_present()
 
-        self.tools.uv.add_package("ruff", group="lint")
+        self.uv.add_package("ruff", group="lint")
 
         logger.info("Configuring [tool.ruff.lint] select = ['ALL'] in pyproject.toml...")
-        pyproject_data = self._read_pyproject()
+        pyproject_data = self.pyproject.read()
         pyproject_data = self._ensure_ruff_config(pyproject_data)
-        self._write_pyproject(pyproject_data)
+        self.pyproject.write(pyproject_data)
 
-        self.tools.git.commit("🔧 Configure ruff", no_verify=True)
+        self.git.commit("🔧 Configure ruff", no_verify=True)
 
         logger.info("Running ruff format...")
         self._run_ruff_format()
-        self.tools.git.commit("🎨 Auto-format with ruff", no_verify=True)
+        self.git.commit("🎨 Auto-format with ruff", no_verify=True)
 
         for iteration in range(1, _MAX_RUFF_ITERATIONS + 1):
             if not self._suppress_violations_iteration(iteration=iteration):
@@ -158,7 +158,7 @@ class RuffBoost(Boost):
 
         logger.info(f"Found {len(violations)} violations, applying noqa comments...")
         self._apply_noqa(violations)
-        self.tools.git.commit("✅ Silence ruff violations", no_verify=True)
+        self.git.commit("✅ Silence ruff violations", no_verify=True)
         return True
 
     def commit_message(self) -> str:

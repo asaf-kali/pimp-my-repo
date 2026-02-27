@@ -181,7 +181,7 @@ def test_apply_raises_skip_when_uv_not_installed(patched_uv_boost_not_installed:
 
 
 def test_apply_does_not_skip_when_uv_installable(patched_uv_boost_installable: UvBoost) -> None:
-    with patch.object(patched_uv_boost_installable, "_run_uv"):
+    with patch.object(patched_uv_boost_installable.tools.uv, "run"):
         patched_uv_boost_installable.apply()
 
 
@@ -311,9 +311,9 @@ def test_commit_message(uv_boost: UvBoost) -> None:
 def test_ensure_uv_config_adds_section_when_missing(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
     mock_repo.add_file("pyproject.toml", '[project]\nname = "test-project"\n')
 
-    pyproject_data = uv_boost._read_pyproject()  # noqa: SLF001
+    pyproject_data = uv_boost.tools.pyproject.read()
     pyproject_data = uv_boost._ensure_uv_config(pyproject_data)  # noqa: SLF001
-    uv_boost._write_pyproject(pyproject_data)  # noqa: SLF001
+    uv_boost.tools.pyproject.write(pyproject_data)
 
     pyproject_content_after = (mock_repo.path / "pyproject.toml").read_text()
     assert "[tool.uv]" in pyproject_content_after
@@ -323,9 +323,9 @@ def test_ensure_uv_config_preserves_existing_section(mock_repo: RepositoryContro
     pyproject_content = '[project]\nname = "test-project"\n\n[tool.uv]\npackage = true\ndev-dependencies = []\n'
     mock_repo.add_file("pyproject.toml", pyproject_content)
 
-    pyproject_data = uv_boost._read_pyproject()  # noqa: SLF001
+    pyproject_data = uv_boost.tools.pyproject.read()
     pyproject_data = uv_boost._ensure_uv_config(pyproject_data)  # noqa: SLF001
-    uv_boost._write_pyproject(pyproject_data)  # noqa: SLF001
+    uv_boost.tools.pyproject.write(pyproject_data)
 
     pyproject_content_after = (mock_repo.path / "pyproject.toml").read_text()
     assert "[tool.uv]" in pyproject_content_after
@@ -343,7 +343,7 @@ def test_apply_raises_on_migration_failure(mock_repo: RepositoryController, uv_b
 
     error = subprocess.CalledProcessError(1, "uvx", stderr="Migration failed")
     with (
-        patch.object(uv_boost, "_run_uvx", side_effect=error),
+        patch.object(uv_boost.tools.uv, "run_uvx", side_effect=error),
         pytest.raises(subprocess.CalledProcessError) as exc_info,
     ):
         uv_boost.apply()
@@ -354,25 +354,25 @@ def test_apply_raises_on_lock_generation_failure(mock_repo: RepositoryController
     mock_repo.add_file("pyproject.toml", "[project]\nname = 'test'\nversion = '0.1.0'")
 
     error = subprocess.CalledProcessError(1, "uv lock", stderr="Lock failed")
-    with patch.object(uv_boost, "_run_uv", side_effect=error), pytest.raises(subprocess.CalledProcessError):
+    with patch.object(uv_boost.tools.uv, "run", side_effect=error), pytest.raises(subprocess.CalledProcessError):
         uv_boost.apply()
 
 
 def test_check_uv_installed_handles_called_process_error(uv_boost: UvBoost) -> None:
     error = subprocess.CalledProcessError(1, "uv --version")
-    with patch.object(uv_boost, "_run_uv", side_effect=error):
+    with patch.object(uv_boost.tools.uv, "run", side_effect=error):
         result = uv_boost._check_uv_installed()  # noqa: SLF001
         assert result is False
 
 
 def test_check_uv_installed_handles_oserror(uv_boost: UvBoost) -> None:
-    with patch.object(uv_boost, "_run_uv", side_effect=OSError("System error")):
+    with patch.object(uv_boost.tools.uv, "run", side_effect=OSError("System error")):
         result = uv_boost._check_uv_installed()  # noqa: SLF001
         assert result is False
 
 
 def test_check_uv_installed_handles_file_not_found(uv_boost: UvBoost) -> None:
-    with patch.object(uv_boost, "_run_uv", side_effect=FileNotFoundError("uv not found")):
+    with patch.object(uv_boost.tools.uv, "run", side_effect=FileNotFoundError("uv not found")):
         result = uv_boost._check_uv_installed()  # noqa: SLF001
         assert result is False
 
@@ -441,37 +441,6 @@ def test_install_uv_pip_success(uv_boost: UvBoost) -> None:
 # =============================================================================
 
 
-def test_read_pyproject_empty_file(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    mock_repo.add_file("pyproject.toml", "")
-    result = uv_boost._read_pyproject()  # noqa: SLF001
-    assert len(result) == 0
-
-
-def test_read_pyproject_invalid_toml(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    mock_repo.add_file("pyproject.toml", "this is [ not valid toml {{{{")
-    result = uv_boost._read_pyproject()  # noqa: SLF001
-    assert len(result) == 0
-
-
-def test_read_pyproject_permission_denied(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    mock_repo.add_file("pyproject.toml", "[project]\nname = 'test'")
-    with patch("pathlib.Path.open", side_effect=OSError("Permission denied")):
-        result = uv_boost._read_pyproject()  # noqa: SLF001
-        assert len(result) == 0
-
-
-def test_read_pyproject_unicode_error(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    mock_repo.add_file("pyproject.toml", "[project]\nname = 'test'")
-    with patch("pathlib.Path.open", side_effect=UnicodeDecodeError("utf-8", b"", 0, 1, "invalid")):
-        result = uv_boost._read_pyproject()  # noqa: SLF001
-        assert len(result) == 0
-
-
-def test_read_pyproject_nonexistent_file(uv_boost: UvBoost) -> None:
-    result = uv_boost._read_pyproject()  # noqa: SLF001
-    assert len(result) == 0
-
-
 def test_write_pyproject_preserves_comments(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
     pyproject_content = (
         "# This is a comment\n[project]\n"
@@ -480,9 +449,9 @@ def test_write_pyproject_preserves_comments(mock_repo: RepositoryController, uv_
     )
     mock_repo.add_file("pyproject.toml", pyproject_content)
 
-    pyproject_data = uv_boost._read_pyproject()  # noqa: SLF001
+    pyproject_data = uv_boost.tools.pyproject.read()
     pyproject_data = uv_boost._ensure_uv_config(pyproject_data)  # noqa: SLF001
-    uv_boost._write_pyproject(pyproject_data)  # noqa: SLF001
+    uv_boost.tools.pyproject.write(pyproject_data)
 
     content_after = (mock_repo.path / "pyproject.toml").read_text()
     assert "# This is a comment" in content_after
@@ -495,9 +464,9 @@ def test_ensure_uv_config_with_existing_tool_section(mock_repo: RepositoryContro
     )
     mock_repo.add_file("pyproject.toml", pyproject_content)
 
-    pyproject_data = uv_boost._read_pyproject()  # noqa: SLF001
+    pyproject_data = uv_boost.tools.pyproject.read()
     pyproject_data = uv_boost._ensure_uv_config(pyproject_data)  # noqa: SLF001
-    uv_boost._write_pyproject(pyproject_data)  # noqa: SLF001
+    uv_boost.tools.pyproject.write(pyproject_data)
 
     content = (mock_repo.path / "pyproject.toml").read_text()
     assert "[tool.uv]" in content

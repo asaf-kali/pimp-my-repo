@@ -52,13 +52,13 @@ class GitignoreBoost(Boost):
 
     def _reset_git_tracking(self) -> None:
         """Untrack all files then re-add, so gitignored files leave the index."""
-        self.tools.git.reset_tracking()
+        self.git.reset_tracking()
 
     def _fetch_gitignore(self, templates: list[str]) -> str | None:
         """Fetch .gitignore content from the gitignore.io API."""
         url = f"{_GITIGNORE_API}/{','.join(templates)}"
         try:
-            return self.tools.http.request(
+            return self.http.request(
                 url,
                 headers={"User-Agent": "pimp-my-repo"},
                 timeout=3.0,
@@ -86,8 +86,8 @@ class GitignoreBoost(Boost):
 
     def _commit_gitignore(self) -> None:
         """Commit the .gitignore addition if something changed."""
-        self.tools.git.add(".gitignore")
-        self.tools.git.commit("✨ Add .gitignore", no_verify=True)
+        self.git.add(".gitignore")
+        self.git.commit("✨ Add .gitignore", no_verify=True)
 
     def commit_message(self) -> str:
         """Generate commit message for Gitignore boost."""

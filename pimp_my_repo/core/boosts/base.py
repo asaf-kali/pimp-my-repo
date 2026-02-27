@@ -5,9 +5,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
-from tomlkit import TOMLDocument, document
-
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from pimp_my_repo.core.tools.boost_tools import BoostTools
     from pimp_my_repo.core.tools.git import GitController
     from pimp_my_repo.core.tools.http import HttpController
@@ -32,6 +32,10 @@ class Boost(ABC):
     def __init__(self, tools: BoostTools) -> None:
         """Initialize boost with repository path."""
         self.tools = tools
+
+    @property
+    def repo_path(self) -> Path:
+        return self.git.repo_path
 
     @property
     def git(self) -> GitController:
@@ -61,17 +65,6 @@ class Boost(ABC):
         if class_name.endswith("boost"):
             return class_name[:-5]
         return class_name
-
-    def _read_pyproject(self) -> TOMLDocument:
-        """Read pyproject.toml, returning an empty document on any error."""
-        try:
-            return self.tools.pyproject.read()
-        except Exception:  # noqa: BLE001
-            return document()
-
-    def _write_pyproject(self, data: TOMLDocument) -> None:
-        """Write pyproject.toml."""
-        self.tools.pyproject.write(data=data)
 
     @abstractmethod
     def apply(self) -> None:

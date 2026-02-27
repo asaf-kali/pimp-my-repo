@@ -46,8 +46,8 @@ def patched_ruff_apply(
 ) -> Generator[PatchedRuffApply]:
     """Yield a RuffBoost with all subprocess calls pre-mocked to succeed."""
     with (
-        patch.object(ruff_boost_with_pyproject, "_run_uv", return_value=ok_result()) as mock_uv,
-        patch.object(ruff_boost_with_pyproject, "_run_git") as mock_git,
+        patch.object(ruff_boost_with_pyproject.tools.uv, "run", return_value=ok_result()) as mock_uv,
+        patch.object(ruff_boost_with_pyproject.tools.git, "commit") as mock_git,
         patch.object(ruff_boost_with_pyproject, "_run_ruff_format", return_value=ok_result()) as mock_fmt,
         patch.object(ruff_boost_with_pyproject, "_run_ruff_check", return_value=ok_result()) as mock_check,
     ):
@@ -69,7 +69,7 @@ def test_raises_skip_when_uv_nonzero(
     ruff_boost_with_pyproject: RuffBoost, fail_result: SubprocessResultFactory
 ) -> None:
     with (
-        patch("pimp_my_repo.core.boosts.add_package.run_uv", return_value=fail_result()),
+        patch.object(ruff_boost_with_pyproject.tools.uv, "run", return_value=fail_result()),
         pytest.raises(BoostSkippedError, match="uv is not available"),
     ):
         ruff_boost_with_pyproject.apply()
@@ -77,7 +77,7 @@ def test_raises_skip_when_uv_nonzero(
 
 def test_raises_skip_when_uv_raises_file_not_found(ruff_boost_with_pyproject: RuffBoost) -> None:
     with (
-        patch("pimp_my_repo.core.boosts.add_package.run_uv", side_effect=FileNotFoundError),
+        patch.object(ruff_boost_with_pyproject.tools.uv, "run", side_effect=FileNotFoundError),
         pytest.raises(BoostSkippedError, match="uv is not installed"),
     ):
         ruff_boost_with_pyproject.apply()
@@ -85,7 +85,7 @@ def test_raises_skip_when_uv_raises_file_not_found(ruff_boost_with_pyproject: Ru
 
 def test_raises_skip_when_uv_raises_oserror(ruff_boost_with_pyproject: RuffBoost) -> None:
     with (
-        patch("pimp_my_repo.core.boosts.add_package.run_uv", side_effect=OSError),
+        patch.object(ruff_boost_with_pyproject.tools.uv, "run", side_effect=OSError),
         pytest.raises(BoostSkippedError, match="uv is not installed"),
     ):
         ruff_boost_with_pyproject.apply()
@@ -93,7 +93,7 @@ def test_raises_skip_when_uv_raises_oserror(ruff_boost_with_pyproject: RuffBoost
 
 def test_raises_skip_when_no_pyproject(ruff_boost: RuffBoost, ok_result: SubprocessResultFactory) -> None:
     with (
-        patch.object(ruff_boost, "_run_uv", return_value=ok_result()),
+        patch.object(ruff_boost.tools.uv, "run", return_value=ok_result()),
         pytest.raises(BoostSkippedError, match=r"No pyproject\.toml found"),
     ):
         ruff_boost.apply()
@@ -229,9 +229,9 @@ def test_noqa_preserves_existing_line_content(mock_repo: RepositoryController, r
 
 def test_adds_ruff_section_when_missing(mock_repo: RepositoryController, ruff_boost: RuffBoost) -> None:
     mock_repo.add_file("pyproject.toml", "[project]\nname = 'test'\n")
-    data = ruff_boost._read_pyproject()  # noqa: SLF001
+    data = ruff_boost.tools.pyproject.read()
     data = ruff_boost._ensure_ruff_config(data)  # noqa: SLF001
-    ruff_boost._write_pyproject(data)  # noqa: SLF001
+    ruff_boost.tools.pyproject.write(data)
     content = (mock_repo.path / "pyproject.toml").read_text()
     assert "[tool.ruff" in content
     assert 'select = ["ALL"]' in content
@@ -239,18 +239,18 @@ def test_adds_ruff_section_when_missing(mock_repo: RepositoryController, ruff_bo
 
 def test_ruff_config_sets_line_length(mock_repo: RepositoryController, ruff_boost: RuffBoost) -> None:
     mock_repo.add_file("pyproject.toml", "[project]\nname = 'test'\n")
-    data = ruff_boost._read_pyproject()  # noqa: SLF001
+    data = ruff_boost.tools.pyproject.read()
     data = ruff_boost._ensure_ruff_config(data)  # noqa: SLF001
-    ruff_boost._write_pyproject(data)  # noqa: SLF001
+    ruff_boost.tools.pyproject.write(data)
     content = (mock_repo.path / "pyproject.toml").read_text()
     assert "line-length = 120" in content
 
 
 def test_ruff_config_preserves_existing_content(mock_repo: RepositoryController, ruff_boost: RuffBoost) -> None:
     mock_repo.add_file("pyproject.toml", "[project]\nname = 'test'\n\n[tool.mypy]\nstrict = true\n")
-    data = ruff_boost._read_pyproject()  # noqa: SLF001
+    data = ruff_boost.tools.pyproject.read()
     data = ruff_boost._ensure_ruff_config(data)  # noqa: SLF001
-    ruff_boost._write_pyproject(data)  # noqa: SLF001
+    ruff_boost.tools.pyproject.write(data)
     content = (mock_repo.path / "pyproject.toml").read_text()
     assert "[tool.mypy]" in content
     assert "strict = true" in content
@@ -262,9 +262,9 @@ def test_ruff_config_preserves_existing_content(mock_repo: RepositoryController,
 
 
 def test_apply_calls_uv_add_ruff(patched_ruff_apply: PatchedRuffApply) -> None:
-    with patch("pimp_my_repo.core.boosts.add_package.add_package_with_uv") as mock_add:
+    with patch.object(patched_ruff_apply.boost.tools.uv, "add_package") as mock_add:
         patched_ruff_apply.boost.apply()
-        mock_add.assert_called_once_with(patched_ruff_apply.boost.tools.repo_path, "ruff", group="lint")
+        mock_add.assert_called_once_with("ruff", group="lint")
 
 
 def test_apply_writes_ruff_config_to_pyproject(
@@ -277,8 +277,7 @@ def test_apply_writes_ruff_config_to_pyproject(
 
 def test_apply_makes_two_intermediate_commits(patched_ruff_apply: PatchedRuffApply) -> None:
     patched_ruff_apply.boost.apply()
-    commit_calls = [c for c in patched_ruff_apply.mock_git.call_args_list if "commit" in c.args]
-    messages = [c.args[c.args.index("-m") + 1] for c in commit_calls]
+    messages = [c.args[0] for c in patched_ruff_apply.mock_git.call_args_list]
     assert any("Configure ruff" in m for m in messages)
     assert any("Auto-format" in m for m in messages)
 

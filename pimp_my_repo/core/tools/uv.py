@@ -9,6 +9,10 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
+class UvNotFoundError(Exception):
+    """Raised when UV is not found and cannot be installed."""
+
+
 class UvController:
     """Controller for UV operations in boosts."""
 
@@ -38,16 +42,29 @@ class UvController:
             check=check,
         )
 
+    def verify_present(self) -> None:
+        try:
+            result = self.run("--version", check=False)
+            if result.returncode != 0:
+                msg = "uv is not available"
+                raise UvNotFoundError(msg)
+        except (subprocess.CalledProcessError, OSError) as e:
+            msg = f"uv is not available: {e}"
+            raise UvNotFoundError(msg) from e
+
     def add_package(
         self,
         package: str,
         *,
         group: str | None = None,
+        dev: bool = False,
     ) -> None:
         """Add a package using uv add."""
         logger.info(f"Adding {package} dependency...")
         cmd = ["add", "--no-install-project"]
-        if group:
+        if dev:
+            cmd.append("--dev")
+        elif group:
             cmd.extend(["--group", group])
         cmd.append(package)
         self.run(*cmd)
