@@ -6,6 +6,10 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
+import logging
+
+log = logging.getLogger(__name__)
+_DEFAULT_BRANCH_NAME = "feat/pmr"
 COMMIT_AUTHOR = "pmr <pimp-my-repo@pypi.org>"
 
 
@@ -15,6 +19,16 @@ class GitController:
     def __init__(self, repo_path: Path) -> None:
         """Initialize GitController with repository path."""
         self.repo_path = repo_path
+
+    def init_pmr(self, branch_name: str = _DEFAULT_BRANCH_NAME) -> None:
+        """Set up git manager and prepare the pmr branch."""
+        log.info("Checking git status...")
+        if not self.is_clean():
+            msg = "Git working directory is not clean. Please commit or stash your changes."
+            raise ValueError(msg)
+        log.info("Switching to branch: [%s]", branch_name)
+        self.switch_branch(branch_name)
+        log.info("On branch: [%s]", branch_name)
 
     def execute(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         """Run a git command in the repository directory."""
@@ -72,7 +86,7 @@ class GitController:
         result = self.execute("status", "--porcelain", check=False)
         return result.returncode == 0 and not result.stdout.strip()
 
-    def create_branch(self, branch_name: str) -> None:
+    def switch_branch(self, branch_name: str) -> None:
         """Create and switch to a new branch."""
         # Check if branch exists
         result = self.execute("branch", "--list", branch_name, check=False)

@@ -35,10 +35,10 @@ lock-check:
 # Test
 
 test-fast:
-	{{RUN}} python -m {{PYTHON_TEST_COMMAND}} -s -q -m "smoke"
+	just test -s -q -m "smoke"
 
 test *args:
-	{{RUN}} python -m {{PYTHON_TEST_COMMAND}} -s -q {{args}}
+	{{RUN}} python -m {{PYTHON_TEST_COMMAND}} {{args}}
 
 cover-base:
 	{{RUN}} coverage run -m {{PYTHON_TEST_COMMAND}}

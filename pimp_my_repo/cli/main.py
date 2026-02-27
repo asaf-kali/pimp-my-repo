@@ -1,20 +1,19 @@
 """CLI entry point for pimp-my-repo."""
 
-import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import typer
-from loguru import logger
 from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TaskID, TextColumn
 from rich.table import Table
 from typer import Exit
 
 from pimp_my_repo.core.booster import execute_boosts
 from pimp_my_repo.core.registry import get_all_boosts
-from pimp_my_repo.core.tools.git import GitController
 
 if TYPE_CHECKING:
+    from pimp_my_repo.core.boosts.base import Boost
     from pimp_my_repo.core.result import BoostResult
 
 app = typer.Typer(
@@ -22,72 +21,12 @@ app = typer.Typer(
     help="🧙🏼‍♂️ A CLI wizard designed to modernize your Python repositories",
 )
 
-DEFAULT_BRANCH_NAME = "feat/pmr"
 
-
-def _validate_path(repo_path: Path, console: Console) -> None:
-    """Validate that the repository path exists and is a directory."""
-    if not repo_path.exists():
-        console.print(f"[red]Error:[/red] Path does not exist: {repo_path}")
-        raise Exit(code=1)
-
-    if not repo_path.is_dir():
-        console.print(f"[red]Error:[/red] Path is not a directory: {repo_path}")
-        raise Exit(code=1)
-
-
-def _setup_git(repo_path: Path, console: Console, branch_name: str | None = None) -> GitController:
-    """Set up git manager and prepare the pmr branch."""
-    git_manager = GitController(repo_path)
-
-    # Check if git is clean
-    console.print("[cyan]Checking git status...[/cyan]")
-    try:
-        if not git_manager.is_clean():
-            console.print("[red]Error:[/red] Git working directory is not clean. Please commit or stash your changes.")
-            raise Exit(code=1)
-        console.print("[green]✓[/green] Git working directory is clean")
-    except (subprocess.CalledProcessError, OSError) as e:
-        logger.exception("Failed to check git status")
-        console.print(f"[red]Error:[/red] Failed to check git status: {e}")
-        raise Exit(code=1) from e
-
-    # Create/switch to pmr branch
-    branch_name = branch_name or DEFAULT_BRANCH_NAME
-    console.print(f"[cyan]Creating/switching to branch: {branch_name}[/cyan]")
-    try:
-        git_manager.create_branch(branch_name)
-        console.print(f"[green]✓[/green] On branch: {branch_name}")
-    except (subprocess.CalledProcessError, OSError) as e:
-        console.print(f"[red]Error:[/red] Failed to create/switch branch: {e}")
-        raise Exit(code=1) from e
-
-    return git_manager
-
-
-def _print_summary(results: list[BoostResult], console: Console) -> None:
-    """Print summary table of boost execution results."""
-    console.print("\n[bold]Summary:[/bold]")
-    table = Table(show_header=True, header_style="bold magenta")
-    table.add_column("Boost", style="cyan")
-    table.add_column("Status", style="bold")
-    table.add_column("Message")
-
-    for result in results:
-        status_style = {
-            "applied": "[green]✓ Applied[/green]",
-            "skipped": "[yellow]⊘ Skipped[/yellow]",
-            "failed": "[red]✗ Failed[/red]",
-        }.get(result.status, result.status)
-        table.add_row(result.name, status_style, result.message)
-
-    console.print(table)
-
-    applied_count = sum(1 for r in results if r.status == "applied")
-    if applied_count > 0:
-        console.print(f"\n[green]✓ Successfully applied {applied_count} boost(s)[/green]")
-    else:
-        console.print("\n[yellow]No boosts were applied[/yellow]")
+_PROGRESS_DESCRIPTIONS = {
+    "applied": "[green]✓ {name} applied[/green]",
+    "skipped": "[yellow]⊘ {name} skipped: {message}[/yellow]",
+    "failed": "[red]✗ {name} failed[/red]",
+}
 
 
 @app.command()
@@ -123,7 +62,12 @@ def run(
     console.print(f"[cyan]Found {len(boost_classes)} boosts[/cyan]")
 
     # Execute boosts
-    results = run_boosts(repo_path=repo_path, console=console)
+    try:
+        results = run_boosts(repo_path=repo_path, console=console)
+    except Exception as e:
+        console.print("[red]An error occurred while running boosts[/red]")
+        console.print(f"[red]Error:[/red] {e}")
+        raise Exit(code=1) from e
 
     # Print summary
     _print_summary(results, console)
@@ -134,7 +78,70 @@ def run_boosts(repo_path: Path, console: Console | None = None) -> list[BoostRes
     if console is None:
         console = Console()
     boost_classes = get_all_boosts()
-    return execute_boosts(boost_classes=boost_classes, repo_path=repo_path, console=console)
+    return _run_boosts_with_progress(repo_path=repo_path, boost_classes=boost_classes, console=console)
+
+
+def _validate_path(repo_path: Path, console: Console) -> None:
+    """Validate that the repository path exists and is a directory."""
+    if not repo_path.exists():
+        console.print(f"[red]Error:[/red] Path does not exist: {repo_path}")
+        raise Exit(code=1)
+
+    if not repo_path.is_dir():
+        console.print(f"[red]Error:[/red] Path is not a directory: {repo_path}")
+        raise Exit(code=1)
+
+
+def _update_progress(progress: Progress, task_id: TaskID, result: BoostResult) -> None:
+    template = _PROGRESS_DESCRIPTIONS.get(result.status, "{name}: {message}")
+    description = template.format(name=result.name, message=result.message)
+    progress.update(task_id=task_id, description=description)
+
+
+def _run_boosts_with_progress(
+    repo_path: Path,
+    boost_classes: list[type[Boost]],
+    console: Console,
+) -> list[BoostResult]:
+    """Drive the execute_boosts generator, rendering live progress for each result."""
+    results: list[BoostResult] = []
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task_ids = [progress.add_task(description=f"Processing {bc.get_name()}...", total=None) for bc in boost_classes]
+        for task_id, result in zip(
+            task_ids, execute_boosts(repo_path=repo_path, boost_classes=boost_classes), strict=True
+        ):
+            _update_progress(progress=progress, task_id=task_id, result=result)
+            results.append(result)
+    return results
+
+
+def _print_summary(results: list[BoostResult], console: Console) -> None:
+    """Print summary table of boost execution results."""
+    console.print("\n[bold]Summary:[/bold]")
+    table = Table(show_header=True, header_style="bold magenta")
+    table.add_column("Boost", style="cyan")
+    table.add_column("Status", style="bold")
+    table.add_column("Message")
+
+    for result in results:
+        status_style = {
+            "applied": "[green]✓ Applied[/green]",
+            "skipped": "[yellow]⊘ Skipped[/yellow]",
+            "failed": "[red]✗ Failed[/red]",
+        }.get(result.status, result.status)
+        table.add_row(result.name, status_style, result.message)
+
+    console.print(table)
+
+    applied_count = sum(1 for r in results if r.status == "applied")
+    if applied_count > 0:
+        console.print(f"\n[green]✓ Successfully applied {applied_count} boost(s)[/green]")
+    else:
+        console.print("\n[yellow]No boosts were applied[/yellow]")
 
 
 def main() -> None:

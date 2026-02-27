@@ -7,17 +7,14 @@ import subprocess
 from typing import TYPE_CHECKING
 
 from loguru import logger
-from rich.progress import Progress, SpinnerColumn, TaskID, TextColumn
 
 from pimp_my_repo.core.boosts.base import Boost, BoostSkippedError
 from pimp_my_repo.core.result import BoostResult
 from pimp_my_repo.core.tools.boost_tools import BoostTools
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from collections.abc import Generator, Iterator
     from pathlib import Path
-
-    from rich.console import Console
 
     from pimp_my_repo.core.tools.git import GitController
 
@@ -52,9 +49,6 @@ def _run_boost(
             committed = git_manager.commit(boost.commit_message())
     except BoostSkippedError as e:
         return BoostResult(name=boost_name, status="skipped", message=e.reason)
-    except Exception as e:  # noqa: BLE001
-        logger.exception(f"Error applying {boost_name} boost")
-        return BoostResult(name=boost_name, status="failed", message=str(e))
 
     if commits_made_during_apply or committed:
         return BoostResult(name=boost_name, status="applied", message="Success")
@@ -62,50 +56,26 @@ def _run_boost(
     return BoostResult(name=boost_name, status="skipped", message="No changes to commit")
 
 
-_STATUS_DESCRIPTIONS = {
-    "applied": "[green]✓ {name} applied[/green]",
-    "skipped": "[yellow]⊘ {name} skipped: {message}[/yellow]",
-    "failed": "[red]✗ {name} failed[/red]",
-}
-
-
-def _update_progress(progress: Progress, task_id: TaskID, result: BoostResult) -> None:
-    template = _STATUS_DESCRIPTIONS.get(result.status, "{name}: {message}")
-    description = template.format(name=result.name, message=result.message)
-    progress.update(task_id, description=description)
-
-
 def _run_boost_class(
     boost_class: type[Boost],
     boost_tools: BoostTools,
     git_manager: GitController,
-    progress: Progress,
 ) -> BoostResult:
     boost_name = boost_class.get_name()
-    task_id = progress.add_task(f"Processing {boost_name}...", total=None)
     try:
         boost = boost_class(boost_tools)
-        result = _run_boost(boost=boost, boost_name=boost_name, git_manager=git_manager)
+        return _run_boost(boost=boost, boost_name=boost_name, git_manager=git_manager)
     except (subprocess.CalledProcessError, OSError) as e:
-        logger.exception(f"Error processing {boost_name} boost")
-        result = BoostResult(name=boost_name, status="failed", message=str(e))
-    _update_progress(progress=progress, task_id=task_id, result=result)
-    return result
+        logger.exception(f"Error applying {boost_name} boost")
+        return BoostResult(name=boost_name, status="failed", message=str(e))
 
 
 def execute_boosts(
-    boost_classes: list[type[Boost]],
     repo_path: Path,
-    console: Console,
-) -> list[BoostResult]:
-    """Execute all boosts and return results."""
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
-        boost_tools = BoostTools.create(repo_path=repo_path)
-        return [
-            _run_boost_class(boost_class=bc, boost_tools=boost_tools, git_manager=boost_tools.git, progress=progress)
-            for bc in boost_classes
-        ]
+    boost_classes: list[type[Boost]],
+) -> Iterator[BoostResult]:
+    """Execute all boosts and yield results as they complete."""
+    boost_tools = BoostTools.create(repo_path=repo_path)
+    boost_tools.git.init_pmr()
+    for bc in boost_classes:
+        yield _run_boost_class(boost_class=bc, boost_tools=boost_tools, git_manager=boost_tools.git)
