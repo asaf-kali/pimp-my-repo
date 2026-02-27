@@ -96,7 +96,6 @@ def _run_boost_class(
 def execute_boosts(
     boost_classes: list[type[Boost]],
     repo_path: Path,
-    git_manager: GitController,
     console: Console,
 ) -> list[BoostResult]:
     """Execute all boosts and return results."""
@@ -107,6 +106,6 @@ def execute_boosts(
     ) as progress:
         boost_tools = BoostTools.create(repo_path=repo_path)
         return [
-            _run_boost_class(boost_class=bc, boost_tools=boost_tools, git_manager=git_manager, progress=progress)
+            _run_boost_class(boost_class=bc, boost_tools=boost_tools, git_manager=boost_tools.git, progress=progress)
             for bc in boost_classes
         ]

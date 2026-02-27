@@ -118,15 +118,12 @@ def run(
     console.print(f"[bold]Pimping repository at: {repo_path}[/bold]")
     _validate_path(repo_path, console)
 
-    # Setup git
-    git_manager = _setup_git(repo_path, console)
-
     # Initialize boosts
     boost_classes = get_all_boosts()
     console.print(f"[cyan]Found {len(boost_classes)} boosts[/cyan]")
 
     # Execute boosts
-    results = execute_boosts(boost_classes, repo_path, git_manager, console)
+    results = run_boosts(repo_path=repo_path, console=console)
 
     # Print summary
     _print_summary(results, console)
@@ -136,9 +133,8 @@ def run_boosts(repo_path: Path, console: Console | None = None) -> list[BoostRes
     """Run all boosts on a repository and return results."""
     if console is None:
         console = Console()
-    git_manager = _setup_git(repo_path, console)
     boost_classes = get_all_boosts()
-    return execute_boosts(boost_classes, repo_path, git_manager, console)
+    return execute_boosts(boost_classes=boost_classes, repo_path=repo_path, console=console)
 
 
 def main() -> None:
