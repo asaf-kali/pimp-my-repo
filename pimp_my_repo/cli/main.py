@@ -1,6 +1,5 @@
 """CLI entry point for pimp-my-repo."""
 
-import contextlib
 import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -8,20 +7,15 @@ from typing import TYPE_CHECKING
 import typer
 from loguru import logger
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 from typer import Exit
 
-from pimp_my_repo.core.boosts.base import Boost, BoostSkippedError
+from pimp_my_repo.core.booster import execute_boosts
 from pimp_my_repo.core.registry import get_all_boosts
-from pimp_my_repo.core.result import BoostResult
-from pimp_my_repo.core.tools.boost_tools import BoostTools
 from pimp_my_repo.core.tools.git import GitController
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
-
-    from rich.progress import TaskID
+    from pimp_my_repo.core.result import BoostResult
 
 app = typer.Typer(
     name="pimp-my-repo",
@@ -69,86 +63,6 @@ def _setup_git(repo_path: Path, console: Console, branch_name: str | None = None
         raise Exit(code=1) from e
 
     return git_manager
-
-
-@contextlib.contextmanager
-def _git_revert_context(git_manager: GitController) -> Generator[str]:
-    """Context manager to revert git changes."""
-    sha_before = git_manager.get_current_commit_sha()
-    try:
-        yield sha_before
-    except:
-        logger.debug(f"Reverting git changes to {sha_before}")
-        git_manager.reset_hard(sha_before)
-        raise
-
-
-def _process_boost(
-    boost: Boost,
-    boost_name: str,
-    git_manager: GitController,
-    progress: Progress,
-    task_id: TaskID,
-) -> BoostResult:
-    """Process a single boost and return result.
-
-    Captures the git HEAD before calling apply().  On any non-skip failure,
-    resets hard back to that ref so the repo is left in a clean state.
-    """
-    try:
-        with _git_revert_context(git_manager) as sha_before_apply:
-            boost.apply()
-            sha_after_apply = git_manager.get_current_commit_sha()
-            # Check if any commits were made during apply()
-            commits_made_during_apply = sha_before_apply != sha_after_apply
-            committed = git_manager.commit(boost.commit_message())
-    except BoostSkippedError as e:
-        progress.update(task_id, description=f"[yellow]⊘ Skipping {boost_name}: {e.reason}[/yellow]")
-        return BoostResult(name=boost_name, status="skipped", message=e.reason)
-    except Exception as e:  # noqa: BLE001
-        logger.exception(f"Error applying {boost_name} boost")
-        progress.update(task_id, description=f"[red]✗ {boost_name} failed[/red]")
-        return BoostResult(name=boost_name, status="failed", message=str(e))
-
-    # If commits were made during apply() OR final commit succeeded, mark as applied
-    if commits_made_during_apply or committed:
-        progress.update(task_id, description=f"[green]✓ {boost_name} applied[/green]")
-        return BoostResult(name=boost_name, status="applied", message="Success")
-
-    progress.update(task_id, description=f"[yellow]⊘ Skipping {boost_name}: no changes[/yellow]")
-    return BoostResult(name=boost_name, status="skipped", message="No changes to commit")
-
-
-def _execute_boosts(
-    boost_classes: list[type[Boost]],
-    repo_path: Path,
-    git_manager: GitController,
-    console: Console,
-) -> list[BoostResult]:
-    """Execute all boosts and return results."""
-    results: list[BoostResult] = []
-
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
-        boost_tools = BoostTools.create(repo_path)
-        for boost_class in boost_classes:
-            boost_name = boost_class.get_name()
-            task_id = progress.add_task(f"Processing {boost_name} boost...", total=None)
-
-            try:
-                boost = boost_class(boost_tools)
-                result = _process_boost(boost, boost_name, git_manager, progress, task_id)
-                results.append(result)
-
-            except (subprocess.CalledProcessError, OSError) as e:
-                logger.exception(f"Error processing {boost_name} boost")
-                progress.update(task_id, description=f"[red]✗ {boost_name} failed[/red]")
-                results.append(BoostResult(name=boost_name, status="failed", message=str(e)))
-
-    return results
 
 
 def _print_summary(results: list[BoostResult], console: Console) -> None:
@@ -212,7 +126,7 @@ def run(
     console.print(f"[cyan]Found {len(boost_classes)} boosts[/cyan]")
 
     # Execute boosts
-    results = _execute_boosts(boost_classes, repo_path, git_manager, console)
+    results = execute_boosts(boost_classes, repo_path, git_manager, console)
 
     # Print summary
     _print_summary(results, console)
@@ -224,7 +138,7 @@ def run_boosts(repo_path: Path, console: Console | None = None) -> list[BoostRes
         console = Console()
     git_manager = _setup_git(repo_path, console)
     boost_classes = get_all_boosts()
-    return _execute_boosts(boost_classes, repo_path, git_manager, console)
+    return execute_boosts(boost_classes, repo_path, git_manager, console)
 
 
 def main() -> None:
