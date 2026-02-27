@@ -5,3 +5,14 @@ alwaysApply: true
 This project uses `just` as an interface to common operations needed while developing.
 Specifically, make sure to use `just test` and `just lint` after code changes.
 Don't run any python commands directly - always use `just`. See `./justfile` if you need more info.
+
+## Running tests
+
+`just test` accepts extra args passed directly to pytest. Use them to narrow the scope when appropriate:
+
+- Run a specific file: `just test tests/test_foo.py`
+- Run tests matching a name pattern: `just test -k "test_something"`
+- Run tests with a marker: `just test -m "smoke"`
+- Combine: `just test tests/test_foo.py -k "test_bar" -s`
+
+Use `just test-fast` to run only smoke-marked tests quickly.

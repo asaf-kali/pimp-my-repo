@@ -17,13 +17,10 @@ def test_cli_is_working(mock_repo: RepositoryController) -> None:
         capture_output=True,
         text=True,
     )
-    # CLI should exit successfully (code 0) when git is clean, or code 1 when dirty
     assert result.returncode in (0, 1)
     assert "Pimping repository at:" in result.stdout
-    # Either git is clean (success) or dirty (error message)
-    assert ("Git working directory is clean" in result.stdout) or (
-        "Git working directory is not clean" in result.stdout
-    )
+    assert "Found" in result.stdout
+    assert "boosts" in result.stdout
 
 
 def test_main_is_working(mock_repo: RepositoryController) -> None:
