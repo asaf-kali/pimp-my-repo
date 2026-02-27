@@ -24,6 +24,7 @@ class DependencyFiles(BaseModel):
 
     requirements_txt: bool = Field(default=False, alias="requirements.txt")
     setup_py: bool = Field(default=False, alias="setup.py")
+    setup_cfg: bool = Field(default=False, alias="setup.cfg")
     pyproject_toml: bool = Field(default=False, alias="pyproject.toml")
     pipfile: bool = Field(default=False, alias="Pipfile")
     poetry_lock: bool = Field(default=False, alias="poetry.lock")
