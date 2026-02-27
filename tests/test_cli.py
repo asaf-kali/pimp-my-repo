@@ -7,10 +7,9 @@ import pytest
 from pimp_my_repo.cli.main import main
 
 if TYPE_CHECKING:
-    from tests.utils.repo_controller import RepositoryController
+    from pimp_my_repo.core.tools.repo import RepositoryController
 
 
-@pytest.mark.slow
 def test_cli_is_working(mock_repo: RepositoryController) -> None:
     result = subprocess.run(  # noqa: S603
         ["pimp-my-repo", "--path", str(mock_repo.path)],  # noqa: S607
@@ -18,16 +17,12 @@ def test_cli_is_working(mock_repo: RepositoryController) -> None:
         capture_output=True,
         text=True,
     )
-    # CLI should exit successfully (code 0) when git is clean, or code 1 when dirty
     assert result.returncode in (0, 1)
     assert "Pimping repository at:" in result.stdout
-    # Either git is clean (success) or dirty (error message)
-    assert ("Git working directory is clean" in result.stdout) or (
-        "Git working directory is not clean" in result.stdout
-    )
+    assert "Found" in result.stdout
+    assert "boosts" in result.stdout
 
 
-@pytest.mark.slow
 def test_main_is_working(mock_repo: RepositoryController) -> None:
     """Test that main function exits properly."""
     # Mock sys.argv to pass the path argument
@@ -42,7 +37,6 @@ def test_main_is_working(mock_repo: RepositoryController) -> None:
         sys.argv = original_argv
 
 
-@pytest.mark.slow
 def test_cli_with_clean_git(mock_repo: RepositoryController) -> None:
     """Test CLI with a clean git repository."""
     # Run CLI on clean repo

@@ -8,6 +8,12 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from pimp_my_repo.core.tools.boost_tools import BoostTools
+    from pimp_my_repo.core.tools.http import HttpController
+    from pimp_my_repo.core.tools.pyproject import PyProjectController
+    from pimp_my_repo.core.tools.repo import RepositoryController
+    from pimp_my_repo.core.tools.uv import UvController
+
 
 class BoostSkippedError(Exception):
     """Raised inside apply() to signal that the boost should be skipped.
@@ -23,9 +29,29 @@ class BoostSkippedError(Exception):
 class Boost(ABC):
     """Abstract base class for all boosts."""
 
-    def __init__(self, repo_path: Path) -> None:
+    def __init__(self, tools: BoostTools) -> None:
         """Initialize boost with repository path."""
-        self.repo_path = repo_path
+        self.tools = tools
+
+    @property
+    def repo_path(self) -> Path:
+        return self.git.path
+
+    @property
+    def git(self) -> RepositoryController:
+        return self.tools.git
+
+    @property
+    def uv(self) -> UvController:
+        return self.tools.uv
+
+    @property
+    def http(self) -> HttpController:
+        return self.tools.http
+
+    @property
+    def pyproject(self) -> PyProjectController:
+        return self.tools.pyproject
 
     @classmethod
     def get_name(cls) -> str:
@@ -36,7 +62,6 @@ class Boost(ABC):
 
         """
         class_name = cls.__name__.lower()
-        # Remove 'boost' suffix
         if class_name.endswith("boost"):
             return class_name[:-5]
         return class_name

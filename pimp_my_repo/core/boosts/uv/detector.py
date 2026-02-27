@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING
 
-from pimp_my_repo.core.boost.uv.models import ConfigFiles, DependencyFiles, DetectionResult
+from pimp_my_repo.core.boosts.uv.models import ConfigFiles, DependencyFiles, DetectionResult
 
 if TYPE_CHECKING:
     from pathlib import Path

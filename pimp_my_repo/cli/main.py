@@ -1,160 +1,32 @@
 """CLI entry point for pimp-my-repo."""
 
-import contextlib
-import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import typer
-from loguru import logger
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.progress import Progress, SpinnerColumn, TaskID, TextColumn
 from rich.table import Table
 from typer import Exit
 
-from pimp_my_repo.core.boost import Boost, BoostSkippedError, get_all_boosts
-from pimp_my_repo.core.git import GitManager
-from pimp_my_repo.core.result import BoostResult
+from pimp_my_repo.core.booster import execute_boosts
+from pimp_my_repo.core.registry import get_all_boosts
 
 if TYPE_CHECKING:
-    from rich.progress import TaskID
+    from pimp_my_repo.core.boosts.base import Boost
+    from pimp_my_repo.core.result import BoostResult
 
 app = typer.Typer(
     name="pimp-my-repo",
     help="🧙🏼‍♂️ A CLI wizard designed to modernize your Python repositories",
 )
 
-DEFAULT_BRANCH_NAME = "feat/pmr"
 
-
-def _validate_path(repo_path: Path, console: Console) -> None:
-    """Validate that the repository path exists and is a directory."""
-    if not repo_path.exists():
-        console.print(f"[red]Error:[/red] Path does not exist: {repo_path}")
-        raise Exit(code=1)
-
-    if not repo_path.is_dir():
-        console.print(f"[red]Error:[/red] Path is not a directory: {repo_path}")
-        raise Exit(code=1)
-
-
-def _setup_git(repo_path: Path, console: Console, branch_name: str | None = None) -> GitManager:
-    """Set up git manager and prepare the pmr branch."""
-    git_manager = GitManager(repo_path)
-
-    # Check if git is clean
-    console.print("[cyan]Checking git status...[/cyan]")
-    try:
-        if not git_manager.is_clean():
-            console.print("[red]Error:[/red] Git working directory is not clean. Please commit or stash your changes.")
-            raise Exit(code=1)
-        console.print("[green]✓[/green] Git working directory is clean")
-    except (subprocess.CalledProcessError, OSError) as e:
-        logger.exception("Failed to check git status")
-        console.print(f"[red]Error:[/red] Failed to check git status: {e}")
-        raise Exit(code=1) from e
-
-    # Create/switch to pmr branch
-    branch_name = branch_name or DEFAULT_BRANCH_NAME
-    console.print(f"[cyan]Creating/switching to branch: {branch_name}[/cyan]")
-    try:
-        git_manager.create_branch(branch_name)
-        console.print(f"[green]✓[/green] On branch: {branch_name}")
-    except (subprocess.CalledProcessError, OSError) as e:
-        console.print(f"[red]Error:[/red] Failed to create/switch branch: {e}")
-        raise Exit(code=1) from e
-
-    return git_manager
-
-
-def _process_boost(
-    boost: Boost,
-    boost_name: str,
-    git_manager: GitManager,
-    progress: Progress,
-    task_id: TaskID,
-) -> BoostResult:
-    """Process a single boost and return result.
-
-    Captures the git HEAD before calling apply().  On any non-skip failure,
-    resets hard back to that ref so the repo is left in a clean state.
-    """
-    pre_boost_sha = git_manager.get_current_commit_sha()
-
-    try:
-        boost.apply()
-    except BoostSkippedError as e:
-        progress.update(task_id, description=f"[yellow]⊘ Skipping {boost_name}: {e.reason}[/yellow]")
-        return BoostResult(name=boost_name, status="skipped", message=e.reason)
-    except Exception as e:  # noqa: BLE001
-        logger.exception(f"Error applying {boost_name} boost")
-        with contextlib.suppress(subprocess.CalledProcessError, OSError):
-            git_manager.reset_hard(pre_boost_sha)
-        progress.update(task_id, description=f"[red]✗ {boost_name} failed[/red]")
-        return BoostResult(name=boost_name, status="failed", message=str(e))
-
-    # Commit any remaining staged changes
-    with contextlib.suppress(subprocess.CalledProcessError, OSError):
-        git_manager.commit(boost.commit_message())
-
-    progress.update(task_id, description=f"[green]✓ {boost_name} applied[/green]")
-    return BoostResult(name=boost_name, status="applied", message="Success")
-
-
-def _execute_boosts(
-    boost_classes: list[type[Boost]],
-    repo_path: Path,
-    git_manager: GitManager,
-    console: Console,
-) -> list[BoostResult]:
-    """Execute all boosts and return results."""
-    results: list[BoostResult] = []
-
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
-        for boost_class in boost_classes:
-            boost_name = boost_class.get_name()
-            task_id = progress.add_task(f"Processing {boost_name} boost...", total=None)
-
-            try:
-                boost = boost_class(repo_path)
-                result = _process_boost(boost, boost_name, git_manager, progress, task_id)
-                results.append(result)
-
-            except (subprocess.CalledProcessError, OSError) as e:
-                logger.exception(f"Error processing {boost_name} boost")
-                progress.update(task_id, description=f"[red]✗ {boost_name} failed[/red]")
-                results.append(BoostResult(name=boost_name, status="failed", message=str(e)))
-
-    return results
-
-
-def _print_summary(results: list[BoostResult], console: Console) -> None:
-    """Print summary table of boost execution results."""
-    console.print("\n[bold]Summary:[/bold]")
-    table = Table(show_header=True, header_style="bold magenta")
-    table.add_column("Boost", style="cyan")
-    table.add_column("Status", style="bold")
-    table.add_column("Message")
-
-    for result in results:
-        status_style = {
-            "applied": "[green]✓ Applied[/green]",
-            "skipped": "[yellow]⊘ Skipped[/yellow]",
-            "failed": "[red]✗ Failed[/red]",
-        }.get(result.status, result.status)
-        table.add_row(result.name, status_style, result.message)
-
-    console.print(table)
-
-    applied_count = sum(1 for r in results if r.status == "applied")
-    if applied_count > 0:
-        console.print(f"\n[green]✓ Successfully applied {applied_count} boost(s)[/green]")
-    else:
-        console.print("\n[yellow]No boosts were applied[/yellow]")
+_PROGRESS_DESCRIPTIONS = {
+    "applied": "[green]✓ {name} applied[/green]",
+    "skipped": "[yellow]⊘ {name} skipped: {message}[/yellow]",
+    "failed": "[red]✗ {name} failed[/red]",
+}
 
 
 @app.command()
@@ -185,15 +57,17 @@ def run(
     console.print(f"[bold]Pimping repository at: {repo_path}[/bold]")
     _validate_path(repo_path, console)
 
-    # Setup git
-    git_manager = _setup_git(repo_path, console)
-
     # Initialize boosts
     boost_classes = get_all_boosts()
     console.print(f"[cyan]Found {len(boost_classes)} boosts[/cyan]")
 
     # Execute boosts
-    results = _execute_boosts(boost_classes, repo_path, git_manager, console)
+    try:
+        results = run_boosts(repo_path=repo_path, console=console)
+    except Exception as e:
+        console.print("[red]An error occurred while running boosts[/red]")
+        console.print(f"[red]Error:[/red] {e}")
+        raise Exit(code=1) from e
 
     # Print summary
     _print_summary(results, console)
@@ -203,9 +77,71 @@ def run_boosts(repo_path: Path, console: Console | None = None) -> list[BoostRes
     """Run all boosts on a repository and return results."""
     if console is None:
         console = Console()
-    git_manager = _setup_git(repo_path, console)
     boost_classes = get_all_boosts()
-    return _execute_boosts(boost_classes, repo_path, git_manager, console)
+    return _run_boosts_with_progress(repo_path=repo_path, boost_classes=boost_classes, console=console)
+
+
+def _validate_path(repo_path: Path, console: Console) -> None:
+    """Validate that the repository path exists and is a directory."""
+    if not repo_path.exists():
+        console.print(f"[red]Error:[/red] Path does not exist: {repo_path}")
+        raise Exit(code=1)
+
+    if not repo_path.is_dir():
+        console.print(f"[red]Error:[/red] Path is not a directory: {repo_path}")
+        raise Exit(code=1)
+
+
+def _update_progress(progress: Progress, task_id: TaskID, result: BoostResult) -> None:
+    template = _PROGRESS_DESCRIPTIONS.get(result.status, "{name}: {message}")
+    description = template.format(name=result.name, message=result.message)
+    progress.update(task_id=task_id, description=description)
+
+
+def _run_boosts_with_progress(
+    repo_path: Path,
+    boost_classes: list[type[Boost]],
+    console: Console,
+) -> list[BoostResult]:
+    """Drive the execute_boosts generator, rendering live progress for each result."""
+    results: list[BoostResult] = []
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task_ids = [progress.add_task(description=f"Processing {bc.get_name()}...", total=None) for bc in boost_classes]
+        for task_id, result in zip(
+            task_ids, execute_boosts(repo_path=repo_path, boost_classes=boost_classes), strict=True
+        ):
+            _update_progress(progress=progress, task_id=task_id, result=result)
+            results.append(result)
+    return results
+
+
+def _print_summary(results: list[BoostResult], console: Console) -> None:
+    """Print summary table of boost execution results."""
+    console.print("\n[bold]Summary:[/bold]")
+    table = Table(show_header=True, header_style="bold magenta")
+    table.add_column("Boost", style="cyan")
+    table.add_column("Status", style="bold")
+    table.add_column("Message")
+
+    for result in results:
+        status_style = {
+            "applied": "[green]✓ Applied[/green]",
+            "skipped": "[yellow]⊘ Skipped[/yellow]",
+            "failed": "[red]✗ Failed[/red]",
+        }.get(result.status, result.status)
+        table.add_row(result.name, status_style, result.message)
+
+    console.print(table)
+
+    applied_count = sum(1 for r in results if r.status == "applied")
+    if applied_count > 0:
+        console.print(f"\n[green]✓ Successfully applied {applied_count} boost(s)[/green]")
+    else:
+        console.print("\n[yellow]No boosts were applied[/yellow]")
 
 
 def main() -> None:
