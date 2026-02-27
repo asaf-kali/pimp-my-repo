@@ -1,7 +1,6 @@
 """Tests for Gitignore boost implementation."""
 
 import urllib.error
-import urllib.request
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
@@ -26,43 +25,41 @@ def gitignore_boost(boost_tools: BoostTools) -> GitignoreBoost:
     return GitignoreBoost(boost_tools)
 
 
-def _make_mock_url_response(content: bytes) -> MagicMock:
-    mock_response = MagicMock()
-    mock_response.read.return_value = content
-    mock_response.__enter__ = lambda s: s
-    mock_response.__exit__ = MagicMock(return_value=False)
-    return mock_response
-
-
 @pytest.fixture
 def urlopen_returning_pyc_content(gitignore_boost: GitignoreBoost) -> Generator[GitignoreBoost]:
-    """Yield a GitignoreBoost where urlopen returns fake gitignore content."""
+    """Yield a GitignoreBoost where http.request returns fake gitignore content."""
     fake_content = "*.pyc\n__pycache__/\n"
-    mock_response = _make_mock_url_response(fake_content.encode())
-    with patch.object(urllib.request, "urlopen", return_value=mock_response):
+    with patch.object(gitignore_boost.http, "request", return_value=fake_content):
         yield gitignore_boost
 
 
 @pytest.fixture
 def urlopen_raising_url_error(gitignore_boost: GitignoreBoost) -> Generator[GitignoreBoost]:
-    """Yield a GitignoreBoost where urlopen raises URLError."""
-    with patch.object(urllib.request, "urlopen", side_effect=urllib.error.URLError("network error")):
+    """Yield a GitignoreBoost where http.request raises URLError."""
+    with patch.object(gitignore_boost.http, "request", side_effect=urllib.error.URLError("network error")):
         yield gitignore_boost
 
 
 @pytest.fixture
 def urlopen_raising_oserror(gitignore_boost: GitignoreBoost) -> Generator[GitignoreBoost]:
-    """Yield a GitignoreBoost where urlopen raises OSError."""
-    with patch.object(urllib.request, "urlopen", side_effect=OSError("connection refused")):
+    """Yield a GitignoreBoost where http.request raises OSError."""
+    with patch.object(gitignore_boost.http, "request", side_effect=OSError("connection refused")):
         yield gitignore_boost
 
 
+@dataclass
+class CapturingUrlBoost:
+    """GitignoreBoost paired with the http.request mock for URL assertion tests."""
+
+    boost: GitignoreBoost
+    mock_request: MagicMock
+
+
 @pytest.fixture
-def urlopen_capturing_url(gitignore_boost: GitignoreBoost) -> Generator[tuple[GitignoreBoost, MagicMock]]:
-    """Yield a GitignoreBoost and the urlopen mock for URL assertion tests."""
-    mock_response = _make_mock_url_response(b"")
-    with patch.object(urllib.request, "urlopen", return_value=mock_response) as mock_open:
-        yield gitignore_boost, mock_open
+def urlopen_capturing_url(gitignore_boost: GitignoreBoost) -> Generator[CapturingUrlBoost]:
+    """Yield a GitignoreBoost and the http.request mock for URL assertion tests."""
+    with patch.object(gitignore_boost.http, "request", return_value="") as mock_request:
+        yield CapturingUrlBoost(boost=gitignore_boost, mock_request=mock_request)
 
 
 _FAKE_GITIGNORE = "*.pyc\n__pycache__/\n.venv/\n"
@@ -115,11 +112,19 @@ def patched_gitignore_apply_fetch_fails(gitignore_boost: GitignoreBoost) -> Gene
         )
 
 
+@dataclass
+class GitignoreBoostWithMockedReset:
+    """GitignoreBoost paired with the reset_tracking mock."""
+
+    boost: GitignoreBoost
+    mock_reset: MagicMock
+
+
 @pytest.fixture
-def gitignore_boost_with_mocked_reset(gitignore_boost: GitignoreBoost) -> Generator[tuple[GitignoreBoost, MagicMock]]:
+def gitignore_boost_with_mocked_reset(gitignore_boost: GitignoreBoost) -> Generator[GitignoreBoostWithMockedReset]:
     """Yield a GitignoreBoost with reset_tracking mocked, plus the mock."""
     with patch.object(gitignore_boost.tools.git, "reset_tracking") as mock_reset:
-        yield gitignore_boost, mock_reset
+        yield GitignoreBoostWithMockedReset(boost=gitignore_boost, mock_reset=mock_reset)
 
 
 # =============================================================================
@@ -214,12 +219,10 @@ def test_returns_none_on_oserror(urlopen_raising_oserror: GitignoreBoost) -> Non
 
 
 def test_url_contains_all_templates(
-    urlopen_capturing_url: tuple[GitignoreBoost, MagicMock],
+    urlopen_capturing_url: CapturingUrlBoost,
 ) -> None:
-    boost, mock_open = urlopen_capturing_url
-    boost._fetch_gitignore(["python", "macos", "linux"])  # noqa: SLF001
-    called_request = mock_open.call_args[0][0]
-    called_url = called_request.full_url if hasattr(called_request, "full_url") else str(called_request)
+    urlopen_capturing_url.boost._fetch_gitignore(["python", "macos", "linux"])  # noqa: SLF001
+    called_url = urlopen_capturing_url.mock_request.call_args.args[0]
     assert "python" in called_url
     assert "macos" in called_url
     assert "linux" in called_url
@@ -270,11 +273,10 @@ def test_preserves_existing_content(mock_repo: RepositoryController, gitignore_b
 
 
 def test_calls_rm_cached_then_add(
-    gitignore_boost_with_mocked_reset: tuple[GitignoreBoost, MagicMock],
+    gitignore_boost_with_mocked_reset: GitignoreBoostWithMockedReset,
 ) -> None:
-    boost, mock_reset = gitignore_boost_with_mocked_reset
-    boost._reset_git_tracking()  # noqa: SLF001
-    mock_reset.assert_called_once()
+    gitignore_boost_with_mocked_reset.boost._reset_git_tracking()  # noqa: SLF001
+    gitignore_boost_with_mocked_reset.mock_reset.assert_called_once()
 
 
 # =============================================================================
