@@ -1,5 +1,7 @@
 """UV boost implementation."""
 
+import ast
+import configparser
 import re
 import subprocess
 import sys
@@ -16,6 +18,17 @@ from pimp_my_repo.core.tools.uv import UvNotFoundError
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+_SETUP_PY_TO_SETUP_CFG: dict[str, str] = {
+    "name": "name",
+    "version": "version",
+    "description": "description",
+    "author": "author",
+    "author_email": "author-email",
+    "url": "url",
+    "license": "license",
+    "keywords": "keywords",
+}
 
 
 class UvBoost(Boost):
@@ -164,11 +177,66 @@ class UvBoost(Boost):
 
         return result
 
+    def _is_setup_cfg_bare(self) -> bool:
+        """Return True if setup.cfg is absent or has no [metadata]/[options] sections."""
+        setup_cfg_path = self.tools.repo_path / "setup.cfg"
+        if not setup_cfg_path.exists():
+            return True
+        config = configparser.ConfigParser()
+        config.read(setup_cfg_path)
+        return not any(s in config.sections() for s in ("metadata", "options"))
+
+    def _parse_setup_py_str_kwargs(self) -> dict[str, str]:
+        """AST-walk setup.py and return only string-literal kwargs from setup()."""
+        setup_py_path = self.tools.repo_path / "setup.py"
+        if not setup_py_path.exists():
+            return {}
+        try:
+            source = setup_py_path.read_text(encoding="utf-8")
+            tree = ast.parse(source)
+        except SyntaxError, OSError:
+            return {}
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            is_setup = (isinstance(func, ast.Name) and func.id == "setup") or (
+                isinstance(func, ast.Attribute) and func.attr == "setup"
+            )
+            if not is_setup:
+                continue
+            result: dict[str, str] = {}
+            for kw in node.keywords:
+                if kw.arg and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                    result[kw.arg] = kw.value.value
+            return result
+        return {}
+
+    def _augment_setup_cfg_from_setup_py(self) -> None:
+        """Write a [metadata] section into setup.cfg from setup.py string kwargs."""
+        kwargs = self._parse_setup_py_str_kwargs()
+        if not kwargs:
+            logger.debug("No extractable string metadata in setup.py; skipping setup.cfg augmentation")
+            return
+        setup_cfg_path = self.tools.repo_path / "setup.cfg"
+        config = configparser.ConfigParser()
+        if setup_cfg_path.exists():
+            config.read(setup_cfg_path)
+        if "metadata" not in config:
+            config["metadata"] = {}
+        for setup_key, cfg_key in _SETUP_PY_TO_SETUP_CFG.items():
+            if setup_key in kwargs and cfg_key not in config["metadata"]:
+                config["metadata"][cfg_key] = kwargs[setup_key]
+        with setup_cfg_path.open("w", encoding="utf-8") as f:
+            config.write(f)
+        logger.info("Augmented setup.cfg with metadata from setup.py (best-effort)")
+
     def _has_migration_source(self) -> bool:
         """Check if there are any migration sources supported by migrate-to-uv.
 
         migrate-to-uv supports: Poetry (pyproject.toml with [tool.poetry]),
-        Pipfile, and setup.cfg. Bare setup.py without setup.cfg is NOT supported.
+        Pipfile, and setup.cfg with [metadata]/[options]. A bare setup.cfg (no
+        metadata) or a bare setup.py triggers best-effort augmentation instead.
         """
         detected = detect_dependency_files(self.tools.repo_path)
 
@@ -178,7 +246,10 @@ class UvBoost(Boost):
             return True
         if self._has_poetry_config():
             return True
-        if detected.setup_cfg:
+        if detected.setup_cfg and not self._is_setup_cfg_bare():
+            return True
+        # Best-effort: treat setup.py as a migration source when no pyproject.toml yet
+        if detected.setup_py and not detected.pyproject_toml:
             return True
 
         requirements_files = self._detect_requirements_files()
@@ -202,6 +273,12 @@ class UvBoost(Boost):
 
         # Detect and categorize requirements files
         requirements_files = self._detect_requirements_files()
+
+        # Best-effort: augment bare/missing setup.cfg from setup.py before migrating
+        detected = detect_dependency_files(self.tools.repo_path)
+        if detected.setup_py and self._is_setup_cfg_bare():
+            logger.info("Bare/missing setup.cfg with setup.py detected; attempting best-effort augmentation...")
+            self._augment_setup_cfg_from_setup_py()
 
         # Run migrate-to-uv for main migration (handles setup.py, Pipfile, Poetry, etc.)
         logger.info("Detected migration source, using uvx migrate-to-uv...")
