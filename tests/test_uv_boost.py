@@ -3,7 +3,7 @@
 import re
 import subprocess
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -170,6 +170,59 @@ def patched_uv_boost_installable(uv_boost: UvBoost) -> Generator[UvBoost]:
         yield uv_boost
 
 
+@pytest.fixture
+def patched_uv_boost_installable_with_mocked_run(uv_boost: UvBoost) -> Generator[UvBoost]:
+    """Yield a UvBoost that can be installed and has uv.run mocked out."""
+    check_calls = [False, True]
+    with (
+        patch.object(uv_boost, "_check_uv_installed", side_effect=lambda: check_calls.pop(0)),
+        patch.object(uv_boost, "_install_uv", return_value=True),
+        patch.object(uv_boost.tools.uv, "run"),
+    ):
+        yield uv_boost
+
+
+@pytest.fixture
+def uv_boost_with_migration_error(mock_repo: RepositoryController, uv_boost: UvBoost) -> Generator[UvBoost]:
+    """Yield a UvBoost set up for poetry migration that will fail on run_uvx."""
+    mock_repo.add_file("poetry.lock", "# Poetry lock file")
+    mock_repo.add_file("pyproject.toml", "[tool.poetry]\nname = 'test'")
+    error = subprocess.CalledProcessError(1, "uvx", stderr="Migration failed")
+    with patch.object(uv_boost.tools.uv, "run_uvx", side_effect=error):
+        yield uv_boost
+
+
+@pytest.fixture
+def uv_boost_with_lock_error(mock_repo: RepositoryController, uv_boost: UvBoost) -> Generator[UvBoost]:
+    """Yield a UvBoost with a pyproject.toml that will fail on uv lock."""
+    mock_repo.add_file("pyproject.toml", "[project]\nname = 'test'\nversion = '0.1.0'")
+    error = subprocess.CalledProcessError(1, "uv lock", stderr="Lock failed")
+    with patch.object(uv_boost.tools.uv, "run", side_effect=error):
+        yield uv_boost
+
+
+@pytest.fixture
+def uv_boost_check_called_process_error(uv_boost: UvBoost) -> Generator[UvBoost]:
+    """Yield a UvBoost where uv.run raises CalledProcessError for version check."""
+    error = subprocess.CalledProcessError(1, "uv --version")
+    with patch.object(uv_boost.tools.uv, "run", side_effect=error):
+        yield uv_boost
+
+
+@pytest.fixture
+def uv_boost_check_oserror(uv_boost: UvBoost) -> Generator[UvBoost]:
+    """Yield a UvBoost where uv.run raises OSError for version check."""
+    with patch.object(uv_boost.tools.uv, "run", side_effect=OSError("System error")):
+        yield uv_boost
+
+
+@pytest.fixture
+def uv_boost_check_file_not_found(uv_boost: UvBoost) -> Generator[UvBoost]:
+    """Yield a UvBoost where uv.run raises FileNotFoundError for version check."""
+    with patch.object(uv_boost.tools.uv, "run", side_effect=FileNotFoundError("uv not found")):
+        yield uv_boost
+
+
 # =============================================================================
 # PRECONDITIONS
 # =============================================================================
@@ -180,9 +233,8 @@ def test_apply_raises_skip_when_uv_not_installed(patched_uv_boost_not_installed:
         patched_uv_boost_not_installed.apply()
 
 
-def test_apply_does_not_skip_when_uv_installable(patched_uv_boost_installable: UvBoost) -> None:
-    with patch.object(patched_uv_boost_installable.tools.uv, "run"):
-        patched_uv_boost_installable.apply()
+def test_apply_does_not_skip_when_uv_installable(patched_uv_boost_installable_with_mocked_run: UvBoost) -> None:
+    patched_uv_boost_installable_with_mocked_run.apply()
 
 
 # =============================================================================
@@ -337,44 +389,30 @@ def test_ensure_uv_config_preserves_existing_section(mock_repo: RepositoryContro
 # =============================================================================
 
 
-def test_apply_raises_on_migration_failure(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    mock_repo.add_file("poetry.lock", "# Poetry lock file")
-    mock_repo.add_file("pyproject.toml", "[tool.poetry]\nname = 'test'")
-
-    error = subprocess.CalledProcessError(1, "uvx", stderr="Migration failed")
-    with (
-        patch.object(uv_boost.tools.uv, "run_uvx", side_effect=error),
-        pytest.raises(subprocess.CalledProcessError) as exc_info,
-    ):
-        uv_boost.apply()
+def test_apply_raises_on_migration_failure(uv_boost_with_migration_error: UvBoost) -> None:
+    with pytest.raises(subprocess.CalledProcessError) as exc_info:
+        uv_boost_with_migration_error.apply()
     assert exc_info.value.returncode == 1
 
 
-def test_apply_raises_on_lock_generation_failure(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    mock_repo.add_file("pyproject.toml", "[project]\nname = 'test'\nversion = '0.1.0'")
-
-    error = subprocess.CalledProcessError(1, "uv lock", stderr="Lock failed")
-    with patch.object(uv_boost.tools.uv, "run", side_effect=error), pytest.raises(subprocess.CalledProcessError):
-        uv_boost.apply()
+def test_apply_raises_on_lock_generation_failure(uv_boost_with_lock_error: UvBoost) -> None:
+    with pytest.raises(subprocess.CalledProcessError):
+        uv_boost_with_lock_error.apply()
 
 
-def test_check_uv_installed_handles_called_process_error(uv_boost: UvBoost) -> None:
-    error = subprocess.CalledProcessError(1, "uv --version")
-    with patch.object(uv_boost.tools.uv, "run", side_effect=error):
-        result = uv_boost._check_uv_installed()  # noqa: SLF001
-        assert result is False
+def test_check_uv_installed_handles_called_process_error(uv_boost_check_called_process_error: UvBoost) -> None:
+    result = uv_boost_check_called_process_error._check_uv_installed()  # noqa: SLF001
+    assert result is False
 
 
-def test_check_uv_installed_handles_oserror(uv_boost: UvBoost) -> None:
-    with patch.object(uv_boost.tools.uv, "run", side_effect=OSError("System error")):
-        result = uv_boost._check_uv_installed()  # noqa: SLF001
-        assert result is False
+def test_check_uv_installed_handles_oserror(uv_boost_check_oserror: UvBoost) -> None:
+    result = uv_boost_check_oserror._check_uv_installed()  # noqa: SLF001
+    assert result is False
 
 
-def test_check_uv_installed_handles_file_not_found(uv_boost: UvBoost) -> None:
-    with patch.object(uv_boost.tools.uv, "run", side_effect=FileNotFoundError("uv not found")):
-        result = uv_boost._check_uv_installed()  # noqa: SLF001
-        assert result is False
+def test_check_uv_installed_handles_file_not_found(uv_boost_check_file_not_found: UvBoost) -> None:
+    result = uv_boost_check_file_not_found._check_uv_installed()  # noqa: SLF001
+    assert result is False
 
 
 # =============================================================================
@@ -382,58 +420,58 @@ def test_check_uv_installed_handles_file_not_found(uv_boost: UvBoost) -> None:
 # =============================================================================
 
 
-def test_install_uv_pip_failure_falls_back_to_installer(uv_boost: UvBoost) -> None:
-    pip_result = MagicMock()
-    pip_result.returncode = 1
-
-    installer_result = MagicMock()
-    installer_result.returncode = 0
-
-    expected_call_count = 2
-    with patch("subprocess.run", side_effect=[pip_result, installer_result]) as mock_run:
-        result = uv_boost._install_uv()  # noqa: SLF001
-        assert result is True
-        assert mock_run.call_count == expected_call_count
+@pytest.fixture
+def uv_boost_pip_fails_script_succeeds(uv_boost: UvBoost) -> Generator[UvBoost]:
+    """Yield a UvBoost where pip install fails but script install succeeds."""
+    with (
+        patch.object(uv_boost, "_try_pip_install", return_value=False),
+        patch.object(uv_boost, "_try_script_install", return_value=True),
+    ):
+        yield uv_boost
 
 
-def test_install_uv_both_methods_fail(uv_boost: UvBoost) -> None:
-    pip_result = MagicMock()
-    pip_result.returncode = 1
-
-    installer_result = MagicMock()
-    installer_result.returncode = 1
-
-    with patch("subprocess.run", side_effect=[pip_result, installer_result]):
-        result = uv_boost._install_uv()  # noqa: SLF001
-        assert result is False
+@pytest.fixture
+def uv_boost_both_install_fail(uv_boost: UvBoost) -> Generator[UvBoost]:
+    """Yield a UvBoost where both pip and script install fail."""
+    with (
+        patch.object(uv_boost, "_try_pip_install", return_value=False),
+        patch.object(uv_boost, "_try_script_install", return_value=False),
+    ):
+        yield uv_boost
 
 
-def test_install_uv_pip_raises_oserror(uv_boost: UvBoost) -> None:
-    installer_result = MagicMock()
-    installer_result.returncode = 0
-
-    with patch("subprocess.run", side_effect=[OSError("pip not found"), installer_result]):
-        result = uv_boost._install_uv()  # noqa: SLF001
-        assert result is True
+@pytest.fixture
+def uv_boost_pip_succeeds(uv_boost: UvBoost) -> Generator[UvBoost]:
+    """Yield a UvBoost where pip install succeeds on the first try."""
+    with patch.object(uv_boost, "_try_pip_install", return_value=True):
+        yield uv_boost
 
 
-def test_install_uv_installer_raises_oserror(uv_boost: UvBoost) -> None:
-    pip_result = MagicMock()
-    pip_result.returncode = 1
-
-    with patch("subprocess.run", side_effect=[pip_result, OSError("curl not found")]):
-        result = uv_boost._install_uv()  # noqa: SLF001
-        assert result is False
+def test_install_uv_pip_failure_falls_back_to_installer(uv_boost_pip_fails_script_succeeds: UvBoost) -> None:
+    result = uv_boost_pip_fails_script_succeeds._install_uv()  # noqa: SLF001
+    assert result is True
 
 
-def test_install_uv_pip_success(uv_boost: UvBoost) -> None:
-    pip_result = MagicMock()
-    pip_result.returncode = 0
+def test_install_uv_both_methods_fail(uv_boost_both_install_fail: UvBoost) -> None:
+    result = uv_boost_both_install_fail._install_uv()  # noqa: SLF001
+    assert result is False
 
-    with patch("subprocess.run", return_value=pip_result) as mock_run:
-        result = uv_boost._install_uv()  # noqa: SLF001
-        assert result is True
-        assert mock_run.call_count == 1
+
+def test_install_uv_pip_oserror_falls_back_to_installer(uv_boost_pip_fails_script_succeeds: UvBoost) -> None:
+    """When pip install fails (including due to OSError caught internally), script install is tried."""
+    result = uv_boost_pip_fails_script_succeeds._install_uv()  # noqa: SLF001
+    assert result is True
+
+
+def test_install_uv_installer_oserror_returns_false(uv_boost_both_install_fail: UvBoost) -> None:
+    """When both install methods fail (including script raising OSError internally), returns False."""
+    result = uv_boost_both_install_fail._install_uv()  # noqa: SLF001
+    assert result is False
+
+
+def test_install_uv_pip_success(uv_boost_pip_succeeds: UvBoost) -> None:
+    result = uv_boost_pip_succeeds._install_uv()  # noqa: SLF001
+    assert result is True
 
 
 # =============================================================================

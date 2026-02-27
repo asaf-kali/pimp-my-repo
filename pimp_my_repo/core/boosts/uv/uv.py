@@ -93,7 +93,7 @@ class UvBoost(Boost):
         return pyproject_data
 
     def _has_migration_source(self) -> bool:
-        """Check if there are any migration sources (Poetry, requirements.txt, etc.)."""
+        """Check if there are any migration sources (Poetry, requirements.txt, setup.py, etc.)."""
         detected = detect_dependency_files(self.tools.repo_path)
 
         if detected.poetry_lock:
@@ -101,6 +101,8 @@ class UvBoost(Boost):
         if detected.pipfile or detected.pipfile_lock:
             return True
         if self._has_poetry_config():
+            return True
+        if detected.setup_py:
             return True
 
         requirements_files = list(self.tools.repo_path.rglob("requirements*.txt"))

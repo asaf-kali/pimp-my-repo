@@ -61,43 +61,95 @@ def patched_mypy_apply(
         )
 
 
+@dataclass
+class PatchedMypyApplyWithAddPackage:
+    """Pre-patched MypyBoost with subprocess and add_package mocks wired for apply()."""
+
+    boost: MypyBoost
+    mock_uv: MagicMock
+    mock_git: MagicMock
+    mock_mypy: MagicMock
+    mock_add_package: MagicMock
+
+
+@pytest.fixture
+def patched_mypy_apply_with_add_package(
+    mypy_boost_with_pyproject: MypyBoost,
+    ok_result: SubprocessResultFactory,
+) -> Generator[PatchedMypyApplyWithAddPackage]:
+    """Yield a MypyBoost with all subprocess and add_package calls pre-mocked."""
+    with (
+        patch.object(mypy_boost_with_pyproject.tools.uv, "run", return_value=ok_result()) as mock_uv,
+        patch.object(mypy_boost_with_pyproject.tools.git, "commit") as mock_git,
+        patch.object(mypy_boost_with_pyproject, "_run_mypy", return_value=ok_result()) as mock_mypy,
+        patch.object(mypy_boost_with_pyproject.tools.uv, "add_package") as mock_add_package,
+    ):
+        yield PatchedMypyApplyWithAddPackage(
+            boost=mypy_boost_with_pyproject,
+            mock_uv=mock_uv,
+            mock_git=mock_git,
+            mock_mypy=mock_mypy,
+            mock_add_package=mock_add_package,
+        )
+
+
+@pytest.fixture
+def mypy_boost_uv_failing(
+    mypy_boost_with_pyproject: MypyBoost,
+    fail_result: SubprocessResultFactory,
+) -> Generator[MypyBoost]:
+    """Yield a MypyBoost where uv.run returns a non-zero result."""
+    with patch.object(mypy_boost_with_pyproject.tools.uv, "run", return_value=fail_result()):
+        yield mypy_boost_with_pyproject
+
+
+@pytest.fixture
+def mypy_boost_uv_file_not_found(mypy_boost_with_pyproject: MypyBoost) -> Generator[MypyBoost]:
+    """Yield a MypyBoost where uv.run raises FileNotFoundError."""
+    with patch.object(mypy_boost_with_pyproject.tools.uv, "run", side_effect=FileNotFoundError):
+        yield mypy_boost_with_pyproject
+
+
+@pytest.fixture
+def mypy_boost_uv_oserror(mypy_boost_with_pyproject: MypyBoost) -> Generator[MypyBoost]:
+    """Yield a MypyBoost where uv.run raises OSError."""
+    with patch.object(mypy_boost_with_pyproject.tools.uv, "run", side_effect=OSError):
+        yield mypy_boost_with_pyproject
+
+
+@pytest.fixture
+def mypy_boost_uv_ok(
+    mypy_boost: MypyBoost,
+    ok_result: SubprocessResultFactory,
+) -> Generator[MypyBoost]:
+    """Yield a MypyBoost (no pyproject) where uv.run returns ok."""
+    with patch.object(mypy_boost.tools.uv, "run", return_value=ok_result()):
+        yield mypy_boost
+
+
 # =============================================================================
 # PRECONDITIONS
 # =============================================================================
 
 
-def test_raises_skip_when_uv_nonzero(
-    mypy_boost_with_pyproject: MypyBoost, fail_result: SubprocessResultFactory
-) -> None:
-    with (
-        patch.object(mypy_boost_with_pyproject.tools.uv, "run", return_value=fail_result()),
-        pytest.raises(BoostSkippedError, match="uv is not available"),
-    ):
-        mypy_boost_with_pyproject.apply()
+def test_raises_skip_when_uv_nonzero(mypy_boost_uv_failing: MypyBoost) -> None:
+    with pytest.raises(BoostSkippedError, match="uv is not available"):
+        mypy_boost_uv_failing.apply()
 
 
-def test_raises_skip_when_uv_raises_file_not_found(mypy_boost_with_pyproject: MypyBoost) -> None:
-    with (
-        patch.object(mypy_boost_with_pyproject.tools.uv, "run", side_effect=FileNotFoundError),
-        pytest.raises(BoostSkippedError, match="uv is not installed"),
-    ):
-        mypy_boost_with_pyproject.apply()
+def test_raises_skip_when_uv_raises_file_not_found(mypy_boost_uv_file_not_found: MypyBoost) -> None:
+    with pytest.raises(BoostSkippedError, match="uv is not installed"):
+        mypy_boost_uv_file_not_found.apply()
 
 
-def test_raises_skip_when_uv_raises_oserror(mypy_boost_with_pyproject: MypyBoost) -> None:
-    with (
-        patch.object(mypy_boost_with_pyproject.tools.uv, "run", side_effect=OSError),
-        pytest.raises(BoostSkippedError, match="uv is not installed"),
-    ):
-        mypy_boost_with_pyproject.apply()
+def test_raises_skip_when_uv_raises_oserror(mypy_boost_uv_oserror: MypyBoost) -> None:
+    with pytest.raises(BoostSkippedError, match="uv is not installed"):
+        mypy_boost_uv_oserror.apply()
 
 
-def test_raises_skip_when_no_pyproject(mypy_boost: MypyBoost, ok_result: SubprocessResultFactory) -> None:
-    with (
-        patch.object(mypy_boost.tools.uv, "run", return_value=ok_result()),
-        pytest.raises(BoostSkippedError, match=r"No pyproject\.toml found"),
-    ):
-        mypy_boost.apply()
+def test_raises_skip_when_no_pyproject(mypy_boost_uv_ok: MypyBoost) -> None:
+    with pytest.raises(BoostSkippedError, match=r"No pyproject\.toml found"):
+        mypy_boost_uv_ok.apply()
 
 
 # =============================================================================
@@ -280,10 +332,9 @@ def test_sets_strict_true_on_existing_mypy_section(mock_repo: RepositoryControll
 # =============================================================================
 
 
-def test_apply_calls_uv_add_mypy(patched_mypy_apply: PatchedMypyApply) -> None:
-    with patch.object(patched_mypy_apply.boost.tools.uv, "add_package") as mock_add:
-        patched_mypy_apply.boost.apply()
-        mock_add.assert_called_once_with("mypy", dev=True)
+def test_apply_calls_uv_add_mypy(patched_mypy_apply_with_add_package: PatchedMypyApplyWithAddPackage) -> None:
+    patched_mypy_apply_with_add_package.boost.apply()
+    patched_mypy_apply_with_add_package.mock_add_package.assert_called_once_with("mypy", group="lint")
 
 
 def test_apply_writes_strict_config_to_pyproject(

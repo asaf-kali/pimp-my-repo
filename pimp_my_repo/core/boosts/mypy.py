@@ -157,7 +157,7 @@ class MypyBoost(Boost):
         logger.info("Committed mypy configuration")
 
     def _add_mypy(self) -> None:
-        self.uv.add_package("mypy", dev=True)
+        self.uv.add_package("mypy", group="lint")
 
     def commit_message(self) -> str:
         """Generate commit message for Mypy boost."""

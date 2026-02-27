@@ -60,43 +60,98 @@ def patched_ruff_apply(
         )
 
 
+@dataclass
+class PatchedRuffApplyWithAddPackage:
+    """Pre-patched RuffBoost with subprocess and add_package mocks wired for apply()."""
+
+    boost: RuffBoost
+    mock_uv: MagicMock
+    mock_git: MagicMock
+    mock_format: MagicMock
+    mock_check: MagicMock
+    mock_add_package: MagicMock
+
+
+@pytest.fixture
+def patched_ruff_apply_with_add_package(
+    ruff_boost_with_pyproject: RuffBoost,
+    ok_result: SubprocessResultFactory,
+) -> Generator[PatchedRuffApplyWithAddPackage]:
+    """Yield a RuffBoost with all subprocess and add_package calls pre-mocked."""
+    with (
+        patch.object(ruff_boost_with_pyproject.tools.uv, "run", return_value=ok_result()) as mock_uv,
+        patch.object(ruff_boost_with_pyproject.tools.git, "commit") as mock_git,
+        patch.object(ruff_boost_with_pyproject, "_run_ruff_format", return_value=ok_result()) as mock_fmt,
+        patch.object(ruff_boost_with_pyproject, "_run_ruff_check", return_value=ok_result()) as mock_check,
+        patch.object(ruff_boost_with_pyproject.tools.uv, "add_package") as mock_add_package,
+    ):
+        yield PatchedRuffApplyWithAddPackage(
+            boost=ruff_boost_with_pyproject,
+            mock_uv=mock_uv,
+            mock_git=mock_git,
+            mock_format=mock_fmt,
+            mock_check=mock_check,
+            mock_add_package=mock_add_package,
+        )
+
+
+@pytest.fixture
+def ruff_boost_uv_failing(
+    ruff_boost_with_pyproject: RuffBoost,
+    fail_result: SubprocessResultFactory,
+) -> Generator[RuffBoost]:
+    """Yield a RuffBoost where uv.run returns a non-zero result."""
+    with patch.object(ruff_boost_with_pyproject.tools.uv, "run", return_value=fail_result()):
+        yield ruff_boost_with_pyproject
+
+
+@pytest.fixture
+def ruff_boost_uv_file_not_found(ruff_boost_with_pyproject: RuffBoost) -> Generator[RuffBoost]:
+    """Yield a RuffBoost where uv.run raises FileNotFoundError."""
+    with patch.object(ruff_boost_with_pyproject.tools.uv, "run", side_effect=FileNotFoundError):
+        yield ruff_boost_with_pyproject
+
+
+@pytest.fixture
+def ruff_boost_uv_oserror(ruff_boost_with_pyproject: RuffBoost) -> Generator[RuffBoost]:
+    """Yield a RuffBoost where uv.run raises OSError."""
+    with patch.object(ruff_boost_with_pyproject.tools.uv, "run", side_effect=OSError):
+        yield ruff_boost_with_pyproject
+
+
+@pytest.fixture
+def ruff_boost_uv_ok(
+    ruff_boost: RuffBoost,
+    ok_result: SubprocessResultFactory,
+) -> Generator[RuffBoost]:
+    """Yield a RuffBoost (no pyproject) where uv.run returns ok."""
+    with patch.object(ruff_boost.tools.uv, "run", return_value=ok_result()):
+        yield ruff_boost
+
+
 # =============================================================================
 # PRECONDITIONS
 # =============================================================================
 
 
-def test_raises_skip_when_uv_nonzero(
-    ruff_boost_with_pyproject: RuffBoost, fail_result: SubprocessResultFactory
-) -> None:
-    with (
-        patch.object(ruff_boost_with_pyproject.tools.uv, "run", return_value=fail_result()),
-        pytest.raises(BoostSkippedError, match="uv is not available"),
-    ):
-        ruff_boost_with_pyproject.apply()
+def test_raises_skip_when_uv_nonzero(ruff_boost_uv_failing: RuffBoost) -> None:
+    with pytest.raises(BoostSkippedError, match="uv is not available"):
+        ruff_boost_uv_failing.apply()
 
 
-def test_raises_skip_when_uv_raises_file_not_found(ruff_boost_with_pyproject: RuffBoost) -> None:
-    with (
-        patch.object(ruff_boost_with_pyproject.tools.uv, "run", side_effect=FileNotFoundError),
-        pytest.raises(BoostSkippedError, match="uv is not installed"),
-    ):
-        ruff_boost_with_pyproject.apply()
+def test_raises_skip_when_uv_raises_file_not_found(ruff_boost_uv_file_not_found: RuffBoost) -> None:
+    with pytest.raises(BoostSkippedError, match="uv is not installed"):
+        ruff_boost_uv_file_not_found.apply()
 
 
-def test_raises_skip_when_uv_raises_oserror(ruff_boost_with_pyproject: RuffBoost) -> None:
-    with (
-        patch.object(ruff_boost_with_pyproject.tools.uv, "run", side_effect=OSError),
-        pytest.raises(BoostSkippedError, match="uv is not installed"),
-    ):
-        ruff_boost_with_pyproject.apply()
+def test_raises_skip_when_uv_raises_oserror(ruff_boost_uv_oserror: RuffBoost) -> None:
+    with pytest.raises(BoostSkippedError, match="uv is not installed"):
+        ruff_boost_uv_oserror.apply()
 
 
-def test_raises_skip_when_no_pyproject(ruff_boost: RuffBoost, ok_result: SubprocessResultFactory) -> None:
-    with (
-        patch.object(ruff_boost.tools.uv, "run", return_value=ok_result()),
-        pytest.raises(BoostSkippedError, match=r"No pyproject\.toml found"),
-    ):
-        ruff_boost.apply()
+def test_raises_skip_when_no_pyproject(ruff_boost_uv_ok: RuffBoost) -> None:
+    with pytest.raises(BoostSkippedError, match=r"No pyproject\.toml found"):
+        ruff_boost_uv_ok.apply()
 
 
 # =============================================================================
@@ -261,10 +316,9 @@ def test_ruff_config_preserves_existing_content(mock_repo: RepositoryController,
 # =============================================================================
 
 
-def test_apply_calls_uv_add_ruff(patched_ruff_apply: PatchedRuffApply) -> None:
-    with patch.object(patched_ruff_apply.boost.tools.uv, "add_package") as mock_add:
-        patched_ruff_apply.boost.apply()
-        mock_add.assert_called_once_with("ruff", group="lint")
+def test_apply_calls_uv_add_ruff(patched_ruff_apply_with_add_package: PatchedRuffApplyWithAddPackage) -> None:
+    patched_ruff_apply_with_add_package.boost.apply()
+    patched_ruff_apply_with_add_package.mock_add_package.assert_called_once_with("ruff", group="lint")
 
 
 def test_apply_writes_ruff_config_to_pyproject(
