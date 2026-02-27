@@ -8,9 +8,10 @@ from typing import TYPE_CHECKING, Any
 from loguru import logger
 from tomlkit import TOMLDocument, document, table
 
-from pimp_my_repo.core.boosts.base import Boost, BoostSkippedError
+from pimp_my_repo.core.boosts.base import Boost
 from pimp_my_repo.core.boosts.uv.detector import detect_dependency_files
 from pimp_my_repo.core.boosts.uv.models import ProjectRequirements
+from pimp_my_repo.core.tools.uv import UvNotFoundError
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -19,13 +20,8 @@ if TYPE_CHECKING:
 class UvBoost(Boost):
     """Boost for integrating UV dependency management."""
 
-    _uv_version_failed: bool = False
-
     def _uv_is_available(self) -> bool:
         if self._check_uv_installed():
-            return True
-        # uv binary exists but returned non-zero — treat as available (version mismatch, etc.)
-        if self._uv_version_failed:
             return True
         if not self._install_uv():
             return False
@@ -33,11 +29,9 @@ class UvBoost(Boost):
 
     def _check_uv_installed(self) -> bool:
         """Check if UV is installed."""
-        self._uv_version_failed = False
         try:
             result = self.uv.run("--version", check=False)
         except subprocess.CalledProcessError:
-            self._uv_version_failed = True
             return False
         except OSError:
             return False
@@ -46,9 +40,9 @@ class UvBoost(Boost):
     def _install_uv(self) -> bool:
         """Attempt to install UV automatically."""
         logger.info("UV not found, attempting to install...")
-        if self._try_pip_install():
-            return True
         if self._try_script_install():
+            return True
+        if self._try_pip_install():
             return True
         logger.error("Failed to install UV automatically")
         return False
@@ -244,7 +238,7 @@ class UvBoost(Boost):
         """Create pyproject.toml if needed and migrate using uvx migrate-to-uv."""
         if not self._uv_is_available():
             msg = "uv is not installed and could not be installed automatically"
-            raise BoostSkippedError(msg)
+            raise UvNotFoundError(msg)
         self._run_migration_if_needed()
         self._ensure_pyproject_exists()
         self._ensure_uv_config_present()

@@ -7,13 +7,13 @@ from unittest.mock import patch
 
 import pytest
 
-from pimp_my_repo.core.boosts.base import BoostSkippedError
 from pimp_my_repo.core.boosts.uv.detector import (
     detect_all,
     detect_dependency_files,
     detect_existing_configs,
 )
 from pimp_my_repo.core.boosts.uv.uv import UvBoost
+from pimp_my_repo.core.tools.uv import UvNotFoundError
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -197,7 +197,15 @@ def uv_boost_with_lock_error(mock_repo: RepositoryController, uv_boost: UvBoost)
     """Yield a UvBoost with a pyproject.toml that will fail on uv lock."""
     mock_repo.add_file("pyproject.toml", "[project]\nname = 'test'\nversion = '0.1.0'")
     error = subprocess.CalledProcessError(1, "uv lock", stderr="Lock failed")
-    with patch.object(uv_boost.tools.uv, "run", side_effect=error):
+
+    def run_side_effect(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:  # noqa: ARG001
+        # Only raise error for "lock" command, not for "--version" check
+        if args and args[0] == "lock":
+            raise error
+        # Return success for version check
+        return subprocess.CompletedProcess(["uv", *args], 0, "", "")
+
+    with patch.object(uv_boost.tools.uv, "run", side_effect=run_side_effect):
         yield uv_boost
 
 
@@ -229,7 +237,7 @@ def uv_boost_check_file_not_found(uv_boost: UvBoost) -> Generator[UvBoost]:
 
 
 def test_apply_raises_skip_when_uv_not_installed(patched_uv_boost_not_installed: UvBoost) -> None:
-    with pytest.raises(BoostSkippedError, match="uv is not installed"):
+    with pytest.raises(UvNotFoundError, match="uv is not installed"):
         patched_uv_boost_not_installed.apply()
 
 
