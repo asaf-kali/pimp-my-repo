@@ -21,6 +21,7 @@ def detect_dependency_files(repo_path: Path) -> DependencyFiles:
     dependency_files = {
         "requirements.txt": False,
         "setup.py": False,
+        "setup.cfg": False,
         "pyproject.toml": False,
         "Pipfile": False,
         "poetry.lock": False,

@@ -11,6 +11,7 @@ from tomlkit import TOMLDocument, document, table
 from pimp_my_repo.core.boosts.base import Boost
 from pimp_my_repo.core.boosts.uv.detector import detect_dependency_files
 from pimp_my_repo.core.boosts.uv.models import ProjectRequirements
+from pimp_my_repo.core.tools.subprocess import run_command
 from pimp_my_repo.core.tools.uv import UvNotFoundError
 
 if TYPE_CHECKING:
@@ -49,13 +50,12 @@ class UvBoost(Boost):
 
     def _try_pip_install(self) -> bool:
         try:
-            result = subprocess.run(  # noqa: S603
+            result = run_command(
                 [sys.executable, "-m", "pip", "install", "uv"],
-                capture_output=True,
-                text=True,
+                cwd=self.tools.repo_path,
                 check=False,
             )
-        except (subprocess.CalledProcessError, OSError) as e:
+        except OSError as e:
             logger.debug(f"Failed to install UV via pip: {e}")
             return False
         if result.returncode != 0:
@@ -66,13 +66,12 @@ class UvBoost(Boost):
     def _try_script_install(self) -> bool:
         installer_url = "https://astral.sh/uv/install.sh"
         try:
-            result = subprocess.run(  # noqa: S603
-                ["sh", "-c", f"curl -LsSf {installer_url} | sh"],  # noqa: S607
-                capture_output=True,
-                text=True,
+            result = run_command(
+                ["sh", "-c", f"curl -LsSf {installer_url} | sh"],
+                cwd=self.tools.repo_path,
                 check=False,
             )
-        except (subprocess.CalledProcessError, OSError) as e:
+        except OSError as e:
             logger.debug(f"Failed to install UV via official installer: {e}")
             return False
         if result.returncode != 0:
@@ -166,7 +165,11 @@ class UvBoost(Boost):
         return result
 
     def _has_migration_source(self) -> bool:
-        """Check if there are any migration sources (Poetry, requirements.txt, setup.py, etc.)."""
+        """Check if there are any migration sources supported by migrate-to-uv.
+
+        migrate-to-uv supports: Poetry (pyproject.toml with [tool.poetry]),
+        Pipfile, and setup.cfg. Bare setup.py without setup.cfg is NOT supported.
+        """
         detected = detect_dependency_files(self.tools.repo_path)
 
         if detected.poetry_lock:
@@ -175,7 +178,7 @@ class UvBoost(Boost):
             return True
         if self._has_poetry_config():
             return True
-        if detected.setup_py:
+        if detected.setup_cfg:
             return True
 
         requirements_files = self._detect_requirements_files()

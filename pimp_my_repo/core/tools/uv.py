@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
+from pimp_my_repo.core.tools.subprocess import run_command
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -22,25 +24,11 @@ class UvController:
 
     def run(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         """Run a uv command in the repository directory."""
-        cmd = ["uv", *args]
-        return subprocess.run(  # noqa: S603
-            cmd,
-            cwd=self.repo_path,
-            capture_output=True,
-            text=True,
-            check=check,
-        )
+        return run_command(["uv", *args], cwd=self.repo_path, check=check)
 
     def run_uvx(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         """Run a uvx command in the repository directory."""
-        cmd = ["uvx", *args]
-        return subprocess.run(  # noqa: S603
-            cmd,
-            cwd=self.repo_path,
-            capture_output=True,
-            text=True,
-            check=check,
-        )
+        return run_command(["uvx", *args], cwd=self.repo_path, check=check, log_on_error=True)
 
     def verify_present(self) -> None:
         try:

@@ -40,6 +40,7 @@ def test_detect_empty_repo(mock_repo: RepositoryController) -> None:
 def test_detect_all_dependency_files_present(mock_repo: RepositoryController) -> None:
     mock_repo.write_file("requirements.txt", "requests>=2.0.0")
     mock_repo.write_file("setup.py", "from setuptools import setup")
+    mock_repo.write_file("setup.cfg", "[metadata]\nname = test")
     mock_repo.write_file("pyproject.toml", "[project]\nname = 'test'")
     mock_repo.write_file("Pipfile", "[packages]")
     mock_repo.write_file("poetry.lock", "# lock")
@@ -48,6 +49,7 @@ def test_detect_all_dependency_files_present(mock_repo: RepositoryController) ->
     result = detect_dependency_files(mock_repo.path)
     assert result.requirements_txt is True
     assert result.setup_py is True
+    assert result.setup_cfg is True
     assert result.pyproject_toml is True
     assert result.pipfile is True
     assert result.poetry_lock is True
@@ -577,6 +579,23 @@ def test_has_migration_source_detects_test_prefix_requirements_file(
 def test_has_migration_source_both_pipfile_and_poetry(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
     mock_repo.write_file("Pipfile", "[packages]")
     mock_repo.write_file("poetry.lock", "# lock")
+    assert uv_boost._has_migration_source() is True  # noqa: SLF001
+
+
+def test_has_migration_source_detects_setup_cfg(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+    mock_repo.write_file("setup.cfg", "[metadata]\nname = myproject")
+    assert uv_boost._has_migration_source() is True  # noqa: SLF001
+
+
+def test_has_migration_source_ignores_bare_setup_py(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+    """Bare setup.py without setup.cfg is not supported by migrate-to-uv."""
+    mock_repo.write_file("setup.py", "from setuptools import setup\nsetup(name='myproject')")
+    assert uv_boost._has_migration_source() is False  # noqa: SLF001
+
+
+def test_has_migration_source_setup_cfg_with_setup_py(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+    mock_repo.write_file("setup.py", "from setuptools import setup")
+    mock_repo.write_file("setup.cfg", "[metadata]\nname = myproject")
     assert uv_boost._has_migration_source() is True  # noqa: SLF001
 
 
