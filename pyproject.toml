@@ -109,7 +109,7 @@ pythonpath = "app"
 testpaths = ["tests"]
 addopts = "-s --disable-pytest-warnings -v"
 markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "smoke: marks tests as fast smoke tests covering core functionality",
 ]
 
 [tool.coverage.run]

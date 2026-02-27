@@ -138,6 +138,7 @@ def test_always_includes_base_templates(gitignore_boost: GitignoreBoost) -> None
         assert t in templates
 
 
+@pytest.mark.smoke
 def test_detects_python_from_pyproject(mock_repo: RepositoryController, gitignore_boost: GitignoreBoost) -> None:
     mock_repo.add_file("pyproject.toml", "[project]\nname = 'test'\n")
     assert "python" in gitignore_boost._detect_templates()  # noqa: SLF001
@@ -203,6 +204,7 @@ def test_detects_multiple_languages(mock_repo: RepositoryController, gitignore_b
 # =============================================================================
 
 
+@pytest.mark.smoke
 def test_returns_content_on_success(urlopen_returning_pyc_content: GitignoreBoost) -> None:
     result = urlopen_returning_pyc_content._fetch_gitignore(["python"])  # noqa: SLF001
     assert result == "*.pyc\n__pycache__/\n"
@@ -284,6 +286,7 @@ def test_calls_rm_cached_then_add(
 # =============================================================================
 
 
+@pytest.mark.smoke
 def test_apply_writes_gitignore(
     mock_repo: RepositoryController, patched_gitignore_apply: PatchedGitignoreApply
 ) -> None:
@@ -302,6 +305,7 @@ def test_apply_resets_tracking(patched_gitignore_apply: PatchedGitignoreApply) -
     patched_gitignore_apply.mock_reset.assert_called_once()
 
 
+@pytest.mark.smoke
 def test_apply_fails_when_fetch_fails(
     mock_repo: RepositoryController,
     patched_gitignore_apply_fetch_fails: PatchedGitignoreApply,

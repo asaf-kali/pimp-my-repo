@@ -149,6 +149,7 @@ def test_raises_skip_when_uv_raises_oserror(ruff_boost_uv_oserror: RuffBoost) ->
         ruff_boost_uv_oserror.apply()
 
 
+@pytest.mark.smoke
 def test_raises_skip_when_no_pyproject(ruff_boost_uv_ok: RuffBoost) -> None:
     with pytest.raises(BoostSkippedError, match=r"No pyproject\.toml found"):
         ruff_boost_uv_ok.apply()
@@ -159,6 +160,7 @@ def test_raises_skip_when_no_pyproject(ruff_boost_uv_ok: RuffBoost) -> None:
 # =============================================================================
 
 
+@pytest.mark.smoke
 def test_parses_single_violation(ruff_boost: RuffBoost) -> None:
     output = "src/foo.py:10:5: E501 Line too long (120 > 79 characters)"
     assert ruff_boost._parse_violations(output) == {ViolationLocation("src/foo.py", 10): {"E501"}}  # noqa: SLF001
@@ -316,6 +318,7 @@ def test_ruff_config_preserves_existing_content(mock_repo: RepositoryController,
 # =============================================================================
 
 
+@pytest.mark.smoke
 def test_apply_calls_uv_add_ruff(patched_ruff_apply_with_add_package: PatchedRuffApplyWithAddPackage) -> None:
     patched_ruff_apply_with_add_package.boost.apply()
     patched_ruff_apply_with_add_package.mock_add_package.assert_called_once_with("ruff", group="lint")
@@ -346,6 +349,7 @@ def test_apply_stops_when_check_passes(patched_ruff_apply: PatchedRuffApply) -> 
     patched_ruff_apply.mock_check.assert_called_once()
 
 
+@pytest.mark.smoke
 def test_apply_inserts_noqa_on_violation(
     mock_repo: RepositoryController,
     patched_ruff_apply: PatchedRuffApply,

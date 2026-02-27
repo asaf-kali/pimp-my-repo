@@ -147,6 +147,7 @@ def test_raises_skip_when_uv_raises_oserror(mypy_boost_uv_oserror: MypyBoost) ->
         mypy_boost_uv_oserror.apply()
 
 
+@pytest.mark.smoke
 def test_raises_skip_when_no_pyproject(mypy_boost_uv_ok: MypyBoost) -> None:
     with pytest.raises(BoostSkippedError, match=r"No pyproject\.toml found"):
         mypy_boost_uv_ok.apply()
@@ -157,6 +158,7 @@ def test_raises_skip_when_no_pyproject(mypy_boost_uv_ok: MypyBoost) -> None:
 # =============================================================================
 
 
+@pytest.mark.smoke
 def test_parses_single_violation(mypy_boost: MypyBoost) -> None:
     output = 'src/foo.py:10: error: Argument 1 has incompatible type "str"  [arg-type]'
     assert mypy_boost._parse_violations(output) == {_vl("src/foo.py", 10): {"arg-type"}}  # noqa: SLF001
@@ -332,6 +334,7 @@ def test_sets_strict_true_on_existing_mypy_section(mock_repo: RepositoryControll
 # =============================================================================
 
 
+@pytest.mark.smoke
 def test_apply_calls_uv_add_mypy(patched_mypy_apply_with_add_package: PatchedMypyApplyWithAddPackage) -> None:
     patched_mypy_apply_with_add_package.boost.apply()
     patched_mypy_apply_with_add_package.mock_add_package.assert_called_once_with("mypy", group="lint")
@@ -370,6 +373,7 @@ def test_apply_inserts_type_ignore_on_violation(
     assert "# type: ignore[assignment]" in (mock_repo.path / "src/foo.py").read_text()
 
 
+@pytest.mark.smoke
 def test_apply_iterates_until_mypy_passes(
     mock_repo: RepositoryController,
     patched_mypy_apply: PatchedMypyApply,

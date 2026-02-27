@@ -35,7 +35,7 @@ lock-check:
 # Test
 
 test-fast:
-	{{RUN}} python -m {{PYTHON_TEST_COMMAND}} -s -q -m "not slow"
+	{{RUN}} python -m {{PYTHON_TEST_COMMAND}} -s -q -m "smoke"
 
 test *args:
 	{{RUN}} python -m {{PYTHON_TEST_COMMAND}} -s -q {{args}}

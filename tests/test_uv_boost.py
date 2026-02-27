@@ -236,11 +236,13 @@ def uv_boost_check_file_not_found(uv_boost: UvBoost) -> Generator[UvBoost]:
 # =============================================================================
 
 
+@pytest.mark.smoke
 def test_apply_raises_skip_when_uv_not_installed(patched_uv_boost_not_installed: UvBoost) -> None:
     with pytest.raises(UvNotFoundError, match="uv is not installed"):
         patched_uv_boost_not_installed.apply()
 
 
+@pytest.mark.smoke
 def test_apply_does_not_skip_when_uv_installable(patched_uv_boost_installable_with_mocked_run: UvBoost) -> None:
     patched_uv_boost_installable_with_mocked_run.apply()
 
@@ -261,6 +263,7 @@ def test_has_migration_source_detects_poetry_config(mock_repo: RepositoryControl
     assert uv_boost._has_migration_source() is True  # noqa: SLF001
 
 
+@pytest.mark.smoke
 def test_has_migration_source_detects_requirements_txt(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
     mock_repo.add_file("requirements.txt", "requests>=2.0.0")
     assert uv_boost._has_migration_source() is True  # noqa: SLF001
@@ -368,6 +371,7 @@ def test_commit_message(uv_boost: UvBoost) -> None:
 # =============================================================================
 
 
+@pytest.mark.smoke
 def test_ensure_uv_config_adds_section_when_missing(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
     mock_repo.add_file("pyproject.toml", '[project]\nname = "test-project"\n')
 
@@ -397,6 +401,7 @@ def test_ensure_uv_config_preserves_existing_section(mock_repo: RepositoryContro
 # =============================================================================
 
 
+@pytest.mark.smoke
 def test_apply_raises_on_migration_failure(uv_boost_with_migration_error: UvBoost) -> None:
     with pytest.raises(subprocess.CalledProcessError) as exc_info:
         uv_boost_with_migration_error.apply()
@@ -451,7 +456,10 @@ def uv_boost_both_install_fail(uv_boost: UvBoost) -> Generator[UvBoost]:
 @pytest.fixture
 def uv_boost_pip_succeeds(uv_boost: UvBoost) -> Generator[UvBoost]:
     """Yield a UvBoost where pip install succeeds on the first try."""
-    with patch.object(uv_boost, "_try_pip_install", return_value=True):
+    with (
+        patch.object(uv_boost, "_try_script_install", return_value=False),
+        patch.object(uv_boost, "_try_pip_install", return_value=True),
+    ):
         yield uv_boost
 
 
@@ -477,6 +485,7 @@ def test_install_uv_installer_oserror_returns_false(uv_boost_both_install_fail: 
     assert result is False
 
 
+@pytest.mark.smoke
 def test_install_uv_pip_success(uv_boost_pip_succeeds: UvBoost) -> None:
     result = uv_boost_pip_succeeds._install_uv()  # noqa: SLF001
     assert result is True
