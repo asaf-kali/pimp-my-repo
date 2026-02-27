@@ -34,7 +34,7 @@ def _git_revert_context(git_manager: GitController) -> Generator[str]:
         raise
 
 
-def _process_boost(
+def _run_boost(
     boost: Boost,
     boost_name: str,
     git_manager: GitController,
@@ -75,6 +75,24 @@ def _update_progress(progress: Progress, task_id: TaskID, result: BoostResult) -
     progress.update(task_id, description=description)
 
 
+def _run_boost_class(
+    boost_class: type[Boost],
+    boost_tools: BoostTools,
+    git_manager: GitController,
+    progress: Progress,
+) -> BoostResult:
+    boost_name = boost_class.get_name()
+    task_id = progress.add_task(f"Processing {boost_name}...", total=None)
+    try:
+        boost = boost_class(boost_tools)
+        result = _run_boost(boost=boost, boost_name=boost_name, git_manager=git_manager)
+    except (subprocess.CalledProcessError, OSError) as e:
+        logger.exception(f"Error processing {boost_name} boost")
+        result = BoostResult(name=boost_name, status="failed", message=str(e))
+    _update_progress(progress=progress, task_id=task_id, result=result)
+    return result
+
+
 def execute_boosts(
     boost_classes: list[type[Boost]],
     repo_path: Path,
@@ -82,26 +100,13 @@ def execute_boosts(
     console: Console,
 ) -> list[BoostResult]:
     """Execute all boosts and return results."""
-    results: list[BoostResult] = []
-
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
-        boost_tools = BoostTools.create(repo_path)
-        for boost_class in boost_classes:
-            boost_name = boost_class.get_name()
-            task_id = progress.add_task(f"Processing {boost_name}...", total=None)
-
-            try:
-                boost = boost_class(boost_tools)
-                result = _process_boost(boost=boost, boost_name=boost_name, git_manager=git_manager)
-            except (subprocess.CalledProcessError, OSError) as e:
-                logger.exception(f"Error processing {boost_name} boost")
-                result = BoostResult(name=boost_name, status="failed", message=str(e))
-
-            _update_progress(progress=progress, task_id=task_id, result=result)
-            results.append(result)
-
-    return results
+        boost_tools = BoostTools.create(repo_path=repo_path)
+        return [
+            _run_boost_class(boost_class=bc, boost_tools=boost_tools, git_manager=git_manager, progress=progress)
+            for bc in boost_classes
+        ]
