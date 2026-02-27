@@ -13,8 +13,8 @@ if TYPE_CHECKING:
     from collections.abc import Generator
 
     from pimp_my_repo.core.tools.boost_tools import BoostTools
+    from pimp_my_repo.core.tools.repo import RepositoryController
     from tests.conftest import SubprocessResultFactory
-    from tests.repo_controller import RepositoryController
 
 _vl = ViolationLocation
 
@@ -28,7 +28,7 @@ def mypy_boost(boost_tools: BoostTools) -> MypyBoost:
 @pytest.fixture
 def mypy_boost_with_pyproject(repo_controller: RepositoryController, boost_tools: BoostTools) -> MypyBoost:
     """Create a MypyBoost instance with a minimal pyproject.toml."""
-    repo_controller.add_file("pyproject.toml", "[project]\nname = 'test'\nversion = '0.1.0'\n")
+    repo_controller.write_file("pyproject.toml", "[project]\nname = 'test'\nversion = '0.1.0'\n")
     return MypyBoost(boost_tools)
 
 
@@ -215,13 +215,13 @@ def test_success_output(mypy_boost: MypyBoost) -> None:
 
 
 def test_adds_ignore_comment_to_clean_line(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
-    mock_repo.add_file("src/foo.py", "x: int = 'hello'\n")
+    mock_repo.write_file("src/foo.py", "x: int = 'hello'\n")
     mypy_boost._apply_type_ignores({_vl("src/foo.py", 1): {"assignment"}})  # noqa: SLF001
     assert "# type: ignore[assignment]" in (mock_repo.path / "src/foo.py").read_text()
 
 
 def test_merges_new_code_with_existing_ignore(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
-    mock_repo.add_file("src/foo.py", "x = foo()  # type: ignore[no-untyped-call]\n")
+    mock_repo.write_file("src/foo.py", "x = foo()  # type: ignore[no-untyped-call]\n")
     mypy_boost._apply_type_ignores({_vl("src/foo.py", 1): {"return-value"}})  # noqa: SLF001
     content = (mock_repo.path / "src/foo.py").read_text()
     assert "no-untyped-call" in content
@@ -230,7 +230,7 @@ def test_merges_new_code_with_existing_ignore(mock_repo: RepositoryController, m
 
 
 def test_merges_multiple_new_codes_on_same_line(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
-    mock_repo.add_file("src/foo.py", "x: int = 'hello'\n")
+    mock_repo.write_file("src/foo.py", "x: int = 'hello'\n")
     mypy_boost._apply_type_ignores({_vl("src/foo.py", 1): {"assignment", "arg-type"}})  # noqa: SLF001
     content = (mock_repo.path / "src/foo.py").read_text()
     assert "# type: ignore[" in content
@@ -239,7 +239,7 @@ def test_merges_multiple_new_codes_on_same_line(mock_repo: RepositoryController,
 
 
 def test_handles_multiple_lines_in_same_file(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
-    mock_repo.add_file("src/foo.py", "a: int = 'x'\nb: str = 1\n")
+    mock_repo.write_file("src/foo.py", "a: int = 'x'\nb: str = 1\n")
     mypy_boost._apply_type_ignores(  # noqa: SLF001
         {
             _vl("src/foo.py", 1): {"assignment"},
@@ -252,8 +252,8 @@ def test_handles_multiple_lines_in_same_file(mock_repo: RepositoryController, my
 
 
 def test_handles_multiple_files(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
-    mock_repo.add_file("src/foo.py", "x: int = 'hello'\n")
-    mock_repo.add_file("src/bar.py", "y: str = 42\n")
+    mock_repo.write_file("src/foo.py", "x: int = 'hello'\n")
+    mock_repo.write_file("src/bar.py", "y: str = 42\n")
     mypy_boost._apply_type_ignores(  # noqa: SLF001
         {
             _vl("src/foo.py", 1): {"assignment"},
@@ -269,7 +269,7 @@ def test_skips_missing_file_without_raising(mypy_boost: MypyBoost) -> None:
 
 
 def test_type_ignore_codes_sorted_alphabetically(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
-    mock_repo.add_file("src/foo.py", "x: int = 'hello'\n")
+    mock_repo.write_file("src/foo.py", "x: int = 'hello'\n")
     mypy_boost._apply_type_ignores({_vl("src/foo.py", 1): {"misc", "arg-type", "assignment"}})  # noqa: SLF001
     content = (mock_repo.path / "src/foo.py").read_text()
     arg_type_pos = content.index("arg-type")
@@ -279,7 +279,7 @@ def test_type_ignore_codes_sorted_alphabetically(mock_repo: RepositoryController
 
 
 def test_type_ignore_preserves_existing_line_content(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
-    mock_repo.add_file("src/foo.py", "result = some_func(arg1, arg2)  # business logic\n")
+    mock_repo.write_file("src/foo.py", "result = some_func(arg1, arg2)  # business logic\n")
     mypy_boost._apply_type_ignores({_vl("src/foo.py", 1): {"misc"}})  # noqa: SLF001
     content = (mock_repo.path / "src/foo.py").read_text()
     assert "result = some_func(arg1, arg2)" in content
@@ -292,7 +292,7 @@ def test_type_ignore_preserves_existing_line_content(mock_repo: RepositoryContro
 
 
 def test_adds_mypy_section_when_missing(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
-    mock_repo.add_file("pyproject.toml", "[project]\nname = 'test'\n")
+    mock_repo.write_file("pyproject.toml", "[project]\nname = 'test'\n")
     data = mypy_boost.tools.pyproject.read()
     data = mypy_boost._ensure_mypy_config(data)  # noqa: SLF001
     mypy_boost.tools.pyproject.write(data)
@@ -302,7 +302,7 @@ def test_adds_mypy_section_when_missing(mock_repo: RepositoryController, mypy_bo
 
 
 def test_adds_tool_section_when_fully_absent(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
-    mock_repo.add_file("pyproject.toml", "[project]\nname = 'test'\n")
+    mock_repo.write_file("pyproject.toml", "[project]\nname = 'test'\n")
     data = mypy_boost.tools.pyproject.read()
     data = mypy_boost._ensure_mypy_config(data)  # noqa: SLF001
     assert "tool" in data
@@ -310,7 +310,7 @@ def test_adds_tool_section_when_fully_absent(mock_repo: RepositoryController, my
 
 
 def test_preserves_existing_tool_sections(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
-    mock_repo.add_file("pyproject.toml", "[project]\nname = 'test'\n\n[tool.ruff]\nline-length = 120\n")
+    mock_repo.write_file("pyproject.toml", "[project]\nname = 'test'\n\n[tool.ruff]\nline-length = 120\n")
     data = mypy_boost.tools.pyproject.read()
     data = mypy_boost._ensure_mypy_config(data)  # noqa: SLF001
     mypy_boost.tools.pyproject.write(data)
@@ -321,7 +321,7 @@ def test_preserves_existing_tool_sections(mock_repo: RepositoryController, mypy_
 
 
 def test_sets_strict_true_on_existing_mypy_section(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
-    mock_repo.add_file("pyproject.toml", "[tool.mypy]\nstrict = false\n")
+    mock_repo.write_file("pyproject.toml", "[tool.mypy]\nstrict = false\n")
     data = mypy_boost.tools.pyproject.read()
     data = mypy_boost._ensure_mypy_config(data)  # noqa: SLF001
     mypy_boost.tools.pyproject.write(data)
@@ -364,7 +364,7 @@ def test_apply_inserts_type_ignore_on_violation(
     fail_result: SubprocessResultFactory,
     ok_result: SubprocessResultFactory,
 ) -> None:
-    mock_repo.add_file("src/foo.py", "x: int = 'hello'\n")
+    mock_repo.write_file("src/foo.py", "x: int = 'hello'\n")
     patched_mypy_apply.mock_mypy.side_effect = [
         fail_result("src/foo.py:1: error: Some error  [assignment]\n"),
         ok_result(),
@@ -380,7 +380,7 @@ def test_apply_iterates_until_mypy_passes(
     fail_result: SubprocessResultFactory,
     ok_result: SubprocessResultFactory,
 ) -> None:
-    mock_repo.add_file("src/foo.py", "x: int = 'hello'\n")
+    mock_repo.write_file("src/foo.py", "x: int = 'hello'\n")
     patched_mypy_apply.mock_mypy.side_effect = [
         fail_result("src/foo.py:1: error: Error 1  [assignment]\n"),
         fail_result("src/foo.py:1: error: Error 2  [misc]\n"),
@@ -395,7 +395,7 @@ def test_apply_stops_after_max_iterations(
     patched_mypy_apply: PatchedMypyApply,
     fail_result: SubprocessResultFactory,
 ) -> None:
-    mock_repo.add_file("src/foo.py", "x: int = 'hello'\n")
+    mock_repo.write_file("src/foo.py", "x: int = 'hello'\n")
     patched_mypy_apply.mock_mypy.return_value = fail_result("src/foo.py:1: error: Persistent error  [misc]\n")
     patched_mypy_apply.boost.apply()
     assert patched_mypy_apply.mock_mypy.call_count == _MAX_MYPY_ITERATIONS

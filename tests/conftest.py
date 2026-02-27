@@ -9,8 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from pimp_my_repo.core.tools.boost_tools import BoostTools
-from pimp_my_repo.core.tools.git import GitController
-from tests.repo_controller import RepositoryController
+from pimp_my_repo.core.tools.repo import RepositoryController
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -77,8 +76,8 @@ def fail_result() -> SubprocessResultFactory:
 
 
 @pytest.fixture
-def git_controller(mock_repo: RepositoryController) -> GitController:
-    return GitController(repo_path=mock_repo.path)
+def git_controller(mock_repo: RepositoryController) -> RepositoryController:
+    return RepositoryController(path=mock_repo.path)
 
 
 @pytest.fixture

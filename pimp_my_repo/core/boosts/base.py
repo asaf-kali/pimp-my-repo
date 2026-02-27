@@ -9,9 +9,9 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from pimp_my_repo.core.tools.boost_tools import BoostTools
-    from pimp_my_repo.core.tools.git import GitController
     from pimp_my_repo.core.tools.http import HttpController
     from pimp_my_repo.core.tools.pyproject import PyProjectController
+    from pimp_my_repo.core.tools.repo import RepositoryController
     from pimp_my_repo.core.tools.uv import UvController
 
 
@@ -35,10 +35,10 @@ class Boost(ABC):
 
     @property
     def repo_path(self) -> Path:
-        return self.git.repo_path
+        return self.git.path
 
     @property
-    def git(self) -> GitController:
+    def git(self) -> RepositoryController:
         return self.tools.git
 
     @property

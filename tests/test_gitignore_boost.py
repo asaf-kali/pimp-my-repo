@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from collections.abc import Generator
 
     from pimp_my_repo.core.tools.boost_tools import BoostTools
-    from tests.repo_controller import RepositoryController
+    from pimp_my_repo.core.tools.repo import RepositoryController
 
 
 @pytest.fixture
@@ -140,37 +140,37 @@ def test_always_includes_base_templates(gitignore_boost: GitignoreBoost) -> None
 
 @pytest.mark.smoke
 def test_detects_python_from_pyproject(mock_repo: RepositoryController, gitignore_boost: GitignoreBoost) -> None:
-    mock_repo.add_file("pyproject.toml", "[project]\nname = 'test'\n")
+    mock_repo.write_file("pyproject.toml", "[project]\nname = 'test'\n")
     assert "python" in gitignore_boost._detect_templates()  # noqa: SLF001
 
 
 def test_detects_python_from_setup_py(mock_repo: RepositoryController, gitignore_boost: GitignoreBoost) -> None:
-    mock_repo.add_file("setup.py", "from setuptools import setup")
+    mock_repo.write_file("setup.py", "from setuptools import setup")
     assert "python" in gitignore_boost._detect_templates()  # noqa: SLF001
 
 
 def test_detects_python_from_requirements_txt(mock_repo: RepositoryController, gitignore_boost: GitignoreBoost) -> None:
-    mock_repo.add_file("requirements.txt", "requests")
+    mock_repo.write_file("requirements.txt", "requests")
     assert "python" in gitignore_boost._detect_templates()  # noqa: SLF001
 
 
 def test_detects_node_from_package_json(mock_repo: RepositoryController, gitignore_boost: GitignoreBoost) -> None:
-    mock_repo.add_file("package.json", '{"name": "test"}')
+    mock_repo.write_file("package.json", '{"name": "test"}')
     assert "node" in gitignore_boost._detect_templates()  # noqa: SLF001
 
 
 def test_detects_rust_from_cargo_toml(mock_repo: RepositoryController, gitignore_boost: GitignoreBoost) -> None:
-    mock_repo.add_file("Cargo.toml", '[package]\nname = "test"')
+    mock_repo.write_file("Cargo.toml", '[package]\nname = "test"')
     assert "rust" in gitignore_boost._detect_templates()  # noqa: SLF001
 
 
 def test_detects_go_from_go_mod(mock_repo: RepositoryController, gitignore_boost: GitignoreBoost) -> None:
-    mock_repo.add_file("go.mod", "module example.com/mymod\ngo 1.21")
+    mock_repo.write_file("go.mod", "module example.com/mymod\ngo 1.21")
     assert "go" in gitignore_boost._detect_templates()  # noqa: SLF001
 
 
 def test_detects_java_maven_from_pom_xml(mock_repo: RepositoryController, gitignore_boost: GitignoreBoost) -> None:
-    mock_repo.add_file("pom.xml", "<project/>")
+    mock_repo.write_file("pom.xml", "<project/>")
     templates = gitignore_boost._detect_templates()  # noqa: SLF001
     assert "java" in templates
     assert "maven" in templates
@@ -179,7 +179,7 @@ def test_detects_java_maven_from_pom_xml(mock_repo: RepositoryController, gitign
 def test_detects_java_gradle_from_build_gradle(
     mock_repo: RepositoryController, gitignore_boost: GitignoreBoost
 ) -> None:
-    mock_repo.add_file("build.gradle", "plugins { id 'java' }")
+    mock_repo.write_file("build.gradle", "plugins { id 'java' }")
     templates = gitignore_boost._detect_templates()  # noqa: SLF001
     assert "java" in templates
     assert "gradle" in templates
@@ -192,8 +192,8 @@ def test_no_language_detected_for_plain_repo(gitignore_boost: GitignoreBoost) ->
 
 
 def test_detects_multiple_languages(mock_repo: RepositoryController, gitignore_boost: GitignoreBoost) -> None:
-    mock_repo.add_file("pyproject.toml", "")
-    mock_repo.add_file("package.json", "{}")
+    mock_repo.write_file("pyproject.toml", "")
+    mock_repo.write_file("package.json", "{}")
     templates = gitignore_boost._detect_templates()  # noqa: SLF001
     assert "python" in templates
     assert "node" in templates
@@ -243,7 +243,7 @@ def test_creates_new_gitignore_when_absent(mock_repo: RepositoryController, giti
 
 
 def test_appends_to_existing_gitignore(mock_repo: RepositoryController, gitignore_boost: GitignoreBoost) -> None:
-    mock_repo.add_file(".gitignore", "*.log\n")
+    mock_repo.write_file(".gitignore", "*.log\n")
     gitignore_boost._append_gitignore("*.pyc\n")  # noqa: SLF001
     content = (mock_repo.path / ".gitignore").read_text()
     assert "*.log" in content
@@ -253,7 +253,7 @@ def test_appends_to_existing_gitignore(mock_repo: RepositoryController, gitignor
 
 def test_does_not_duplicate_if_header_present(mock_repo: RepositoryController, gitignore_boost: GitignoreBoost) -> None:
     existing = f"*.log\n\n{_GITIGNORE_HEADER}\n*.pyc\n"
-    mock_repo.add_file(".gitignore", existing)
+    mock_repo.write_file(".gitignore", existing)
     gitignore_boost._append_gitignore("*.new\n")  # noqa: SLF001
     content = (mock_repo.path / ".gitignore").read_text()
     assert content.count(_GITIGNORE_HEADER) == 1
@@ -261,7 +261,7 @@ def test_does_not_duplicate_if_header_present(mock_repo: RepositoryController, g
 
 
 def test_preserves_existing_content(mock_repo: RepositoryController, gitignore_boost: GitignoreBoost) -> None:
-    mock_repo.add_file(".gitignore", "# My custom rules\n*.log\nbuild/\n")
+    mock_repo.write_file(".gitignore", "# My custom rules\n*.log\nbuild/\n")
     gitignore_boost._append_gitignore("*.pyc\n")  # noqa: SLF001
     content = (mock_repo.path / ".gitignore").read_text()
     assert "# My custom rules" in content

@@ -7,7 +7,7 @@ import pytest
 from pimp_my_repo.cli.main import main
 
 if TYPE_CHECKING:
-    from tests.repo_controller import RepositoryController
+    from pimp_my_repo.core.tools.repo import RepositoryController
 
 
 def test_cli_is_working(mock_repo: RepositoryController) -> None:

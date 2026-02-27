@@ -1,7 +1,7 @@
 """Git operations for pimp-my-repo."""
 
 import subprocess
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -13,12 +13,12 @@ _DEFAULT_BRANCH_NAME = "feat/pmr"
 COMMIT_AUTHOR = "pmr <pimp-my-repo@pypi.org>"
 
 
-class GitController:
+class RepositoryController:
     """Manages git operations for the repository."""
 
-    def __init__(self, repo_path: Path) -> None:
+    def __init__(self, path: Path) -> None:
         """Initialize GitController with repository path."""
-        self.repo_path = repo_path
+        self.path = path
 
     def init_pmr(self, branch_name: str = _DEFAULT_BRANCH_NAME) -> None:
         """Set up git manager and prepare the pmr branch."""
@@ -35,7 +35,7 @@ class GitController:
         cmd = ["git", *args]
         return subprocess.run(  # noqa: S603
             cmd,
-            cwd=self.repo_path,
+            cwd=self.path,
             capture_output=True,
             text=True,
             check=check,
@@ -47,6 +47,19 @@ class GitController:
             self.execute("add", *paths)
         else:
             self.execute("add", "-A")
+
+    def write_file(self, relative_path: str, content: str) -> Path:
+        """Write a file into the repository (does not stage or commit)."""
+        full_path = self.path / relative_path
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+        full_path.write_text(content)
+        return full_path
+
+    def add_and_commit(self, relative_path: str, content: str, message: str, **commit_kwargs: Any) -> None:  # noqa: ANN401
+        """Write a file, stage it, and commit."""
+        self.write_file(relative_path=relative_path, content=content)
+        self.execute("add", relative_path)
+        self.commit(message, **commit_kwargs)
 
     def commit(self, message: str, *, no_verify: bool = True, author: str = COMMIT_AUTHOR) -> bool:
         """Commit changes with the given message.
@@ -116,3 +129,8 @@ class GitController:
     def reset_hard(self, sha: str) -> None:
         """Reset the working tree and index to the given commit SHA."""
         self.execute("reset", "--hard", sha)
+
+    def commit_count(self) -> int:
+        """Return the number of commits on HEAD."""
+        result = self.execute("rev-list", "--count", "HEAD")
+        return int(result.stdout.strip())

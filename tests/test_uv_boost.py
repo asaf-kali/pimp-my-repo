@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from collections.abc import Generator
 
     from pimp_my_repo.core.tools.boost_tools import BoostTools
-    from tests.repo_controller import RepositoryController
+    from pimp_my_repo.core.tools.repo import RepositoryController
 
 
 # =============================================================================
@@ -38,12 +38,12 @@ def test_detect_empty_repo(mock_repo: RepositoryController) -> None:
 
 
 def test_detect_all_dependency_files_present(mock_repo: RepositoryController) -> None:
-    mock_repo.add_file("requirements.txt", "requests>=2.0.0")
-    mock_repo.add_file("setup.py", "from setuptools import setup")
-    mock_repo.add_file("pyproject.toml", "[project]\nname = 'test'")
-    mock_repo.add_file("Pipfile", "[packages]")
-    mock_repo.add_file("poetry.lock", "# lock")
-    mock_repo.add_file("Pipfile.lock", "{}")
+    mock_repo.write_file("requirements.txt", "requests>=2.0.0")
+    mock_repo.write_file("setup.py", "from setuptools import setup")
+    mock_repo.write_file("pyproject.toml", "[project]\nname = 'test'")
+    mock_repo.write_file("Pipfile", "[packages]")
+    mock_repo.write_file("poetry.lock", "# lock")
+    mock_repo.write_file("Pipfile.lock", "{}")
 
     result = detect_dependency_files(mock_repo.path)
     assert result.requirements_txt is True
@@ -55,8 +55,8 @@ def test_detect_all_dependency_files_present(mock_repo: RepositoryController) ->
 
 
 def test_detect_partial_dependency_files(mock_repo: RepositoryController) -> None:
-    mock_repo.add_file("requirements.txt", "requests>=2.0.0")
-    mock_repo.add_file("pyproject.toml", "[project]\nname = 'test'")
+    mock_repo.write_file("requirements.txt", "requests>=2.0.0")
+    mock_repo.write_file("pyproject.toml", "[project]\nname = 'test'")
 
     result = detect_dependency_files(mock_repo.path)
     assert result.requirements_txt is True
@@ -66,7 +66,7 @@ def test_detect_partial_dependency_files(mock_repo: RepositoryController) -> Non
 
 
 def test_detect_pipfile_lock_without_pipfile(mock_repo: RepositoryController) -> None:
-    mock_repo.add_file("Pipfile.lock", '{"_meta": {}}')
+    mock_repo.write_file("Pipfile.lock", '{"_meta": {}}')
 
     result = detect_dependency_files(mock_repo.path)
     assert result.pipfile_lock is True
@@ -85,15 +85,15 @@ def test_detect_configs_empty_repo(mock_repo: RepositoryController) -> None:
 
 
 def test_detect_all_configs_present(mock_repo: RepositoryController) -> None:
-    mock_repo.add_file(".ruff.toml", "[lint]")
-    mock_repo.add_file("ruff.toml", "[lint]")
-    mock_repo.add_file("mypy.ini", "[mypy]")
-    mock_repo.add_file(".mypy.ini", "[mypy]")
-    mock_repo.add_file(".pre-commit-config.yaml", "repos: []")
-    mock_repo.add_file("pre-commit-config.yaml", "repos: []")
-    mock_repo.add_file("justfile", "default:")
-    mock_repo.add_file("Makefile", "all:")
-    mock_repo.add_file("makefile", "all:")
+    mock_repo.write_file(".ruff.toml", "[lint]")
+    mock_repo.write_file("ruff.toml", "[lint]")
+    mock_repo.write_file("mypy.ini", "[mypy]")
+    mock_repo.write_file(".mypy.ini", "[mypy]")
+    mock_repo.write_file(".pre-commit-config.yaml", "repos: []")
+    mock_repo.write_file("pre-commit-config.yaml", "repos: []")
+    mock_repo.write_file("justfile", "default:")
+    mock_repo.write_file("Makefile", "all:")
+    mock_repo.write_file("makefile", "all:")
 
     result = detect_existing_configs(mock_repo.path)
     assert result.ruff_dot_toml is True
@@ -108,8 +108,8 @@ def test_detect_all_configs_present(mock_repo: RepositoryController) -> None:
 
 
 def test_detect_partial_configs(mock_repo: RepositoryController) -> None:
-    mock_repo.add_file("ruff.toml", "[lint]")
-    mock_repo.add_file("justfile", "default:")
+    mock_repo.write_file("ruff.toml", "[lint]")
+    mock_repo.write_file("justfile", "default:")
 
     result = detect_existing_configs(mock_repo.path)
     assert result.ruff_toml is True
@@ -125,8 +125,8 @@ def test_detect_all_returns_both_categories(mock_repo: RepositoryController) -> 
 
 
 def test_detect_all_integration_with_files(mock_repo: RepositoryController) -> None:
-    mock_repo.add_file("requirements.txt", "requests>=2.0.0")
-    mock_repo.add_file("ruff.toml", "[lint]")
+    mock_repo.write_file("requirements.txt", "requests>=2.0.0")
+    mock_repo.write_file("ruff.toml", "[lint]")
 
     result = detect_all(mock_repo.path)
     assert result.dependencies.requirements_txt is True
@@ -185,8 +185,8 @@ def patched_uv_boost_installable_with_mocked_run(uv_boost: UvBoost) -> Generator
 @pytest.fixture
 def uv_boost_with_migration_error(mock_repo: RepositoryController, uv_boost: UvBoost) -> Generator[UvBoost]:
     """Yield a UvBoost set up for poetry migration that will fail on run_uvx."""
-    mock_repo.add_file("poetry.lock", "# Poetry lock file")
-    mock_repo.add_file("pyproject.toml", "[tool.poetry]\nname = 'test'")
+    mock_repo.write_file("poetry.lock", "# Poetry lock file")
+    mock_repo.write_file("pyproject.toml", "[tool.poetry]\nname = 'test'")
     error = subprocess.CalledProcessError(1, "uvx", stderr="Migration failed")
     with patch.object(uv_boost.tools.uv, "run_uvx", side_effect=error):
         yield uv_boost
@@ -195,7 +195,7 @@ def uv_boost_with_migration_error(mock_repo: RepositoryController, uv_boost: UvB
 @pytest.fixture
 def uv_boost_with_lock_error(mock_repo: RepositoryController, uv_boost: UvBoost) -> Generator[UvBoost]:
     """Yield a UvBoost with a pyproject.toml that will fail on uv lock."""
-    mock_repo.add_file("pyproject.toml", "[project]\nname = 'test'\nversion = '0.1.0'")
+    mock_repo.write_file("pyproject.toml", "[project]\nname = 'test'\nversion = '0.1.0'")
     error = subprocess.CalledProcessError(1, "uv lock", stderr="Lock failed")
 
     def run_side_effect(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:  # noqa: ARG001
@@ -253,32 +253,32 @@ def test_apply_does_not_skip_when_uv_installable(patched_uv_boost_installable_wi
 
 
 def test_has_migration_source_detects_poetry_lock(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    mock_repo.add_file("poetry.lock", "# Poetry lock file")
+    mock_repo.write_file("poetry.lock", "# Poetry lock file")
     assert uv_boost._has_migration_source() is True  # noqa: SLF001
 
 
 def test_has_migration_source_detects_poetry_config(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
     pyproject_content = '[tool.poetry]\nname = "test-project"\nversion = "0.1.0"\n'
-    mock_repo.add_file("pyproject.toml", pyproject_content)
+    mock_repo.write_file("pyproject.toml", pyproject_content)
     assert uv_boost._has_migration_source() is True  # noqa: SLF001
 
 
 @pytest.mark.smoke
 def test_has_migration_source_detects_requirements_txt(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    mock_repo.add_file("requirements.txt", "requests>=2.0.0")
+    mock_repo.write_file("requirements.txt", "requests>=2.0.0")
     assert uv_boost._has_migration_source() is True  # noqa: SLF001
 
 
 def test_has_migration_source_detects_multiple_requirements_files(
     mock_repo: RepositoryController, uv_boost: UvBoost
 ) -> None:
-    mock_repo.add_file("requirements.txt", "requests>=2.0.0")
-    mock_repo.add_file("requirements-dev.txt", "pytest>=7.0.0")
+    mock_repo.write_file("requirements.txt", "requests>=2.0.0")
+    mock_repo.write_file("requirements-dev.txt", "pytest>=7.0.0")
     assert uv_boost._has_migration_source() is True  # noqa: SLF001
 
 
 def test_has_migration_source_detects_pipfile(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    mock_repo.add_file("Pipfile", "[packages]\nrequests = '>=2.0.0'")
+    mock_repo.write_file("Pipfile", "[packages]\nrequests = '>=2.0.0'")
     assert uv_boost._has_migration_source() is True  # noqa: SLF001
 
 
@@ -288,7 +288,7 @@ def test_has_migration_source_no_source(uv_boost: UvBoost) -> None:
 
 def test_has_migration_source_ignores_non_poetry_pyproject(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
     pyproject_content = '[project]\nname = "test-project"\nversion = "0.1.0"\n'
-    mock_repo.add_file("pyproject.toml", pyproject_content)
+    mock_repo.write_file("pyproject.toml", pyproject_content)
     assert uv_boost._has_migration_source() is False  # noqa: SLF001
 
 
@@ -298,12 +298,12 @@ def test_has_migration_source_ignores_non_poetry_pyproject(mock_repo: Repository
 
 
 def test_apply_with_poetry_migration(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    mock_repo.add_file("poetry.lock", "# Poetry lock file")
+    mock_repo.write_file("poetry.lock", "# Poetry lock file")
     pyproject_content = (
         '[tool.poetry]\nname = "test-project"\nversion = "0.1.0"\n\n'
         '[tool.poetry.dependencies]\npython = "^3.8"\nrequests = "^2.28.0"\n'
     )
-    mock_repo.add_file("pyproject.toml", pyproject_content)
+    mock_repo.write_file("pyproject.toml", pyproject_content)
 
     uv_boost.apply()
 
@@ -312,7 +312,7 @@ def test_apply_with_poetry_migration(mock_repo: RepositoryController, uv_boost: 
 
 
 def test_apply_with_requirements_txt(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    mock_repo.add_file("requirements.txt", "requests>=2.0.0\npytest>=7.0.0")
+    mock_repo.write_file("requirements.txt", "requests>=2.0.0\npytest>=7.0.0")
 
     uv_boost.apply()
 
@@ -334,7 +334,7 @@ def test_apply_creates_minimal_pyproject_when_no_source(mock_repo: RepositoryCon
 
 def test_apply_ensures_uv_config(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
     pyproject_content = '[project]\nname = "test-project"\nversion = "0.1.0"\n'
-    mock_repo.add_file("pyproject.toml", pyproject_content)
+    mock_repo.write_file("pyproject.toml", pyproject_content)
 
     uv_boost.apply()
 
@@ -347,7 +347,7 @@ def test_apply_preserves_existing_pyproject(mock_repo: RepositoryController, uv_
         '[project]\nname = "test-project"\nversion = "0.1.0"\n'
         'description = "A test project"\n\n[tool.ruff]\nline-length = 120\n'
     )
-    mock_repo.add_file("pyproject.toml", pyproject_content)
+    mock_repo.write_file("pyproject.toml", pyproject_content)
 
     uv_boost.apply()
 
@@ -373,7 +373,7 @@ def test_commit_message(uv_boost: UvBoost) -> None:
 
 @pytest.mark.smoke
 def test_ensure_uv_config_adds_section_when_missing(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    mock_repo.add_file("pyproject.toml", '[project]\nname = "test-project"\n')
+    mock_repo.write_file("pyproject.toml", '[project]\nname = "test-project"\n')
 
     pyproject_data = uv_boost.tools.pyproject.read()
     pyproject_data = uv_boost._ensure_uv_config(pyproject_data)  # noqa: SLF001
@@ -385,7 +385,7 @@ def test_ensure_uv_config_adds_section_when_missing(mock_repo: RepositoryControl
 
 def test_ensure_uv_config_preserves_existing_section(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
     pyproject_content = '[project]\nname = "test-project"\n\n[tool.uv]\npackage = true\ndev-dependencies = []\n'
-    mock_repo.add_file("pyproject.toml", pyproject_content)
+    mock_repo.write_file("pyproject.toml", pyproject_content)
 
     pyproject_data = uv_boost.tools.pyproject.read()
     pyproject_data = uv_boost._ensure_uv_config(pyproject_data)  # noqa: SLF001
@@ -502,7 +502,7 @@ def test_write_pyproject_preserves_comments(mock_repo: RepositoryController, uv_
         'name = "test-project"  # inline comment\nversion = "0.1.0"\n\n'
         "# Section comment\n[tool.ruff]\nline-length = 120\n"
     )
-    mock_repo.add_file("pyproject.toml", pyproject_content)
+    mock_repo.write_file("pyproject.toml", pyproject_content)
 
     pyproject_data = uv_boost.tools.pyproject.read()
     pyproject_data = uv_boost._ensure_uv_config(pyproject_data)  # noqa: SLF001
@@ -517,7 +517,7 @@ def test_ensure_uv_config_with_existing_tool_section(mock_repo: RepositoryContro
     pyproject_content = (
         '[project]\nname = "test-project"\n\n[tool.ruff]\nline-length = 120\n\n[tool.mypy]\nstrict = true\n'
     )
-    mock_repo.add_file("pyproject.toml", pyproject_content)
+    mock_repo.write_file("pyproject.toml", pyproject_content)
 
     pyproject_data = uv_boost.tools.pyproject.read()
     pyproject_data = uv_boost._ensure_uv_config(pyproject_data)  # noqa: SLF001
@@ -535,48 +535,48 @@ def test_ensure_uv_config_with_existing_tool_section(mock_repo: RepositoryContro
 
 
 def test_has_migration_source_detects_pipfile_lock(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    mock_repo.add_file("Pipfile.lock", '{"_meta": {"hash": {}}}')
+    mock_repo.write_file("Pipfile.lock", '{"_meta": {"hash": {}}}')
     assert uv_boost._has_migration_source() is True  # noqa: SLF001
 
 
 def test_has_migration_source_empty_poetry_lock(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    mock_repo.add_file("poetry.lock", "")
+    mock_repo.write_file("poetry.lock", "")
     assert uv_boost._has_migration_source() is True  # noqa: SLF001
 
 
 def test_has_migration_source_nested_requirements(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    mock_repo.add_file("requirements/base.txt", "requests>=2.0.0")
-    mock_repo.add_file("requirements/dev.txt", "pytest>=7.0.0")
+    mock_repo.write_file("requirements/base.txt", "requests>=2.0.0")
+    mock_repo.write_file("requirements/dev.txt", "pytest>=7.0.0")
     assert uv_boost._has_migration_source() is False  # noqa: SLF001
 
 
 def test_has_migration_source_requirements_dev_txt(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    mock_repo.add_file("requirements-dev.txt", "pytest>=7.0.0")
+    mock_repo.write_file("requirements-dev.txt", "pytest>=7.0.0")
     assert uv_boost._has_migration_source() is True  # noqa: SLF001
 
 
 def test_has_migration_source_requirements_test_txt(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    mock_repo.add_file("requirements-test.txt", "pytest>=7.0.0")
+    mock_repo.write_file("requirements-test.txt", "pytest>=7.0.0")
     assert uv_boost._has_migration_source() is True  # noqa: SLF001
 
 
 def test_has_migration_source_detects_prefix_requirements_file(
     mock_repo: RepositoryController, uv_boost: UvBoost
 ) -> None:
-    mock_repo.add_file("dev-requirements.txt", "pytest>=7.0.0")
+    mock_repo.write_file("dev-requirements.txt", "pytest>=7.0.0")
     assert uv_boost._has_migration_source() is True  # noqa: SLF001
 
 
 def test_has_migration_source_detects_test_prefix_requirements_file(
     mock_repo: RepositoryController, uv_boost: UvBoost
 ) -> None:
-    mock_repo.add_file("test-requirements.txt", "pytest>=7.0.0")
+    mock_repo.write_file("test-requirements.txt", "pytest>=7.0.0")
     assert uv_boost._has_migration_source() is True  # noqa: SLF001
 
 
 def test_has_migration_source_both_pipfile_and_poetry(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    mock_repo.add_file("Pipfile", "[packages]")
-    mock_repo.add_file("poetry.lock", "# lock")
+    mock_repo.write_file("Pipfile", "[packages]")
+    mock_repo.write_file("poetry.lock", "# lock")
     assert uv_boost._has_migration_source() is True  # noqa: SLF001
 
 
@@ -605,17 +605,17 @@ def test_extract_group_from_filename_prefix(uv_boost: UvBoost) -> None:
 
 
 def test_detect_requirements_files_main_only(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    mock_repo.add_file("requirements.txt", "requests>=2.0.0")
+    mock_repo.write_file("requirements.txt", "requests>=2.0.0")
     result = uv_boost._detect_requirements_files()  # noqa: SLF001
     assert result.main == mock_repo.path / "requirements.txt"
     assert result.groups == {}
 
 
 def test_detect_requirements_files_with_groups(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    mock_repo.add_file("requirements.txt", "requests>=2.0.0")
-    mock_repo.add_file("requirements-dev.txt", "pytest>=7.0.0")
-    mock_repo.add_file("test-requirements.txt", "pytest-cov>=4.0.0")
-    mock_repo.add_file("requirements.lint.txt", "ruff>=0.1.0")
+    mock_repo.write_file("requirements.txt", "requests>=2.0.0")
+    mock_repo.write_file("requirements-dev.txt", "pytest>=7.0.0")
+    mock_repo.write_file("test-requirements.txt", "pytest-cov>=4.0.0")
+    mock_repo.write_file("requirements.lint.txt", "ruff>=0.1.0")
     result = uv_boost._detect_requirements_files()  # noqa: SLF001
     assert result.main == mock_repo.path / "requirements.txt"
     assert "dev" in result.groups
@@ -627,8 +627,8 @@ def test_detect_requirements_files_with_groups(mock_repo: RepositoryController, 
 
 
 def test_detect_requirements_files_multiple_same_group(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    mock_repo.add_file("requirements-dev.txt", "pytest>=7.0.0")
-    mock_repo.add_file("dev-requirements.txt", "black>=23.0.0")
+    mock_repo.write_file("requirements-dev.txt", "pytest>=7.0.0")
+    mock_repo.write_file("dev-requirements.txt", "black>=23.0.0")
     result = uv_boost._detect_requirements_files()  # noqa: SLF001
     assert result.main is None
     assert "dev" in result.groups
@@ -637,7 +637,7 @@ def test_detect_requirements_files_multiple_same_group(mock_repo: RepositoryCont
 
 
 def test_detect_requirements_files_no_main(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    mock_repo.add_file("requirements-dev.txt", "pytest>=7.0.0")
+    mock_repo.write_file("requirements-dev.txt", "pytest>=7.0.0")
     result = uv_boost._detect_requirements_files()  # noqa: SLF001
     assert result.main is None
     assert "dev" in result.groups
@@ -645,7 +645,7 @@ def test_detect_requirements_files_no_main(mock_repo: RepositoryController, uv_b
 
 def test_apply_with_pipfile_migration(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
     pipfile_content = '[packages]\nrequests = ">=2.0.0"\n\n[dev-packages]\npytest = ">=7.0.0"\n'
-    mock_repo.add_file("Pipfile", pipfile_content)
+    mock_repo.write_file("Pipfile", pipfile_content)
 
     uv_boost.apply()
 
@@ -655,9 +655,9 @@ def test_apply_with_pipfile_migration(mock_repo: RepositoryController, uv_boost:
 
 def test_apply_adds_grouped_requirements_files(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
     """Test that grouped requirements files are added after migration."""
-    mock_repo.add_file("requirements.txt", "requests>=2.0.0")
-    mock_repo.add_file("requirements-dev.txt", "pytest>=7.0.0")
-    mock_repo.add_file("test-requirements.txt", "pytest-cov>=4.0.0")
+    mock_repo.write_file("requirements.txt", "requests>=2.0.0")
+    mock_repo.write_file("requirements-dev.txt", "pytest>=7.0.0")
+    mock_repo.write_file("test-requirements.txt", "pytest-cov>=4.0.0")
 
     with patch.object(uv_boost.tools.uv, "add_from_requirements_file") as mock_add:
         uv_boost.apply()
@@ -697,7 +697,7 @@ def test_apply_infers_project_name_from_directory(mock_repo: RepositoryControlle
 
 
 def test_apply_is_idempotent(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    mock_repo.add_file("pyproject.toml", '[project]\nname = "test-project"\nversion = "0.1.0"\n')
+    mock_repo.write_file("pyproject.toml", '[project]\nname = "test-project"\nversion = "0.1.0"\n')
 
     uv_boost.apply()
     first_content = (mock_repo.path / "pyproject.toml").read_text()

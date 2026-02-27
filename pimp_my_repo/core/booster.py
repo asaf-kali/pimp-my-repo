@@ -16,25 +16,25 @@ if TYPE_CHECKING:
     from collections.abc import Generator, Iterator
     from pathlib import Path
 
-    from pimp_my_repo.core.tools.git import GitController
+    from pimp_my_repo.core.tools.repo import RepositoryController
 
 
 @contextlib.contextmanager
-def _git_revert_context(git_manager: GitController) -> Generator[str]:
+def _git_revert_context(repo_controller: RepositoryController) -> Generator[str]:
     """Context manager to revert git changes."""
-    sha_before = git_manager.get_current_commit_sha()
+    sha_before = repo_controller.get_current_commit_sha()
     try:
         yield sha_before
     except:
         logger.debug(f"Reverting git changes to {sha_before}")
-        git_manager.reset_hard(sha_before)
+        repo_controller.reset_hard(sha_before)
         raise
 
 
 def _run_boost(
     boost: Boost,
     boost_name: str,
-    git_manager: GitController,
+    repo_controller: RepositoryController,
 ) -> BoostResult:
     """Process a single boost and return result.
 
@@ -42,11 +42,11 @@ def _run_boost(
     resets hard back to that ref so the repo is left in a clean state.
     """
     try:
-        with _git_revert_context(git_manager) as sha_before_apply:
+        with _git_revert_context(repo_controller) as sha_before_apply:
             boost.apply()
-            sha_after_apply = git_manager.get_current_commit_sha()
+            sha_after_apply = repo_controller.get_current_commit_sha()
             commits_made_during_apply = sha_before_apply != sha_after_apply
-            committed = git_manager.commit(boost.commit_message())
+            committed = repo_controller.commit(boost.commit_message())
     except BoostSkippedError as e:
         return BoostResult(name=boost_name, status="skipped", message=e.reason)
 
@@ -59,12 +59,12 @@ def _run_boost(
 def _run_boost_class(
     boost_class: type[Boost],
     boost_tools: BoostTools,
-    git_manager: GitController,
+    repo_controller: RepositoryController,
 ) -> BoostResult:
     boost_name = boost_class.get_name()
     try:
         boost = boost_class(boost_tools)
-        return _run_boost(boost=boost, boost_name=boost_name, git_manager=git_manager)
+        return _run_boost(boost=boost, boost_name=boost_name, repo_controller=repo_controller)
     except (subprocess.CalledProcessError, OSError) as e:
         logger.exception(f"Error applying {boost_name} boost")
         return BoostResult(name=boost_name, status="failed", message=str(e))
@@ -78,4 +78,4 @@ def execute_boosts(
     boost_tools = BoostTools.create(repo_path=repo_path)
     boost_tools.git.init_pmr()
     for bc in boost_classes:
-        yield _run_boost_class(boost_class=bc, boost_tools=boost_tools, git_manager=boost_tools.git)
+        yield _run_boost_class(boost_class=bc, boost_tools=boost_tools, repo_controller=boost_tools.git)

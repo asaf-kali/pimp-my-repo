@@ -13,8 +13,8 @@ if TYPE_CHECKING:
     from collections.abc import Generator
 
     from pimp_my_repo.core.tools.boost_tools import BoostTools
+    from pimp_my_repo.core.tools.repo import RepositoryController
     from tests.conftest import SubprocessResultFactory
-    from tests.repo_controller import RepositoryController
 
 
 @pytest.fixture
@@ -24,7 +24,7 @@ def ruff_boost(boost_tools: BoostTools) -> RuffBoost:
 
 @pytest.fixture
 def ruff_boost_with_pyproject(boost_tools: BoostTools, repo_controller: RepositoryController) -> RuffBoost:
-    repo_controller.add_file("pyproject.toml", "[project]\nname = 'test'\nversion = '0.1.0'\n")
+    repo_controller.write_file("pyproject.toml", "[project]\nname = 'test'\nversion = '0.1.0'\n")
     return RuffBoost(boost_tools)
 
 
@@ -208,13 +208,13 @@ def test_all_checks_passed_output(ruff_boost: RuffBoost) -> None:
 
 
 def test_adds_noqa_comment_to_clean_line(mock_repo: RepositoryController, ruff_boost: RuffBoost) -> None:
-    mock_repo.add_file("src/foo.py", "import os\n")
+    mock_repo.write_file("src/foo.py", "import os\n")
     ruff_boost._apply_noqa({ViolationLocation("src/foo.py", 1): {"F401"}})  # noqa: SLF001
     assert "# noqa: F401" in (mock_repo.path / "src/foo.py").read_text()
 
 
 def test_merges_new_code_with_existing_noqa(mock_repo: RepositoryController, ruff_boost: RuffBoost) -> None:
-    mock_repo.add_file("src/foo.py", "import os  # noqa: F401\n")
+    mock_repo.write_file("src/foo.py", "import os  # noqa: F401\n")
     ruff_boost._apply_noqa({ViolationLocation("src/foo.py", 1): {"E501"}})  # noqa: SLF001
     content = (mock_repo.path / "src/foo.py").read_text()
     assert "F401" in content
@@ -223,7 +223,7 @@ def test_merges_new_code_with_existing_noqa(mock_repo: RepositoryController, ruf
 
 
 def test_merges_multiple_codes_on_same_line(mock_repo: RepositoryController, ruff_boost: RuffBoost) -> None:
-    mock_repo.add_file("src/foo.py", "import os\n")
+    mock_repo.write_file("src/foo.py", "import os\n")
     ruff_boost._apply_noqa({ViolationLocation("src/foo.py", 1): {"F401", "E501"}})  # noqa: SLF001
     content = (mock_repo.path / "src/foo.py").read_text()
     assert "# noqa: " in content
@@ -232,7 +232,7 @@ def test_merges_multiple_codes_on_same_line(mock_repo: RepositoryController, ruf
 
 
 def test_handles_multiple_lines_in_same_file(mock_repo: RepositoryController, ruff_boost: RuffBoost) -> None:
-    mock_repo.add_file("src/foo.py", "import os\nimport sys\n")
+    mock_repo.write_file("src/foo.py", "import os\nimport sys\n")
     ruff_boost._apply_noqa(  # noqa: SLF001
         {
             ViolationLocation("src/foo.py", 1): {"F401"},
@@ -245,8 +245,8 @@ def test_handles_multiple_lines_in_same_file(mock_repo: RepositoryController, ru
 
 
 def test_handles_multiple_files(mock_repo: RepositoryController, ruff_boost: RuffBoost) -> None:
-    mock_repo.add_file("src/foo.py", "import os\n")
-    mock_repo.add_file("src/bar.py", "import sys\n")
+    mock_repo.write_file("src/foo.py", "import os\n")
+    mock_repo.write_file("src/bar.py", "import sys\n")
     ruff_boost._apply_noqa(  # noqa: SLF001
         {
             ViolationLocation("src/foo.py", 1): {"F401"},
@@ -262,7 +262,7 @@ def test_skips_missing_file_without_raising(ruff_boost: RuffBoost) -> None:
 
 
 def test_noqa_codes_sorted_alphabetically(mock_repo: RepositoryController, ruff_boost: RuffBoost) -> None:
-    mock_repo.add_file("src/foo.py", "import os\n")
+    mock_repo.write_file("src/foo.py", "import os\n")
     ruff_boost._apply_noqa({ViolationLocation("src/foo.py", 1): {"F401", "E501", "ANN201"}})  # noqa: SLF001
     content = (mock_repo.path / "src/foo.py").read_text()
     ann_pos = content.index("ANN201")
@@ -272,7 +272,7 @@ def test_noqa_codes_sorted_alphabetically(mock_repo: RepositoryController, ruff_
 
 
 def test_noqa_preserves_existing_line_content(mock_repo: RepositoryController, ruff_boost: RuffBoost) -> None:
-    mock_repo.add_file("src/foo.py", "result = some_func(arg1, arg2)\n")
+    mock_repo.write_file("src/foo.py", "result = some_func(arg1, arg2)\n")
     ruff_boost._apply_noqa({ViolationLocation("src/foo.py", 1): {"E501"}})  # noqa: SLF001
     content = (mock_repo.path / "src/foo.py").read_text()
     assert "result = some_func(arg1, arg2)" in content
@@ -285,7 +285,7 @@ def test_noqa_preserves_existing_line_content(mock_repo: RepositoryController, r
 
 
 def test_adds_ruff_section_when_missing(mock_repo: RepositoryController, ruff_boost: RuffBoost) -> None:
-    mock_repo.add_file("pyproject.toml", "[project]\nname = 'test'\n")
+    mock_repo.write_file("pyproject.toml", "[project]\nname = 'test'\n")
     data = ruff_boost.tools.pyproject.read()
     data = ruff_boost._ensure_ruff_config(data)  # noqa: SLF001
     ruff_boost.tools.pyproject.write(data)
@@ -295,7 +295,7 @@ def test_adds_ruff_section_when_missing(mock_repo: RepositoryController, ruff_bo
 
 
 def test_ruff_config_sets_line_length(mock_repo: RepositoryController, ruff_boost: RuffBoost) -> None:
-    mock_repo.add_file("pyproject.toml", "[project]\nname = 'test'\n")
+    mock_repo.write_file("pyproject.toml", "[project]\nname = 'test'\n")
     data = ruff_boost.tools.pyproject.read()
     data = ruff_boost._ensure_ruff_config(data)  # noqa: SLF001
     ruff_boost.tools.pyproject.write(data)
@@ -304,7 +304,7 @@ def test_ruff_config_sets_line_length(mock_repo: RepositoryController, ruff_boos
 
 
 def test_ruff_config_preserves_existing_content(mock_repo: RepositoryController, ruff_boost: RuffBoost) -> None:
-    mock_repo.add_file("pyproject.toml", "[project]\nname = 'test'\n\n[tool.mypy]\nstrict = true\n")
+    mock_repo.write_file("pyproject.toml", "[project]\nname = 'test'\n\n[tool.mypy]\nstrict = true\n")
     data = ruff_boost.tools.pyproject.read()
     data = ruff_boost._ensure_ruff_config(data)  # noqa: SLF001
     ruff_boost.tools.pyproject.write(data)
@@ -356,7 +356,7 @@ def test_apply_inserts_noqa_on_violation(
     fail_result: SubprocessResultFactory,
     ok_result: SubprocessResultFactory,
 ) -> None:
-    mock_repo.add_file("src/foo.py", "import os\n")
+    mock_repo.write_file("src/foo.py", "import os\n")
     patched_ruff_apply.mock_check.side_effect = [
         fail_result("src/foo.py:1:1: F401 `os` imported but unused"),
         ok_result(),
@@ -371,7 +371,7 @@ def test_apply_iterates_until_check_passes(
     fail_result: SubprocessResultFactory,
     ok_result: SubprocessResultFactory,
 ) -> None:
-    mock_repo.add_file("src/foo.py", "import os\n")
+    mock_repo.write_file("src/foo.py", "import os\n")
     patched_ruff_apply.mock_check.side_effect = [
         fail_result("src/foo.py:1:1: F401 Unused import"),
         fail_result("src/foo.py:1:1: E501 Line too long"),
@@ -386,7 +386,7 @@ def test_apply_stops_after_max_iterations(
     patched_ruff_apply: PatchedRuffApply,
     fail_result: SubprocessResultFactory,
 ) -> None:
-    mock_repo.add_file("src/foo.py", "import os\n")
+    mock_repo.write_file("src/foo.py", "import os\n")
     patched_ruff_apply.mock_check.return_value = fail_result("src/foo.py:1:1: F401 Persistent violation")
     patched_ruff_apply.boost.apply()
     assert patched_ruff_apply.mock_check.call_count == _MAX_RUFF_ITERATIONS
