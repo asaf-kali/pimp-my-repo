@@ -68,3 +68,16 @@ class UvController:
             cmd.extend(["--group", group])
         cmd.append(package)
         self.run(*cmd)
+
+    def add_from_requirements_file(
+        self,
+        requirements_file: Path,
+        *,
+        group: str | None = None,
+    ) -> None:
+        """Add dependencies from a requirements file using uv add -r."""
+        logger.info(f"Adding dependencies from {requirements_file.name}...")
+        cmd = ["add", "--no-install-project", "-r", str(requirements_file)]
+        if group:
+            cmd.extend(["--group", group])
+        self.run(*cmd)

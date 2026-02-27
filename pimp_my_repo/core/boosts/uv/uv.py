@@ -1,14 +1,19 @@
 """UV boost implementation."""
 
+import re
 import subprocess
 import sys
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 from tomlkit import TOMLDocument, document, table
 
 from pimp_my_repo.core.boosts.base import Boost, BoostSkippedError
 from pimp_my_repo.core.boosts.uv.detector import detect_dependency_files
+from pimp_my_repo.core.boosts.uv.models import ProjectRequirements
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class UvBoost(Boost):
@@ -92,6 +97,80 @@ class UvBoost(Boost):
         uv_section["package"] = True
         return pyproject_data
 
+    def _extract_group_from_filename(self, filename: str) -> str | None:
+        """Extract group name from requirements filename.
+
+        Returns:
+            Group name if found, None for main requirements.txt
+
+        """
+        # requirements.txt -> None (main)
+        if filename == "requirements.txt":
+            return None
+
+        # requirements-X.txt -> X
+        match = re.match(r"^requirements-([^.]+)\.txt$", filename)
+        if match:
+            return match.group(1)
+
+        # requirements.X.txt -> X
+        match = re.match(r"^requirements\.([^.]+)\.txt$", filename)
+        if match:
+            return match.group(1)
+
+        # X-requirements.txt -> X
+        match = re.match(r"^([^-]+)-requirements\.txt$", filename)
+        if match:
+            return match.group(1)
+
+        return None
+
+    def _categorize_requirements_file(self, file_path: Path, result: ProjectRequirements) -> None:
+        """Categorize a single requirements file into main or grouped.
+
+        Args:
+            file_path: Path to the requirements file
+            result: ProjectRequirements object to update
+
+        """
+        # Get relative path from repo root for consistent handling
+        try:
+            rel_path = file_path.relative_to(self.tools.repo_path)
+        except ValueError:
+            return
+
+        filename = rel_path.name
+        group = self._extract_group_from_filename(filename)
+
+        if group is None:
+            # Main requirements.txt
+            if filename == "requirements.txt":
+                result.main = file_path
+        else:
+            # Grouped requirements file
+            if group not in result.groups:
+                result.groups[group] = []
+            result.groups[group].append(file_path)
+
+    def _detect_requirements_files(self) -> ProjectRequirements:
+        """Detect and categorize all requirements files.
+
+        Returns:
+            ProjectRequirements with main file and grouped files
+
+        """
+        result = ProjectRequirements()
+
+        # Find all requirements files
+        suffix_files = list(self.tools.repo_path.rglob("requirements*.txt"))
+        prefix_files = list(self.tools.repo_path.rglob("*-requirements.txt"))
+        all_files = set(suffix_files) | set(prefix_files)
+
+        for file_path in all_files:
+            self._categorize_requirements_file(file_path, result)
+
+        return result
+
     def _has_migration_source(self) -> bool:
         """Check if there are any migration sources (Poetry, requirements.txt, setup.py, etc.)."""
         detected = detect_dependency_files(self.tools.repo_path)
@@ -105,8 +184,8 @@ class UvBoost(Boost):
         if detected.setup_py:
             return True
 
-        requirements_files = list(self.tools.repo_path.rglob("requirements*.txt"))
-        return bool(requirements_files)
+        requirements_files = self._detect_requirements_files()
+        return requirements_files.main is not None or bool(requirements_files.groups)
 
     def _has_poetry_config(self) -> bool:
         pyproject_path = self.tools.repo_path / "pyproject.toml"
@@ -120,11 +199,22 @@ class UvBoost(Boost):
         return isinstance(tool_section, dict) and bool(tool_section.get("poetry"))
 
     def _run_migration_if_needed(self) -> None:
+        """Run migration and add grouped requirements files."""
         if not self._has_migration_source():
             return
+
+        # Detect and categorize requirements files
+        requirements_files = self._detect_requirements_files()
+
+        # Run migrate-to-uv for main migration (handles setup.py, Pipfile, Poetry, etc.)
         logger.info("Detected migration source, using uvx migrate-to-uv...")
         self.uv.run_uvx("migrate-to-uv")
         logger.info("Migration completed successfully")
+
+        # Add grouped requirements files after migration
+        for group, files in requirements_files.groups.items():
+            for file_path in files:
+                self.uv.add_from_requirements_file(file_path, group=group)
 
     def _ensure_pyproject_exists(self) -> None:
         pyproject_path = self.tools.repo_path / "pyproject.toml"

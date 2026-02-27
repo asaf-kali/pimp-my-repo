@@ -139,6 +139,11 @@ exclude = [
     "local/",
 ]
 
+[tool.ruff.lint.flake8-type-checking]
+runtime-evaluated-base-classes = [
+  "pydantic.BaseModel",
+]
+
 [tool.mypy]
 strict = true
 exclude = [

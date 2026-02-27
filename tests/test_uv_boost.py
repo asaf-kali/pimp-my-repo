@@ -543,10 +543,87 @@ def test_has_migration_source_requirements_test_txt(mock_repo: RepositoryControl
     assert uv_boost._has_migration_source() is True  # noqa: SLF001
 
 
+def test_has_migration_source_detects_prefix_requirements_file(
+    mock_repo: RepositoryController, uv_boost: UvBoost
+) -> None:
+    mock_repo.add_file("dev-requirements.txt", "pytest>=7.0.0")
+    assert uv_boost._has_migration_source() is True  # noqa: SLF001
+
+
+def test_has_migration_source_detects_test_prefix_requirements_file(
+    mock_repo: RepositoryController, uv_boost: UvBoost
+) -> None:
+    mock_repo.add_file("test-requirements.txt", "pytest>=7.0.0")
+    assert uv_boost._has_migration_source() is True  # noqa: SLF001
+
+
 def test_has_migration_source_both_pipfile_and_poetry(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
     mock_repo.add_file("Pipfile", "[packages]")
     mock_repo.add_file("poetry.lock", "# lock")
     assert uv_boost._has_migration_source() is True  # noqa: SLF001
+
+
+# =============================================================================
+# REQUIREMENTS FILE DETECTION TESTS
+# =============================================================================
+
+
+def test_extract_group_from_filename_main(uv_boost: UvBoost) -> None:
+    assert uv_boost._extract_group_from_filename("requirements.txt") is None  # noqa: SLF001
+
+
+def test_extract_group_from_filename_dash_suffix(uv_boost: UvBoost) -> None:
+    assert uv_boost._extract_group_from_filename("requirements-dev.txt") == "dev"  # noqa: SLF001
+    assert uv_boost._extract_group_from_filename("requirements-test.txt") == "test"  # noqa: SLF001
+
+
+def test_extract_group_from_filename_dot_suffix(uv_boost: UvBoost) -> None:
+    assert uv_boost._extract_group_from_filename("requirements.dev.txt") == "dev"  # noqa: SLF001
+    assert uv_boost._extract_group_from_filename("requirements.lint.txt") == "lint"  # noqa: SLF001
+
+
+def test_extract_group_from_filename_prefix(uv_boost: UvBoost) -> None:
+    assert uv_boost._extract_group_from_filename("dev-requirements.txt") == "dev"  # noqa: SLF001
+    assert uv_boost._extract_group_from_filename("test-requirements.txt") == "test"  # noqa: SLF001
+
+
+def test_detect_requirements_files_main_only(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+    mock_repo.add_file("requirements.txt", "requests>=2.0.0")
+    result = uv_boost._detect_requirements_files()  # noqa: SLF001
+    assert result.main == mock_repo.path / "requirements.txt"
+    assert result.groups == {}
+
+
+def test_detect_requirements_files_with_groups(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+    mock_repo.add_file("requirements.txt", "requests>=2.0.0")
+    mock_repo.add_file("requirements-dev.txt", "pytest>=7.0.0")
+    mock_repo.add_file("test-requirements.txt", "pytest-cov>=4.0.0")
+    mock_repo.add_file("requirements.lint.txt", "ruff>=0.1.0")
+    result = uv_boost._detect_requirements_files()  # noqa: SLF001
+    assert result.main == mock_repo.path / "requirements.txt"
+    assert "dev" in result.groups
+    assert "test" in result.groups
+    assert "lint" in result.groups
+    assert len(result.groups["dev"]) == 1
+    assert len(result.groups["test"]) == 1
+    assert len(result.groups["lint"]) == 1
+
+
+def test_detect_requirements_files_multiple_same_group(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+    mock_repo.add_file("requirements-dev.txt", "pytest>=7.0.0")
+    mock_repo.add_file("dev-requirements.txt", "black>=23.0.0")
+    result = uv_boost._detect_requirements_files()  # noqa: SLF001
+    assert result.main is None
+    assert "dev" in result.groups
+    dev_files = result.groups["dev"]
+    assert len(dev_files) == 2  # noqa: PLR2004
+
+
+def test_detect_requirements_files_no_main(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+    mock_repo.add_file("requirements-dev.txt", "pytest>=7.0.0")
+    result = uv_boost._detect_requirements_files()  # noqa: SLF001
+    assert result.main is None
+    assert "dev" in result.groups
 
 
 def test_apply_with_pipfile_migration(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
@@ -557,6 +634,30 @@ def test_apply_with_pipfile_migration(mock_repo: RepositoryController, uv_boost:
 
     assert (mock_repo.path / "pyproject.toml").exists()
     assert (mock_repo.path / "uv.lock").exists()
+
+
+def test_apply_adds_grouped_requirements_files(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+    """Test that grouped requirements files are added after migration."""
+    mock_repo.add_file("requirements.txt", "requests>=2.0.0")
+    mock_repo.add_file("requirements-dev.txt", "pytest>=7.0.0")
+    mock_repo.add_file("test-requirements.txt", "pytest-cov>=4.0.0")
+
+    with patch.object(uv_boost.tools.uv, "add_from_requirements_file") as mock_add:
+        uv_boost.apply()
+
+        # Should be called twice: once for dev, once for test
+        expected_calls = 2
+        assert mock_add.call_count == expected_calls
+
+        # Check that dev group file was added
+        dev_calls = [call for call in mock_add.call_args_list if call.kwargs.get("group") == "dev"]
+        assert len(dev_calls) == 1
+        assert dev_calls[0].args[0].name == "requirements-dev.txt"
+
+        # Check that test group file was added
+        test_calls = [call for call in mock_add.call_args_list if call.kwargs.get("group") == "test"]
+        assert len(test_calls) == 1
+        assert test_calls[0].args[0].name == "test-requirements.txt"
 
 
 def test_apply_infers_project_name_from_directory(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
