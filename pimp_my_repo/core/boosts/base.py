@@ -9,6 +9,10 @@ from tomlkit import TOMLDocument, document
 
 if TYPE_CHECKING:
     from pimp_my_repo.core.tools.boost_tools import BoostTools
+    from pimp_my_repo.core.tools.git import GitController
+    from pimp_my_repo.core.tools.http import HttpController
+    from pimp_my_repo.core.tools.pyproject import PyProjectController
+    from pimp_my_repo.core.tools.uv import UvController
 
 
 class BoostSkippedError(Exception):
@@ -29,6 +33,22 @@ class Boost(ABC):
         """Initialize boost with repository path."""
         self.tools = tools
 
+    @property
+    def git(self) -> GitController:
+        return self.tools.git
+
+    @property
+    def uv(self) -> UvController:
+        return self.tools.uv
+
+    @property
+    def http(self) -> HttpController:
+        return self.tools.http
+
+    @property
+    def pyproject(self) -> PyProjectController:
+        return self.tools.pyproject
+
     @classmethod
     def get_name(cls) -> str:
         """Extract boost name from class name.
@@ -38,7 +58,6 @@ class Boost(ABC):
 
         """
         class_name = cls.__name__.lower()
-        # Remove 'boost' suffix
         if class_name.endswith("boost"):
             return class_name[:-5]
         return class_name

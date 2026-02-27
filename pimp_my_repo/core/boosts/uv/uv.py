@@ -26,11 +26,19 @@ class UvBoost(Boost):
             return False
         return self._check_uv_installed()
 
+    def _run_uv(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+        """Run a uv command (thin wrapper for testability)."""
+        return self.tools.uv.run(*args, check=check)
+
+    def _run_uvx(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+        """Run a uvx command (thin wrapper for testability)."""
+        return self.tools.uv.run_uvx(*args, check=check)
+
     def _check_uv_installed(self) -> bool:
         """Check if UV is installed."""
         self._uv_version_failed = False
         try:
-            result = self.tools.uv.run("--version", check=False)
+            result = self._run_uv("--version", check=False)
         except subprocess.CalledProcessError:
             self._uv_version_failed = True
             return False
@@ -121,7 +129,7 @@ class UvBoost(Boost):
         if not self._has_migration_source():
             return
         logger.info("Detected migration source, using uvx migrate-to-uv...")
-        self.tools.uv.run_uvx("migrate-to-uv")
+        self._run_uvx("migrate-to-uv")
         logger.info("Migration completed successfully")
 
     def _ensure_pyproject_exists(self) -> None:
@@ -145,7 +153,7 @@ class UvBoost(Boost):
 
     def _generate_uv_lock(self) -> None:
         logger.info("Generating uv.lock...")
-        self.tools.uv.run("lock")
+        self._run_uv("lock")
         logger.info("Successfully generated uv.lock")
 
     def apply(self) -> None:

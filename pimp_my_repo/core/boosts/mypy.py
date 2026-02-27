@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from loguru import logger
 from tomlkit import TOMLDocument, table
 
-from pimp_my_repo.core.boosts.base import Boost
+from pimp_my_repo.core.boosts.base import Boost, BoostSkippedError
+from pimp_my_repo.core.tools.pyproject import PyProjectNotFoundError
 
 if TYPE_CHECKING:
     import subprocess
@@ -54,8 +55,25 @@ class MypyBoost(Boost):
         self._apply_ignores()
 
     def _verify_preconditions(self) -> None:
-        self.tools.uv.verify_present()
-        self.tools.pyproject.verify_present()
+        self._verify_uv_present()
+        self._verify_pyproject_present()
+
+    def _verify_uv_present(self) -> None:
+        try:
+            result = self.tools.uv.run("--version", check=False)
+            if result.returncode != 0:
+                msg = "uv is not available"
+                raise BoostSkippedError(msg)
+        except (FileNotFoundError, OSError) as exc:
+            msg = "uv is not installed"
+            raise BoostSkippedError(msg) from exc
+
+    def _verify_pyproject_present(self) -> None:
+        try:
+            self.tools.pyproject.verify_present()
+        except PyProjectNotFoundError as exc:
+            msg = "No pyproject.toml found"
+            raise BoostSkippedError(msg) from exc
 
     def _run_mypy(self) -> subprocess.CompletedProcess[str]:
         return self.tools.uv.run("run", "mypy", ".", check=False)
@@ -126,25 +144,20 @@ class MypyBoost(Boost):
 
         logger.info(f"Found {len(violations)} violations, applying type: ignore comments...")
         self._apply_type_ignores(violations)
-        self.tools.git.add()
-        if self.tools.git.status(porcelain=True).stdout.strip():
-            self.tools.git.commit("✅ Silence mypy violations", no_verify=True)
+        self.tools.git.commit("✅ Silence mypy violations", no_verify=True)
         return True
 
     def _configure_mypy(self) -> None:
         self._add_mypy()
         logger.info("Configuring [tool.mypy] strict = true in pyproject.toml...")
-        pyproject_data = self.tools.pyproject.read()
+        pyproject_data = self._read_pyproject()
         pyproject_data = self._ensure_mypy_config(pyproject_data)
-        self.tools.pyproject.write(pyproject_data)
-        self._commit_config()
-
-    def _commit_config(self) -> None:
-        if self.tools.git.commit("🔧 Configure mypy with strict mode", no_verify=True):
-            logger.info("Committed mypy configuration")
+        self._write_pyproject(pyproject_data)
+        self.tools.git.commit("🔧 Configure mypy with strict mode", no_verify=True)
+        logger.info("Committed mypy configuration")
 
     def _add_mypy(self) -> None:
-        self.tools.uv.add_package("mypy", dev=True)
+        self.tools.uv.add_package("mypy", group="lint")
 
     def commit_message(self) -> str:
         """Generate commit message for Mypy boost."""

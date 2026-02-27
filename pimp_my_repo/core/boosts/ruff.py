@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from loguru import logger
 from tomlkit import TOMLDocument, table
 
-from pimp_my_repo.core.boosts.base import Boost
+from pimp_my_repo.core.boosts.base import Boost, BoostSkippedError
+from pimp_my_repo.core.tools.pyproject import PyProjectNotFoundError
 
 if TYPE_CHECKING:
     import subprocess
@@ -47,17 +48,22 @@ def _merge_noqa(*, raw_line: str, codes: ErrorCodes) -> str:
 class RuffBoost(Boost):
     """Boost for integrating Ruff linter and formatter."""
 
-    def _has_uncommitted_changes(self) -> bool:
-        result = self.tools.git.status(porcelain=True)
-        return bool(result.stdout.strip())
+    def _verify_uv_present(self) -> None:
+        try:
+            result = self.tools.uv.run("--version", check=False)
+            if result.returncode != 0:
+                msg = "uv is not available"
+                raise BoostSkippedError(msg)
+        except (FileNotFoundError, OSError) as exc:
+            msg = "uv is not installed"
+            raise BoostSkippedError(msg) from exc
 
-    def _commit_if_changes(self, message: str) -> None:
-        """Stage all changes and commit only if there is something to commit."""
-        self.tools.git.add()
-        if self._has_uncommitted_changes():
-            self.tools.git.commit(message, no_verify=True)
-        else:
-            logger.debug(f"Nothing to commit for: {message!r}")
+    def _verify_pyproject_present(self) -> None:
+        try:
+            self.tools.pyproject.verify_present()
+        except PyProjectNotFoundError as exc:
+            msg = "No pyproject.toml found"
+            raise BoostSkippedError(msg) from exc
 
     def _run_ruff_format(self) -> subprocess.CompletedProcess[str]:
         return self.tools.uv.run("run", "ruff", "format", ".", check=False)
@@ -116,25 +122,22 @@ class RuffBoost(Boost):
 
     def apply(self) -> None:
         """Add ruff, configure it, auto-format, then suppress all check violations."""
-        self.tools.uv.verify_present()
-        self.tools.pyproject.verify_present()
+        self._verify_uv_present()
+        self._verify_pyproject_present()
 
-        # Phase 1: add dep + configure
         self.tools.uv.add_package("ruff", group="lint")
 
         logger.info("Configuring [tool.ruff.lint] select = ['ALL'] in pyproject.toml...")
-        pyproject_data = self.tools.pyproject.read()
+        pyproject_data = self._read_pyproject()
         pyproject_data = self._ensure_ruff_config(pyproject_data)
-        self.tools.pyproject.write(pyproject_data)
+        self._write_pyproject(pyproject_data)
 
-        self._commit_if_changes("🔧 Configure ruff")
+        self.tools.git.commit("🔧 Configure ruff", no_verify=True)
 
-        # Phase 2: auto-format
         logger.info("Running ruff format...")
         self._run_ruff_format()
-        self._commit_if_changes("🎨 Auto-format with ruff")
+        self.tools.git.commit("🎨 Auto-format with ruff", no_verify=True)
 
-        # Phase 3: suppress check violations
         for iteration in range(1, _MAX_RUFF_ITERATIONS + 1):
             if not self._suppress_violations_iteration(iteration=iteration):
                 break
@@ -155,7 +158,7 @@ class RuffBoost(Boost):
 
         logger.info(f"Found {len(violations)} violations, applying noqa comments...")
         self._apply_noqa(violations)
-        self._commit_if_changes("✅ Silence ruff violations")
+        self.tools.git.commit("✅ Silence ruff violations", no_verify=True)
         return True
 
     def commit_message(self) -> str:

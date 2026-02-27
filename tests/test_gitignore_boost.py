@@ -2,7 +2,7 @@
 
 import urllib.error
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -183,12 +183,9 @@ def test_preserves_existing_content(mock_repo: RepositoryController, gitignore_b
 
 
 def test_calls_rm_cached_then_add(gitignore_boost: GitignoreBoost) -> None:
-    with patch.object(gitignore_boost, "_run_git") as mock_git:
+    with patch.object(gitignore_boost.tools.git, "reset_tracking") as mock_reset:
         gitignore_boost._reset_git_tracking()  # noqa: SLF001
-    assert mock_git.call_args_list == [
-        call("rm", "-r", "--cached", "."),
-        call("add", "-A"),
-    ]
+    mock_reset.assert_called_once()
 
 
 # =============================================================================
@@ -201,7 +198,9 @@ _FAKE_GITIGNORE = "*.pyc\n__pycache__/\n.venv/\n"
 def test_apply_writes_gitignore(mock_repo: RepositoryController, gitignore_boost: GitignoreBoost) -> None:
     with (
         patch.object(gitignore_boost, "_fetch_gitignore", return_value=_FAKE_GITIGNORE),
-        patch.object(gitignore_boost, "_run_git"),
+        patch.object(gitignore_boost.tools.git, "add"),
+        patch.object(gitignore_boost.tools.git, "commit"),
+        patch.object(gitignore_boost.tools.git, "reset_tracking"),
     ):
         gitignore_boost.apply()
     assert (mock_repo.path / ".gitignore").exists()
@@ -210,34 +209,35 @@ def test_apply_writes_gitignore(mock_repo: RepositoryController, gitignore_boost
 def test_apply_makes_intermediate_commit(gitignore_boost: GitignoreBoost) -> None:
     with (
         patch.object(gitignore_boost, "_fetch_gitignore", return_value=_FAKE_GITIGNORE),
-        patch.object(gitignore_boost, "_run_git") as mock_git,
+        patch.object(gitignore_boost.tools.git, "add"),
+        patch.object(gitignore_boost.tools.git, "commit") as mock_commit,
+        patch.object(gitignore_boost.tools.git, "reset_tracking"),
     ):
         gitignore_boost.apply()
-    commit_calls = [c for c in mock_git.call_args_list if "commit" in c.args]
-    assert len(commit_calls) == 1
-    assert "✨ Add .gitignore" in commit_calls[0].args
+    messages = [c.args[0] for c in mock_commit.call_args_list]
+    assert any("✨ Add .gitignore" in m for m in messages)
 
 
 def test_apply_resets_tracking(gitignore_boost: GitignoreBoost) -> None:
     with (
         patch.object(gitignore_boost, "_fetch_gitignore", return_value=_FAKE_GITIGNORE),
-        patch.object(gitignore_boost, "_run_git") as mock_git,
+        patch.object(gitignore_boost.tools.git, "add"),
+        patch.object(gitignore_boost.tools.git, "commit"),
+        patch.object(gitignore_boost.tools.git, "reset_tracking") as mock_reset,
     ):
         gitignore_boost.apply()
-    all_args = [c.args for c in mock_git.call_args_list]
-    assert ("rm", "-r", "--cached", ".") in all_args
-    assert ("add", "-A") in all_args
+    mock_reset.assert_called_once()
 
 
 def test_apply_fails_when_fetch_fails(mock_repo: RepositoryController, gitignore_boost: GitignoreBoost) -> None:
     """When gitignore.io API fails, boost should fail (not skip)."""
     with (
         patch.object(gitignore_boost, "_fetch_gitignore", return_value=None),
-        patch.object(gitignore_boost, "_run_git") as mock_git,
+        patch.object(gitignore_boost.tools.git, "commit") as mock_commit,
         pytest.raises(RuntimeError, match=r"Could not fetch \.gitignore"),
     ):
         gitignore_boost.apply()
-    mock_git.assert_not_called()
+    mock_commit.assert_not_called()
     assert not (mock_repo.path / ".gitignore").exists()
 
 

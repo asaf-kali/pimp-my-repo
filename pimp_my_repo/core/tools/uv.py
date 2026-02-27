@@ -5,14 +5,8 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
-from pimp_my_repo.core.tools.pyproject import PyProjectController
-
 if TYPE_CHECKING:
     from pathlib import Path
-
-
-class UvNotFoundError(RuntimeError):
-    """Raised when uv is not installed or not available."""
 
 
 class UvController:
@@ -49,33 +43,11 @@ class UvController:
         package: str,
         *,
         group: str | None = None,
-        dev: bool = False,
     ) -> None:
-        """Add a package using uv add, skipping if already present.
-
-        Requires pyproject controller to check if package exists.
-        """
-        pyproject = PyProjectController(repo_path=self.repo_path)
-        if pyproject.is_package_in_deps(package=package):
-            logger.info(f"{package} already in dependencies, skipping uv add")
-            return
-
+        """Add a package using uv add."""
         logger.info(f"Adding {package} dependency...")
         cmd = ["add", "--no-install-project"]
-        if dev:
-            cmd.append("--dev")
-        elif group:
+        if group:
             cmd.extend(["--group", group])
         cmd.append(package)
         self.run(*cmd)
-
-    def verify_present(self) -> None:
-        """Verify that uv is installed and available."""
-        try:
-            result = self.run("--version", check=False)
-            if result.returncode != 0:
-                msg = "uv is not available"
-                raise UvNotFoundError(msg)
-        except (FileNotFoundError, OSError) as e:
-            msg = "uv is not installed"
-            raise UvNotFoundError(msg) from e
