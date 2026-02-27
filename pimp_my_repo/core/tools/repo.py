@@ -10,7 +10,7 @@ import logging
 
 log = logging.getLogger(__name__)
 _DEFAULT_BRANCH_NAME = "feat/pmr"
-COMMIT_AUTHOR = "pmr <pimp-my-repo@pypi.org>"
+_DEFAULT_COMMIT_AUTHOR = "pmr <pimp-my-repo@pypi.org>"
 
 
 class RepositoryController:
@@ -61,7 +61,7 @@ class RepositoryController:
         self.execute("add", relative_path)
         self.commit(message, **commit_kwargs)
 
-    def commit(self, message: str, *, no_verify: bool = True, author: str = COMMIT_AUTHOR) -> bool:
+    def commit(self, message: str, *, no_verify: bool = True, author: str = _DEFAULT_COMMIT_AUTHOR) -> bool:
         """Commit changes with the given message.
 
         Args:
