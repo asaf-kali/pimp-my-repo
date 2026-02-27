@@ -38,8 +38,6 @@ def _process_boost(
     boost: Boost,
     boost_name: str,
     git_manager: GitController,
-    progress: Progress,
-    task_id: TaskID,
 ) -> BoostResult:
     """Process a single boost and return result.
 
@@ -50,24 +48,31 @@ def _process_boost(
         with _git_revert_context(git_manager) as sha_before_apply:
             boost.apply()
             sha_after_apply = git_manager.get_current_commit_sha()
-            # Check if any commits were made during apply()
             commits_made_during_apply = sha_before_apply != sha_after_apply
             committed = git_manager.commit(boost.commit_message())
     except BoostSkippedError as e:
-        progress.update(task_id, description=f"[yellow]⊘ Skipping {boost_name}: {e.reason}[/yellow]")
         return BoostResult(name=boost_name, status="skipped", message=e.reason)
     except Exception as e:  # noqa: BLE001
         logger.exception(f"Error applying {boost_name} boost")
-        progress.update(task_id, description=f"[red]✗ {boost_name} failed[/red]")
         return BoostResult(name=boost_name, status="failed", message=str(e))
 
-    # If commits were made during apply() OR final commit succeeded, mark as applied
     if commits_made_during_apply or committed:
-        progress.update(task_id, description=f"[green]✓ {boost_name} applied[/green]")
         return BoostResult(name=boost_name, status="applied", message="Success")
 
-    progress.update(task_id, description=f"[yellow]⊘ Skipping {boost_name}: no changes[/yellow]")
     return BoostResult(name=boost_name, status="skipped", message="No changes to commit")
+
+
+_STATUS_DESCRIPTIONS = {
+    "applied": "[green]✓ {name} applied[/green]",
+    "skipped": "[yellow]⊘ {name} skipped: {message}[/yellow]",
+    "failed": "[red]✗ {name} failed[/red]",
+}
+
+
+def _update_progress(progress: Progress, task_id: TaskID, result: BoostResult) -> None:
+    template = _STATUS_DESCRIPTIONS.get(result.status, "{name}: {message}")
+    description = template.format(name=result.name, message=result.message)
+    progress.update(task_id, description=description)
 
 
 def execute_boosts(
@@ -87,16 +92,16 @@ def execute_boosts(
         boost_tools = BoostTools.create(repo_path)
         for boost_class in boost_classes:
             boost_name = boost_class.get_name()
-            task_id = progress.add_task(f"Processing {boost_name} boost...", total=None)
+            task_id = progress.add_task(f"Processing {boost_name}...", total=None)
 
             try:
                 boost = boost_class(boost_tools)
-                result = _process_boost(boost, boost_name, git_manager, progress, task_id)
-                results.append(result)
-
+                result = _process_boost(boost=boost, boost_name=boost_name, git_manager=git_manager)
             except (subprocess.CalledProcessError, OSError) as e:
                 logger.exception(f"Error processing {boost_name} boost")
-                progress.update(task_id, description=f"[red]✗ {boost_name} failed[/red]")
-                results.append(BoostResult(name=boost_name, status="failed", message=str(e)))
+                result = BoostResult(name=boost_name, status="failed", message=str(e))
+
+            _update_progress(progress=progress, task_id=task_id, result=result)
+            results.append(result)
 
     return results
