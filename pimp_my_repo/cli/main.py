@@ -12,9 +12,11 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 from typer import Exit
 
-from pimp_my_repo.core.boosts import Boost, BoostSkippedError, get_all_boosts
+from pimp_my_repo.core.boosts.base import Boost, BoostSkippedError
+from pimp_my_repo.core.registry import get_all_boosts
 from pimp_my_repo.core.result import BoostResult
-from pimp_my_repo.core.tools import BoostTools, GitController
+from pimp_my_repo.core.tools.boost_tools import BoostTools
+from pimp_my_repo.core.tools.git import GitController
 
 if TYPE_CHECKING:
     from collections.abc import Generator

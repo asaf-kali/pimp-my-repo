@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pimp_my_repo.core.boosts import BoostSkippedError
+from pimp_my_repo.core.boosts.base import BoostSkippedError
 from pimp_my_repo.core.boosts.ruff import _MAX_RUFF_ITERATIONS, RuffBoost, ViolationLocation
 
 if TYPE_CHECKING:
@@ -264,7 +264,7 @@ def test_ruff_config_preserves_existing_content(mock_repo: RepositoryController,
 def test_apply_calls_uv_add_ruff(patched_ruff_apply: PatchedRuffApply) -> None:
     with patch("pimp_my_repo.core.boosts.add_package.add_package_with_uv") as mock_add:
         patched_ruff_apply.boost.apply()
-        mock_add.assert_called_once_with(patched_ruff_apply.boost.tools.repo_controller.path, "ruff", group="lint")
+        mock_add.assert_called_once_with(patched_ruff_apply.boost.tools.repo_path, "ruff", group="lint")
 
 
 def test_apply_writes_ruff_config_to_pyproject(

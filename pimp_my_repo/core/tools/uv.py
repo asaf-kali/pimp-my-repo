@@ -5,10 +5,14 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
-from pimp_my_repo.core.boosts.base import BoostSkippedError
+from pimp_my_repo.core.tools.pyproject import PyProjectController
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+class UvNotFoundError(RuntimeError):
+    """Raised when uv is not installed or not available."""
 
 
 class UvController:
@@ -51,8 +55,8 @@ class UvController:
 
         Requires pyproject controller to check if package exists.
         """
-        pyproject = self.pyproject
-        if pyproject.is_package_in_deps(package):
+        pyproject = PyProjectController(repo_path=self.repo_path)
+        if pyproject.is_package_in_deps(package=package):
             logger.info(f"{package} already in dependencies, skipping uv add")
             return
 
@@ -71,7 +75,7 @@ class UvController:
             result = self.run("--version", check=False)
             if result.returncode != 0:
                 msg = "uv is not available"
-                raise BoostSkippedError(msg)
+                raise UvNotFoundError(msg)
         except (FileNotFoundError, OSError) as e:
             msg = "uv is not installed"
-            raise BoostSkippedError(msg) from e
+            raise UvNotFoundError(msg) from e

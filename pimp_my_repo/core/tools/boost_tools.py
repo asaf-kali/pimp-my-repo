@@ -30,8 +30,8 @@ class BoostTools:
     def create(cls, repo_path: Path) -> BoostTools:
         """Create a BoostTools instance for the given repository path."""
         return cls(
-            git=GitController(repo_path),
-            uv=UvController(repo_path),
+            git=GitController(repo_path=repo_path),
+            uv=UvController(repo_path=repo_path),
             http=HttpController(),
-            pyproject=PyProjectController(repo_path),
+            pyproject=PyProjectController(repo_path=repo_path),
         )

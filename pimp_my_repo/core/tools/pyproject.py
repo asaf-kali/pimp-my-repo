@@ -5,11 +5,13 @@ from typing import TYPE_CHECKING
 
 from tomlkit import TOMLDocument, dumps, loads, table
 
-from pimp_my_repo.core.boosts.base import BoostSkippedError
-
 if TYPE_CHECKING:
     from pathlib import Path
     from typing import Any
+
+
+class PyProjectNotFoundError(FileNotFoundError):
+    """Raised when pyproject.toml is not found in the repository."""
 
 
 class PyProjectController:
@@ -63,5 +65,4 @@ class PyProjectController:
     def verify_present(self) -> None:
         """Verify that pyproject.toml exists."""
         if not (self.repo_path / "pyproject.toml").exists():
-            msg = "No pyproject.toml found"
-            raise BoostSkippedError(msg)
+            raise PyProjectNotFoundError(self.repo_path)

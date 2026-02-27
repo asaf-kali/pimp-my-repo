@@ -16,7 +16,7 @@ class GitController:
         """Initialize GitController with repository path."""
         self.repo_path = repo_path
 
-    def _run_git(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    def execute(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         """Run a git command in the repository directory."""
         cmd = ["git", *args]
         return subprocess.run(  # noqa: S603
@@ -27,16 +27,12 @@ class GitController:
             check=check,
         )
 
-    def run(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-        """Run a git command in the repository directory."""
-        return self._run_git(*args, check=check)
-
     def add(self, *paths: str) -> None:
         """Stage files for commit."""
         if paths:
-            self._run_git("add", *paths)
+            self.execute("add", *paths)
         else:
-            self._run_git("add", "-A")
+            self.execute("add", "-A")
 
     def commit(self, message: str, *, no_verify: bool = True, author: str = COMMIT_AUTHOR) -> bool:
         """Commit changes with the given message.
@@ -50,13 +46,13 @@ class GitController:
             True if a commit was created, False if there was nothing to commit.
 
         """
-        self._run_git("add", "-A")
+        self.execute("add", "-A")
         if self.is_clean():
             return False
         commit_args = ["commit", "--author", author, "-m", message]
         if no_verify:
             commit_args.append("--no-verify")
-        self._run_git(*commit_args)
+        self.execute(*commit_args)
         return True
 
     def status(self, *, porcelain: bool = False) -> subprocess.CompletedProcess[str]:
@@ -64,32 +60,32 @@ class GitController:
         args = ["status"]
         if porcelain:
             args.append("--porcelain")
-        return self._run_git(*args, check=False)
+        return self.execute(*args, check=False)
 
     def reset_tracking(self) -> None:
         """Untrack all files then re-add, so gitignored files leave the index."""
-        self._run_git("rm", "-r", "--cached", ".")
-        self._run_git("add", "-A")
+        self.execute("rm", "-r", "--cached", ".")
+        self.execute("add", "-A")
 
     def is_clean(self) -> bool:
         """Check if git working directory is clean."""
-        result = self._run_git("status", "--porcelain", check=False)
+        result = self.execute("status", "--porcelain", check=False)
         return result.returncode == 0 and not result.stdout.strip()
 
     def create_branch(self, branch_name: str) -> None:
         """Create and switch to a new branch."""
         # Check if branch exists
-        result = self._run_git("branch", "--list", branch_name, check=False)
+        result = self.execute("branch", "--list", branch_name, check=False)
         if result.stdout.strip():
             # Branch exists, switch to it
-            self._run_git("checkout", branch_name)
+            self.execute("checkout", branch_name)
         else:
             # Create new branch
-            self._run_git("checkout", "-b", branch_name)
+            self.execute("checkout", "-b", branch_name)
 
     def get_origin_url(self) -> str:
         """Get the git origin URL."""
-        result = self._run_git("remote", "get-url", "origin", check=True)
+        result = self.execute("remote", "get-url", "origin", check=True)
         if not result.stdout.strip():
             msg = "Git origin URL is empty"
             raise ValueError(msg)
@@ -97,7 +93,7 @@ class GitController:
 
     def get_current_commit_sha(self) -> str:
         """Get the current commit SHA."""
-        result = self._run_git("rev-parse", "HEAD", check=True)
+        result = self.execute("rev-parse", "HEAD", check=True)
         if not result.stdout.strip():
             msg = "Git commit SHA is empty"
             raise ValueError(msg)
@@ -105,4 +101,4 @@ class GitController:
 
     def reset_hard(self, sha: str) -> None:
         """Reset the working tree and index to the given commit SHA."""
-        self._run_git("reset", "--hard", sha)
+        self.execute("reset", "--hard", sha)

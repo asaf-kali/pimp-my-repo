@@ -283,7 +283,7 @@ def test_sets_strict_true_on_existing_mypy_section(mock_repo: RepositoryControll
 def test_apply_calls_uv_add_mypy(patched_mypy_apply: PatchedMypyApply) -> None:
     with patch("pimp_my_repo.core.boosts.add_package.add_package_with_uv") as mock_add:
         patched_mypy_apply.boost.apply()
-        mock_add.assert_called_once_with(patched_mypy_apply.boost.tools.repo_controller.path, "mypy", dev=True)
+        mock_add.assert_called_once_with(patched_mypy_apply.boost.tools.repo_path, "mypy", dev=True)
 
 
 def test_apply_writes_strict_config_to_pyproject(

@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pimp_my_repo.core.boosts import BoostSkippedError
+from pimp_my_repo.core.boosts.base import BoostSkippedError
 from pimp_my_repo.core.boosts.uv.detector import (
     detect_all,
     detect_dependency_files,

@@ -5,8 +5,10 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
+from tomlkit import TOMLDocument, document
+
 if TYPE_CHECKING:
-    from pimp_my_repo.core.tools import BoostTools
+    from pimp_my_repo.core.tools.boost_tools import BoostTools
 
 
 class BoostSkippedError(Exception):
@@ -40,6 +42,17 @@ class Boost(ABC):
         if class_name.endswith("boost"):
             return class_name[:-5]
         return class_name
+
+    def _read_pyproject(self) -> TOMLDocument:
+        """Read pyproject.toml, returning an empty document on any error."""
+        try:
+            return self.tools.pyproject.read()
+        except Exception:  # noqa: BLE001
+            return document()
+
+    def _write_pyproject(self, data: TOMLDocument) -> None:
+        """Write pyproject.toml."""
+        self.tools.pyproject.write(data=data)
 
     @abstractmethod
     def apply(self) -> None:
