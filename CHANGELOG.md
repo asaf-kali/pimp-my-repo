@@ -1,6 +1,21 @@
 # CHANGELOG
 
 
+## v0.2.3 (2026-02-27)
+
+### Other
+
+- 🏭️ Refactoring and code style ([#4](https://github.com/asaf-kali/pimp-my-repo/pull/4),
+  [`c652b06`](https://github.com/asaf-kali/pimp-my-repo/commit/c652b06beeab3883dac25ff9844835b182db4e69))
+
+Adjust project code quality
+
+### 🛠️
+
+- 🛠️ Bug fixes and refactoring ([#5](https://github.com/asaf-kali/pimp-my-repo/pull/5),
+  [`2e00c16`](https://github.com/asaf-kali/pimp-my-repo/commit/2e00c1679570ac5f50542259e70d0978d6f0d3f6))
+
+
 ## v0.2.2 (2026-02-25)
 
 ### 🐛
