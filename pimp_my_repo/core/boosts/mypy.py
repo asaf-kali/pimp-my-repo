@@ -1,14 +1,16 @@
 """Mypy boost implementation."""
 
 import re
-import subprocess
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from loguru import logger
-from tomlkit import TOMLDocument, dumps, loads, table
+from tomlkit import TOMLDocument, table
 
-from pimp_my_repo.core.boost.base import Boost, BoostSkippedError
-from pimp_my_repo.core.git import COMMIT_AUTHOR
+from pimp_my_repo.core.boosts.base import Boost, BoostSkippedError
+from pimp_my_repo.core.tools.pyproject import PyProjectNotFoundError
+
+if TYPE_CHECKING:
+    import subprocess
 
 _MAX_MYPY_ITERATIONS = 3
 
@@ -56,38 +58,25 @@ class MypyBoost(Boost):
         self._verify_uv_present()
         self._verify_pyproject_present()
 
-    def _run_uv(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-        cmd = ["uv", *args]
-        return subprocess.run(  # noqa: S603
-            cmd,
-            cwd=self.repo_path,
-            capture_output=True,
-            text=True,
-            check=check,
-        )
+    def _verify_uv_present(self) -> None:
+        try:
+            result = self.uv.run("--version", check=False)
+            if result.returncode != 0:
+                msg = "uv is not available"
+                raise BoostSkippedError(msg)
+        except (FileNotFoundError, OSError) as exc:
+            msg = "uv is not installed"
+            raise BoostSkippedError(msg) from exc
 
-    def _run_git(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-        cmd = ["git", *args]
-        return subprocess.run(  # noqa: S603
-            cmd,
-            cwd=self.repo_path,
-            capture_output=True,
-            text=True,
-            check=check,
-        )
+    def _verify_pyproject_present(self) -> None:
+        try:
+            self.pyproject.verify_present()
+        except PyProjectNotFoundError as exc:
+            msg = "No pyproject.toml found"
+            raise BoostSkippedError(msg) from exc
 
     def _run_mypy(self) -> subprocess.CompletedProcess[str]:
-        return self._run_uv("run", "mypy", ".", check=False)
-
-    def _read_pyproject(self) -> TOMLDocument:
-        pyproject_path = self.repo_path / "pyproject.toml"
-        with pyproject_path.open(encoding="utf-8") as f:
-            return loads(f.read())
-
-    def _write_pyproject(self, data: TOMLDocument) -> None:
-        pyproject_path = self.repo_path / "pyproject.toml"
-        with pyproject_path.open("w", encoding="utf-8") as f:
-            f.write(dumps(data))
+        return self.uv.run("run", "mypy", ".", check=False)
 
     def _ensure_mypy_config(self, data: TOMLDocument) -> TOMLDocument:
         if "tool" not in data:
@@ -134,35 +123,6 @@ class MypyBoost(Boost):
 
         full_path.write_text("".join(lines), encoding="utf-8")
 
-    def _is_package_in_deps(self, package: str) -> bool:
-        """Check if a package is already present in any dependency group in pyproject.toml."""
-        try:
-            data = self._read_pyproject()
-        except (OSError, ValueError):  # fmt: skip
-            return False
-        package_lower = package.lower()
-        for deps in data.get("dependency-groups", {}).values():
-            for dep in deps:
-                if isinstance(dep, str) and re.split(r"[>=<!@\s\[]", dep)[0].lower() == package_lower:
-                    return True
-        for deps in data.get("project", {}).get("optional-dependencies", {}).values():
-            for dep in deps:
-                if isinstance(dep, str) and re.split(r"[>=<!@\s\[]", dep)[0].lower() == package_lower:
-                    return True
-        return False
-
-    def _add_dep_to_pyproject(self, group: str, package: str) -> None:
-        """Add a package to a dependency group directly in pyproject.toml."""
-        data = self._read_pyproject()
-        if "dependency-groups" not in data:
-            data["dependency-groups"] = table()
-        dep_groups: Any = data["dependency-groups"]
-        if group not in dep_groups:
-            dep_groups[group] = [package]
-        else:
-            dep_groups[group].append(package)
-        self._write_pyproject(data)
-
     def _apply_ignores(self) -> None:
         for iteration in range(1, _MAX_MYPY_ITERATIONS + 1):
             if not self._process_mypy_iteration(iteration):
@@ -184,44 +144,20 @@ class MypyBoost(Boost):
 
         logger.info(f"Found {len(violations)} violations, applying type: ignore comments...")
         self._apply_type_ignores(violations)
+        self.git.commit("✅ Silence mypy violations", no_verify=True)
         return True
 
     def _configure_mypy(self) -> None:
         self._add_mypy()
         logger.info("Configuring [tool.mypy] strict = true in pyproject.toml...")
-        pyproject_data = self._read_pyproject()
+        pyproject_data = self.pyproject.read()
         pyproject_data = self._ensure_mypy_config(pyproject_data)
-        self._write_pyproject(pyproject_data)
-        self._commit_config()
-
-    def _commit_config(self) -> None:
-        self._run_git("add", "-A")
-        if not self._run_git("status", "--porcelain", check=False).stdout.strip():
-            return
-        self._run_git("commit", "--author", COMMIT_AUTHOR, "--no-verify", "-m", "🔧 Configure mypy with strict mode")
+        self.pyproject.write(pyproject_data)
+        self.git.commit("🔧 Configure mypy with strict mode", no_verify=True)
         logger.info("Committed mypy configuration")
 
     def _add_mypy(self) -> None:
-        if self._is_package_in_deps("mypy"):
-            logger.info("mypy already in dependencies, skipping uv add")
-            return
-        logger.info("Adding mypy dev dependency...")
-        self._run_uv("add", "--dev", "mypy")
-
-    def _verify_pyproject_present(self) -> None:
-        if not (self.repo_path / "pyproject.toml").exists():
-            msg = "No pyproject.toml found"
-            raise BoostSkippedError(msg)
-
-    def _verify_uv_present(self) -> None:
-        try:
-            result = self._run_uv("--version", check=False)
-            if result.returncode != 0:
-                msg = "uv is not available"
-                raise BoostSkippedError(msg)
-        except (FileNotFoundError, OSError) as e:
-            msg = "uv is not installed"
-            raise BoostSkippedError(msg) from e
+        self.uv.add_package("mypy", group="lint")
 
     def commit_message(self) -> str:
         """Generate commit message for Mypy boost."""

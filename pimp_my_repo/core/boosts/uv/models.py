@@ -1,4 +1,22 @@
+from __future__ import annotations
+
+from pathlib import Path
+
 from pydantic import BaseModel, ConfigDict, Field
+
+
+class RequirementsFile(BaseModel):
+    """Represents a requirements file with its group categorization."""
+
+    path: Path
+    group: str | None = None  # None means production/main requirements
+
+
+class ProjectRequirements(BaseModel):
+    """Collection of categorized requirements files."""
+
+    main: Path | None = None  # requirements.txt (production)
+    groups: dict[str, list[Path]] = Field(default_factory=dict)  # Group name -> list of files
 
 
 class DependencyFiles(BaseModel):

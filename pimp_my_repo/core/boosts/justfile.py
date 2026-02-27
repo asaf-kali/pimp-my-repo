@@ -1,6 +1,6 @@
 """Justfile boost implementation."""
 
-from pimp_my_repo.core.boost.base import Boost, BoostSkippedError
+from pimp_my_repo.core.boosts.base import Boost, BoostSkippedError
 
 
 class JustfileBoost(Boost):

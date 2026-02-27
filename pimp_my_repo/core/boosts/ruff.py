@@ -1,14 +1,16 @@
 """Ruff boost implementation."""
 
 import re
-import subprocess
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from loguru import logger
-from tomlkit import TOMLDocument, dumps, loads, table
+from tomlkit import TOMLDocument, table
 
-from pimp_my_repo.core.boost.base import Boost, BoostSkippedError
-from pimp_my_repo.core.git import COMMIT_AUTHOR
+from pimp_my_repo.core.boosts.base import Boost, BoostSkippedError
+from pimp_my_repo.core.tools.pyproject import PyProjectNotFoundError
+
+if TYPE_CHECKING:
+    import subprocess
 
 _MAX_RUFF_ITERATIONS = 3
 
@@ -46,53 +48,28 @@ def _merge_noqa(*, raw_line: str, codes: ErrorCodes) -> str:
 class RuffBoost(Boost):
     """Boost for integrating Ruff linter and formatter."""
 
-    def _run_uv(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-        cmd = ["uv", *args]
-        return subprocess.run(  # noqa: S603
-            cmd,
-            cwd=self.repo_path,
-            capture_output=True,
-            text=True,
-            check=check,
-        )
+    def _verify_uv_present(self) -> None:
+        try:
+            result = self.uv.run("--version", check=False)
+            if result.returncode != 0:
+                msg = "uv is not available"
+                raise BoostSkippedError(msg)
+        except (FileNotFoundError, OSError) as exc:
+            msg = "uv is not installed"
+            raise BoostSkippedError(msg) from exc
 
-    def _run_git(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-        cmd = ["git", *args]
-        return subprocess.run(  # noqa: S603
-            cmd,
-            cwd=self.repo_path,
-            capture_output=True,
-            text=True,
-            check=check,
-        )
-
-    def _has_uncommitted_changes(self) -> bool:
-        result = self._run_git("status", "--porcelain", check=False)
-        return bool(result.stdout.strip())
-
-    def _commit_if_changes(self, message: str) -> None:
-        """Stage all changes and commit only if there is something to commit."""
-        self._run_git("add", "-A")
-        if self._has_uncommitted_changes():
-            self._run_git("commit", "--author", COMMIT_AUTHOR, "--no-verify", "-m", message)
-        else:
-            logger.debug(f"Nothing to commit for: {message!r}")
+    def _verify_pyproject_present(self) -> None:
+        try:
+            self.pyproject.verify_present()
+        except PyProjectNotFoundError as exc:
+            msg = "No pyproject.toml found"
+            raise BoostSkippedError(msg) from exc
 
     def _run_ruff_format(self) -> subprocess.CompletedProcess[str]:
-        return self._run_uv("run", "ruff", "format", ".", check=False)
+        return self.uv.run("run", "ruff", "format", ".", check=False)
 
     def _run_ruff_check(self) -> subprocess.CompletedProcess[str]:
-        return self._run_uv("run", "ruff", "check", ".", check=False)
-
-    def _read_pyproject(self) -> TOMLDocument:
-        pyproject_path = self.repo_path / "pyproject.toml"
-        with pyproject_path.open(encoding="utf-8") as f:
-            return loads(f.read())
-
-    def _write_pyproject(self, data: TOMLDocument) -> None:
-        pyproject_path = self.repo_path / "pyproject.toml"
-        with pyproject_path.open("w", encoding="utf-8") as f:
-            f.write(dumps(data))
+        return self.uv.run("run", "ruff", "check", ".", check=False)
 
     def _ensure_ruff_config(self, data: TOMLDocument) -> TOMLDocument:
         if "tool" not in data:
@@ -143,75 +120,24 @@ class RuffBoost(Boost):
 
         full_path.write_text("".join(lines), encoding="utf-8")
 
-    def _is_package_in_deps(self, package: str) -> bool:
-        """Check if a package is already present in any dependency group in pyproject.toml."""
-        try:
-            data = self._read_pyproject()
-        except (OSError, ValueError):  # fmt: skip
-            return False
-        package_lower = package.lower()
-        for deps in data.get("dependency-groups", {}).values():
-            for dep in deps:
-                if isinstance(dep, str) and re.split(r"[>=<!@\s\[]", dep)[0].lower() == package_lower:
-                    return True
-        for deps in data.get("project", {}).get("optional-dependencies", {}).values():
-            for dep in deps:
-                if isinstance(dep, str) and re.split(r"[>=<!@\s\[]", dep)[0].lower() == package_lower:
-                    return True
-        return False
-
-    def _add_dep_to_pyproject(self, group: str, package: str) -> None:
-        """Add a package to a dependency group directly in pyproject.toml."""
-        data = self._read_pyproject()
-        if "dependency-groups" not in data:
-            data["dependency-groups"] = table()
-        dep_groups: Any = data["dependency-groups"]
-        if group not in dep_groups:
-            dep_groups[group] = [package]
-        else:
-            dep_groups[group].append(package)
-        self._write_pyproject(data)
-
     def apply(self) -> None:
         """Add ruff, configure it, auto-format, then suppress all check violations."""
-        try:
-            result = self._run_uv("--version", check=False)
-            if result.returncode != 0:
-                msg = "uv is not available"
-                raise BoostSkippedError(msg)
-        except (FileNotFoundError, OSError) as e:
-            msg = "uv is not installed"
-            raise BoostSkippedError(msg) from e
+        self._verify_uv_present()
+        self._verify_pyproject_present()
 
-        if not (self.repo_path / "pyproject.toml").exists():
-            msg = "No pyproject.toml found"
-            raise BoostSkippedError(msg)
-
-        # Phase 1: add dep + configure
-        if self._is_package_in_deps("ruff"):
-            logger.info("ruff already in dependencies, skipping uv add")
-        else:
-            logger.info("Adding ruff dev dependency...")
-            try:
-                self._run_uv("add", "--group", "lint", "ruff")
-            except subprocess.CalledProcessError:
-                logger.warning("uv add failed, editing pyproject.toml directly")
-                self._add_dep_to_pyproject("lint", "ruff")
-                self._run_uv("lock", check=False)
+        self.uv.add_package("ruff", group="lint")
 
         logger.info("Configuring [tool.ruff.lint] select = ['ALL'] in pyproject.toml...")
-        pyproject_data = self._read_pyproject()
+        pyproject_data = self.pyproject.read()
         pyproject_data = self._ensure_ruff_config(pyproject_data)
-        self._write_pyproject(pyproject_data)
+        self.pyproject.write(pyproject_data)
 
-        self._commit_if_changes("🔧 Configure ruff")
+        self.git.commit("🔧 Configure ruff", no_verify=True)
 
-        # Phase 2: auto-format
         logger.info("Running ruff format...")
         self._run_ruff_format()
-        self._commit_if_changes("🎨 Auto-format with ruff")
+        self.git.commit("🎨 Auto-format with ruff", no_verify=True)
 
-        # Phase 3: suppress check violations
         for iteration in range(1, _MAX_RUFF_ITERATIONS + 1):
             if not self._suppress_violations_iteration(iteration=iteration):
                 break
@@ -232,6 +158,7 @@ class RuffBoost(Boost):
 
         logger.info(f"Found {len(violations)} violations, applying noqa comments...")
         self._apply_noqa(violations)
+        self.git.commit("✅ Silence ruff violations", no_verify=True)
         return True
 
     def commit_message(self) -> str:

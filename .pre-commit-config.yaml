@@ -12,7 +12,7 @@ repos:
     hooks:
       - id: check-uv-lock
         name: check uv lock
-        entry: "just lock-check"
+        entry: "just check-lock"
         language: system
         pass_filenames: false
       - id: check-ruff

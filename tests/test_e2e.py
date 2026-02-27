@@ -2,20 +2,20 @@
 
 from typing import TYPE_CHECKING
 
-import pytest
 from rich.console import Console
 
 from pimp_my_repo.cli.main import run_boosts
 
 if TYPE_CHECKING:
-    from tests.utils.repo_controller import RepositoryController
+    from pimp_my_repo.core.tools.repo import RepositoryController
 
 
-@pytest.mark.slow
 def test_e2e_boosts_applied_then_idempotent(mock_repo: RepositoryController) -> None:
     """End-to-end: boosts apply on first run and make no changes on second run."""
     # Set up a simple Python project (no requirements.txt to stay on the minimal path)
-    mock_repo.add_and_commit("src/main.py", 'def main() -> None:\n    print("hello")\n')
+    mock_repo.add_and_commit(
+        relative_path="src/main.py", content='def main() -> None:\n    print("hello")\n', message="Initial commit"
+    )
 
     console = Console(quiet=True)
 

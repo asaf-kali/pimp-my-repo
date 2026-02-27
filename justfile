@@ -21,7 +21,7 @@ install-dev: install-all
 
 install: install-dev lint cover-base
 
-# UV
+# Depndencies
 
 lock:
 	uv lock
@@ -29,16 +29,16 @@ lock:
 lock-upgrade:
 	uv lock --upgrade
 
-lock-check:
+check-lock:
 	uv lock --check
 
 # Test
 
 test-fast:
-	{{RUN}} python -m {{PYTHON_TEST_COMMAND}} -m "not slow"
+	just test -s -q -m "smoke"
 
-test:
-	{{RUN}} python -m {{PYTHON_TEST_COMMAND}} -s -q
+test *args:
+	{{RUN}} python -m {{PYTHON_TEST_COMMAND}} {{args}}
 
 cover-base:
 	{{RUN}} coverage run -m {{PYTHON_TEST_COMMAND}}
