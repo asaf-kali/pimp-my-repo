@@ -186,6 +186,27 @@ def test_parses_violations_across_multiple_files(mypy_boost: MypyBoost) -> None:
     assert _vl("src/bar.py", 2) in result
 
 
+def test_parses_violation_with_column_number(mypy_boost: MypyBoost) -> None:
+    output = "src/foo.py:10:5: error: Incompatible type  [arg-type]"
+    assert mypy_boost._parse_violations(output) == {_vl("src/foo.py", 10): {"arg-type"}}  # noqa: SLF001
+
+
+def test_parses_note_uncovered_code(mypy_boost: MypyBoost) -> None:
+    output = 'src/foo.py:10: note: Error code "misc" not covered by "type: ignore" comment'
+    assert mypy_boost._parse_violations(output) == {_vl("src/foo.py", 10): {"misc"}}  # noqa: SLF001
+
+
+def test_parses_note_uncovered_code_with_column(mypy_boost: MypyBoost) -> None:
+    output = 'src/foo.py:10:1: note: Error code "misc" not covered by "type: ignore" comment'
+    assert mypy_boost._parse_violations(output) == {_vl("src/foo.py", 10): {"misc"}}  # noqa: SLF001
+
+
+def test_parses_unused_ignore_from_note(mypy_boost: MypyBoost) -> None:
+    """unused-ignore is reported as a note: Error code not covered line."""
+    output = 'src/foo.py:5: note: Error code "unused-ignore" not covered by "type: ignore" comment'
+    assert mypy_boost._parse_violations(output) == {_vl("src/foo.py", 5): {"unused-ignore"}}  # noqa: SLF001
+
+
 def test_ignores_note_lines(mypy_boost: MypyBoost) -> None:
     output = "src/foo.py:10: error: Some error  [misc]\nsrc/foo.py:10: note: See https://mypy.rtfd.io\n"
     assert len(mypy_boost._parse_violations(output)) == 1  # noqa: SLF001
@@ -284,6 +305,51 @@ def test_type_ignore_preserves_existing_line_content(mock_repo: RepositoryContro
     content = (mock_repo.path / "src/foo.py").read_text()
     assert "result = some_func(arg1, arg2)" in content
     assert "# type: ignore[misc]" in content
+
+
+def test_type_ignore_placed_before_noqa(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
+    mock_repo.write_file("src/foo.py", "x: int = 'hello'  # noqa: E501\n")
+    mypy_boost._apply_type_ignores({_vl("src/foo.py", 1): {"assignment"}})  # noqa: SLF001
+    content = (mock_repo.path / "src/foo.py").read_text()
+    type_ignore_pos = content.index("# type: ignore")
+    noqa_pos = content.index("# noqa")
+    assert type_ignore_pos < noqa_pos
+
+
+def test_bare_type_ignore_kept_as_is(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
+    """A bare # type: ignore (no codes) already suppresses everything; leave it unchanged."""
+    original = "x: int = 'hello'  # type: ignore\n"
+    mock_repo.write_file("src/foo.py", original)
+    mypy_boost._apply_type_ignores({_vl("src/foo.py", 1): {"assignment"}})  # noqa: SLF001
+    assert (mock_repo.path / "src/foo.py").read_text() == original
+
+
+def test_removes_type_ignore_for_unused_ignore(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
+    mock_repo.write_file("src/foo.py", "x = foo()  # type: ignore[no-untyped-call]\n")
+    mypy_boost._apply_type_ignores({_vl("src/foo.py", 1): {"unused-ignore"}})  # noqa: SLF001
+    content = (mock_repo.path / "src/foo.py").read_text()
+    assert "# type: ignore" not in content
+    assert "x = foo()" in content
+
+
+def test_unused_ignore_with_other_codes_keeps_others(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
+    """When unused-ignore accompanies real codes, keep the real codes only."""
+    mock_repo.write_file("src/foo.py", "x = foo()  # type: ignore[no-untyped-call]\n")
+    mypy_boost._apply_type_ignores({_vl("src/foo.py", 1): {"unused-ignore", "return-value"}})  # noqa: SLF001
+    content = (mock_repo.path / "src/foo.py").read_text()
+    assert "return-value" in content
+    assert "unused-ignore" not in content
+
+
+def test_merges_two_type_ignore_comments_into_one(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
+    """Multiple type: ignore comments on a line must be merged into a single one."""
+    mock_repo.write_file("src/foo.py", "x = foo()  # type: ignore[arg-type]  # type: ignore[return-value]\n")
+    mypy_boost._apply_type_ignores({_vl("src/foo.py", 1): {"misc"}})  # noqa: SLF001
+    content = (mock_repo.path / "src/foo.py").read_text()
+    assert content.count("# type: ignore") == 1
+    assert "arg-type" in content
+    assert "return-value" in content
+    assert "misc" in content
 
 
 # =============================================================================
