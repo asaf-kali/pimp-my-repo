@@ -62,7 +62,7 @@ def _run_boost_class(
         boost = boost_class(boost_tools)
         return _run_boost(boost=boost, boost_name=boost_name, repo_controller=repo_controller)
     except (subprocess.CalledProcessError, OSError) as e:
-        logger.exception(f"Error applying {boost_name} boost")
+        logger.opt(exception=True).debug(f"Error applying {boost_name} boost")
         return BoostResult(name=boost_name, status="failed", message=str(e))
 
 
