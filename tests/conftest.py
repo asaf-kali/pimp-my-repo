@@ -1,6 +1,5 @@
 """Pytest configuration and shared fixtures."""
 
-import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Protocol
@@ -10,6 +9,7 @@ import pytest
 
 from pimp_my_repo.core.tools.boost_tools import BoostTools
 from pimp_my_repo.core.tools.repo import RepositoryController
+from pimp_my_repo.core.tools.subprocess import run_command
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -21,20 +21,9 @@ def mock_repo() -> Generator[RepositoryController]:
     tmp_dir = TemporaryDirectory()
     tmp_path = Path(tmp_dir.name)
 
-    # Initialize git repo
-    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)  # noqa: S607
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],  # noqa: S607
-        cwd=tmp_path,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test User"],  # noqa: S607
-        cwd=tmp_path,
-        check=True,
-        capture_output=True,
-    )
+    run_command(["git", "init"], cwd=tmp_path)
+    run_command(["git", "config", "user.email", "test@example.com"], cwd=tmp_path)
+    run_command(["git", "config", "user.name", "Test User"], cwd=tmp_path)
     repo = RepositoryController(tmp_path)
     repo.add_and_commit(relative_path="README.md", content="# Test", message="Initial commit")
     yield repo

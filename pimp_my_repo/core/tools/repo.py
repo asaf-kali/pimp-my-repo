@@ -1,12 +1,14 @@
 """Git operations for pimp-my-repo."""
 
-import subprocess
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    import subprocess
     from pathlib import Path
 
 import logging
+
+from pimp_my_repo.core.tools.subprocess import run_command
 
 log = logging.getLogger(__name__)
 _DEFAULT_BRANCH_NAME = "feat/pmr"
@@ -32,14 +34,7 @@ class RepositoryController:
 
     def execute(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         """Run a git command in the repository directory."""
-        cmd = ["git", *args]
-        return subprocess.run(  # noqa: S603
-            cmd,
-            cwd=self.path,
-            capture_output=True,
-            text=True,
-            check=check,
-        )
+        return run_command(["git", *args], cwd=self.path, check=check)
 
     def add(self, *paths: str) -> None:
         """Stage files for commit."""

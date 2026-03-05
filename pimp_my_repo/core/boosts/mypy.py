@@ -14,6 +14,16 @@ if TYPE_CHECKING:
 
 _MAX_MYPY_ITERATIONS = 3
 
+# Supports both "path:line: error:" and "path:line:column: error:" (--show-column-numbers)
+_MYPY_ERROR_RE = re.compile(
+    r"^(?P<path>.+?):(?P<line>\d+)(?::\d+)?: error: .* \[(?P<code>[^\]]+)\]$",
+)
+# "note: Error code "X" not covered by "type: ignore" comment"
+_MYPY_NOTE_UNCOVERED_RE = re.compile(
+    r"^(?P<path>.+?):(?P<line>\d+)(?::\d+)?: note: Error code \"(?P<code>[^\"]+)\" not covered",
+)
+_TYPE_IGNORE_RE = re.compile(r"# type: ignore(?:\[([^\]]*)\])?")
+
 
 class ViolationLocation(NamedTuple):
     """A single violation location: file path and line number."""
@@ -28,21 +38,66 @@ type LineViolations = dict[int, ErrorCodes]
 type ViolationsByFile = dict[str, LineViolations]
 
 
-def _merge_type_ignore(*, raw_line: str, codes: ErrorCodes) -> str:
-    """Merge type: ignore codes into a source line, preserving or creating the comment."""
+def _remove_type_ignore(raw_line: str) -> str:
+    """Remove type: ignore from a line (for unused-ignore violations)."""
     line = raw_line.rstrip("\n").rstrip("\r")
     eol = raw_line[len(line) :]
+    removed = _TYPE_IGNORE_RE.sub("", line).rstrip()
+    if removed.endswith(","):
+        removed = removed.rstrip(",").rstrip()
+    return f"{removed}{eol}"
 
-    ignore_match = re.search(r"#\s*type:\s*ignore(?:\[([^\]]*)\])?", line)
-    if not ignore_match:
-        return f"{line}  # type: ignore[{', '.join(sorted(codes))}]{eol}"
 
-    existing_str = ignore_match.group(1) or ""
-    existing = {c.strip() for c in existing_str.split(",") if c.strip()}
-    all_codes = existing | codes
-    new_ignore = f"# type: ignore[{', '.join(sorted(all_codes))}]"
-    merged = re.sub(r"#\s*type:\s*ignore(?:\[([^\]]*)\])?", new_ignore, line)
-    return f"{merged}{eol}"
+def _merge_type_ignore(*, raw_line: str, codes: ErrorCodes) -> str:
+    """Add or merge type: ignore[codes] into a source line.
+
+    Mypy only recognizes type: ignore when it is the FIRST comment on a line
+    (before any other # comment). Place it before noqa and any other trailing
+    comments, merging all existing type: ignore comments into one.
+    """
+    line = raw_line.rstrip("\n").rstrip("\r")
+    eol = raw_line[len(line) :]
+    marker = "# type: ignore"
+
+    # If we already ignore everything (bare type: ignore with no codes), keep as-is.
+    if marker in line and "[" not in line.split(marker, maxsplit=1)[1]:
+        return raw_line
+
+    # Find the start of trailing comments. Use the first "  # " to split off the
+    # comment block (e.g. "code  # type: ignore[...]  # noqa: X").
+    hash_idx = line.find("  # ")
+    if hash_idx >= 0:
+        prefix = line[:hash_idx].rstrip()
+        other_comments = line[hash_idx:].strip()
+    elif '"' not in line and "'" not in line:
+        # No quotes: safe to use first #
+        hash_idx = line.find("#")
+        if hash_idx >= 0:
+            prefix = line[:hash_idx].rstrip()
+            other_comments = line[hash_idx:].strip()
+        else:
+            prefix = line
+            other_comments = ""
+    else:
+        prefix = line
+        other_comments = ""
+
+    # Extract and merge type: ignore codes from ALL type: ignore comments on the line.
+    # Mypy only uses the first comment; multiple type: ignore must be merged into one.
+    existing_codes: list[str] = []
+    for type_match in _TYPE_IGNORE_RE.finditer(other_comments):
+        if type_match.group(1):
+            existing_codes.extend(c.strip() for c in type_match.group(1).split(",") if c.strip())
+    all_codes = sorted(set(existing_codes) | codes)
+    type_ignore_part = f"{marker}[{', '.join(all_codes)}]"
+
+    # Rebuild other_comments without type: ignore, preserving noqa and other comments.
+    remaining = _TYPE_IGNORE_RE.sub("", other_comments).replace("  ", " ").strip()
+    if remaining.startswith(",") or remaining.endswith(","):
+        remaining = remaining.strip(",").strip()
+    other_part = f"  {remaining}" if remaining and remaining != "#" else ""
+
+    return f"{prefix}  {type_ignore_part}{other_part}{eol}"
 
 
 class MypyBoost(Boost):
@@ -89,14 +144,25 @@ class MypyBoost(Boost):
         return data
 
     def _parse_violations(self, output: str) -> ViolationsByLocation:
-        """Parse mypy output into {ViolationLocation: {error_codes}}."""
+        """Parse mypy output into {ViolationLocation: {error_codes}}.
+
+        Handles both error lines and "note: Error code not covered" lines,
+        and supports optional column numbers in the output format.
+        """
         violations: ViolationsByLocation = {}
-        for line in output.splitlines():
-            match = re.match(r"^(.+?):(\d+):\s+error:.*?\[([^\]]+)\]\s*$", line)
-            if not match:
+        for raw_line in output.splitlines():
+            line = raw_line.strip()
+            if not line:
                 continue
-            key = ViolationLocation(filepath=match.group(1), lineno=int(match.group(2)))
-            violations.setdefault(key, set()).add(match.group(3))
+            match = _MYPY_ERROR_RE.match(line)
+            if match:
+                key = ViolationLocation(filepath=match.group("path"), lineno=int(match.group("line")))
+                violations.setdefault(key, set()).add(match.group("code"))
+                continue
+            match = _MYPY_NOTE_UNCOVERED_RE.match(line)
+            if match:
+                key = ViolationLocation(filepath=match.group("path"), lineno=int(match.group("line")))
+                violations.setdefault(key, set()).add(match.group("code"))
         return violations
 
     def _apply_type_ignores(self, violations: ViolationsByLocation) -> None:
@@ -119,7 +185,13 @@ class MypyBoost(Boost):
             idx = lineno - 1
             if idx >= len(lines):
                 continue
-            lines[idx] = _merge_type_ignore(raw_line=lines[idx], codes=codes)
+            # unused-ignore means the existing type: ignore is stale; strip it.
+            # Other codes on the same line still apply normally.
+            effective_codes = codes - {"unused-ignore"}
+            if not effective_codes:
+                lines[idx] = _remove_type_ignore(lines[idx])
+            else:
+                lines[idx] = _merge_type_ignore(raw_line=lines[idx], codes=effective_codes)
 
         full_path.write_text("".join(lines), encoding="utf-8")
 
