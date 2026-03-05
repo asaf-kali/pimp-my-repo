@@ -34,33 +34,84 @@ def _setup_logging(*, verbose: bool) -> None:
     logger.add(sys.stderr, level=level, format="<level>{level}</level>: {message}", colorize=True)
 
 
+_PATH_ARG = typer.Option(".", "--path", "-p", help="Path to the repository to pimp")
+_VERBOSE_ARG = typer.Option(
+    False,  # noqa: FBT003
+    "--verbose",
+    "-v",
+    help="Show detailed progress logs from each boost",
+)
+_ONLY_ARG = typer.Option([], "--only", help="Run only these boost(s) (repeatable)")
+_SKIP_ARG = typer.Option([], "--skip", help="Skip these boost(s) (repeatable)")
+_LIST_ARG = typer.Option(False, "--list", help="List available boosts and exit")  # noqa: FBT003
+
+
 @app.command()
 def run(
-    path: str = typer.Option(".", "--path", "-p", help="Path to the repository to pimp"),
-    verbose: bool = typer.Option(  # noqa: FBT001
-        False,  # noqa: FBT003
-        "--verbose",
-        "-v",
-        help="Show detailed progress logs from each boost",
-    ),
+    path: str = _PATH_ARG,
+    verbose: bool = _VERBOSE_ARG,  # noqa: FBT001
+    only: list[str] = _ONLY_ARG,
+    skip: list[str] = _SKIP_ARG,
+    list_boosts: bool = _LIST_ARG,  # noqa: FBT001
 ) -> None:
     """Pimp a repository."""
     _setup_logging(verbose=verbose)
     console = Console()
 
+    boost_classes = _resolve_boosts(only=only, skip=skip, list_boosts=list_boosts, console=console)
+
     repo_path = Path(path).resolve()
     console.print(f"[bold]Pimping repository at:[/bold] [cyan]{repo_path}[/cyan]")
     _validate_path(repo_path, console)
 
-    results = run_boosts(repo_path=repo_path, console=console)
+    results = run_boosts(repo_path=repo_path, console=console, boost_classes=boost_classes)
     _print_summary(results, console)
 
 
-def run_boosts(repo_path: Path, console: Console | None = None) -> list[BoostResult]:
-    """Run all boosts on a repository and return results."""
+def _resolve_boosts(
+    only: list[str],
+    skip: list[str],
+    list_boosts: bool,  # noqa: FBT001
+    console: Console,
+) -> list[type[Boost]]:
+    """Resolve which boosts to run based on --only, --skip, and --list flags."""
+    all_boosts = get_all_boosts()
+    valid_names = {bc.get_name(): bc for bc in all_boosts}
+
+    if list_boosts:
+        console.print("[bold]Available boosts:[/bold]")
+        for name in valid_names:
+            console.print(f"  {name}")
+        raise Exit(0)
+
+    if only and skip:
+        console.print("[red]Error:[/red] --only and --skip are mutually exclusive")
+        raise Exit(1)
+
+    unknown = [n for n in (only or skip) if n not in valid_names]
+    if unknown:
+        console.print(f"[red]Error:[/red] Unknown boost(s): {', '.join(unknown)}")
+        console.print(f"Valid boosts: {', '.join(valid_names)}")
+        raise Exit(1)
+
+    if only:
+        return [valid_names[n] for n in only]
+    if skip:
+        skip_set = set(skip)
+        return [bc for bc in all_boosts if bc.get_name() not in skip_set]
+    return all_boosts
+
+
+def run_boosts(
+    repo_path: Path,
+    console: Console | None = None,
+    boost_classes: list[type[Boost]] | None = None,
+) -> list[BoostResult]:
+    """Run boosts on a repository and return results."""
     if console is None:
         console = Console()
-    boost_classes = get_all_boosts()
+    if boost_classes is None:
+        boost_classes = get_all_boosts()
     return _run_boosts_with_progress(repo_path=repo_path, boost_classes=boost_classes, console=console)
 
 
