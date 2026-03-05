@@ -126,9 +126,10 @@ class RuffBoost(Boost):
             ruff_section["lint"] = table()
         lint_section: Any = ruff_section["lint"]
         lint_section["select"] = ["ALL"]
-        # ERA001 ("commented-out code") cannot be suppressed via noqa because
-        # adding `# noqa: ERA001` itself gets flagged as commented-out code.
-        lint_section["ignore"] = ["ERA001"]
+        # ERA001: adding `# noqa: ERA001` itself gets flagged as commented-out code.
+        # COM812, ISC001: conflict with ruff formatter, causing format/check oscillation.
+        # D203, D212: incompatible with D211/D213 (ruff picks one but warns; be explicit).
+        lint_section["ignore"] = ["ERA001", "COM812", "ISC001", "D203", "D212"]
         return data
 
     def _parse_violations(self, output: str) -> ViolationsByLocation:
@@ -197,13 +198,15 @@ class RuffBoost(Boost):
 
         logger.info("Running ruff format...")
         self._run_ruff_format()
-        self._run_ruff_format()
-        self._run_ruff_format()
         self.git.commit("🎨 Auto-format with ruff", no_verify=True)
 
         for iteration in range(1, _MAX_RUFF_ITERATIONS + 1):
             if not self._suppress_violations_iteration(iteration=iteration):
                 break
+            # Re-format after noqa additions: adding inline comments can shift
+            # formatter decisions (e.g. magic trailing comma, line wrapping).
+            self._run_ruff_format()
+            self.git.commit("🎨 Re-format after noqa additions", no_verify=True)
 
     def _suppress_violations_iteration(self, *, iteration: int) -> bool:
         """Run one ruff-check-then-noqa cycle. Returns True if another iteration is needed."""
