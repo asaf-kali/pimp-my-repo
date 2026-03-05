@@ -13,10 +13,11 @@ from pimp_my_repo.core.tools.pyproject import PyProjectNotFoundError
 if TYPE_CHECKING:
     import subprocess
 
-_MAX_RUFF_ITERATIONS = 3
+_MAX_RUFF_ITERATIONS = 7
 
 # Rules that must never be suppressed via noqa:
 # - ERA001: treats the noqa comment itself as commented-out code → oscillation loop.
+#   Instead, ERA001 is added to ruff's ignore list in the config.
 _UNSUPPRESSIBLE_CODES: frozenset[str] = frozenset({"ERA001"})
 
 
@@ -33,39 +34,58 @@ type LineViolations = dict[int, ErrorCodes]
 type ViolationsByFile = dict[str, LineViolations]
 
 
-_NOQA_RE = re.compile(r"# noqa:([^#\n]*)")
+# Matches noqa annotations case-insensitively, with or without a colon.
+# Handles: `# noqa: F401`, `# NOQA: F401`, `# NOQA isort:skip`, bare `# noqa`.
+_NOQA_RE = re.compile(r"#\s*noqa\b\s*:?\s*([^#\n]*)", re.IGNORECASE)
+# Matches valid ruff rule codes: 1-4 uppercase letters followed by digits.
+_RUFF_CODE_RE = re.compile(r"\b([A-Z]{1,4}\d+)\b")
 _TYPE_IGNORE_RE = re.compile(r"# type: ignore(?:\[([^\]]*)\])?")
 
 
 def _merge_noqa(*, raw_line: str, codes: ErrorCodes) -> str:
-    """Merge noqa codes into a source line, preserving type: ignore before noqa."""
+    """Merge noqa codes into a source line.
+
+    Handles all noqa variants (case-insensitive, with or without colon) and
+    non-ruff directives like ``isort:skip``. All noqa comments on the line are
+    merged into a single canonical ``# noqa: CODE1, CODE2``. Non-ruff content
+    is preserved as a separate leading comment so tools like isort still see it.
+    ``# type: ignore`` is placed before ``# noqa`` as mypy requires.
+    """
     line = raw_line.rstrip("\n").rstrip("\r")
     eol = raw_line[len(line) :]
 
-    noqa_match = _NOQA_RE.search(line)
+    noqa_matches = list(_NOQA_RE.finditer(line))
     type_match = _TYPE_IGNORE_RE.search(line)
 
     # Determine prefix (before any trailing comments).
     first_comment_start = len(line)
-    if noqa_match is not None:
-        first_comment_start = min(first_comment_start, noqa_match.start())
+    if noqa_matches:
+        first_comment_start = min(first_comment_start, noqa_matches[0].start())
     if type_match is not None:
         first_comment_start = min(first_comment_start, type_match.start())
     prefix = line[:first_comment_start].rstrip()
 
-    # Merge noqa codes.
-    existing_noqa: list[str] = []
-    if noqa_match is not None:
-        existing_noqa = [c.strip() for c in noqa_match.group(1).split(",") if c.strip()]
-    all_codes = sorted(set(existing_noqa) | codes)
+    # Collect ruff codes and non-ruff directives from ALL noqa matches.
+    existing_ruff_codes: list[str] = []
+    non_ruff_parts: list[str] = []
+    for m in noqa_matches:
+        raw_codes_str = m.group(1).strip()
+        existing_ruff_codes.extend(_RUFF_CODE_RE.findall(raw_codes_str))
+        leftover = _RUFF_CODE_RE.sub("", raw_codes_str).replace(",", " ")
+        non_ruff_parts.extend(leftover.split())
+
+    all_codes = sorted(set(existing_ruff_codes) | codes)
     noqa_part = f"# noqa: {', '.join(all_codes)}"
+
+    # Non-ruff directives (e.g. isort:skip) become their own comment before noqa.
+    non_ruff_comment = f"  # {' '.join(non_ruff_parts)}" if non_ruff_parts else ""
 
     # Preserve type: ignore if present (must come before noqa for mypy).
     type_ignore_part = ""
     if type_match is not None:
         type_ignore_part = f"  {line[type_match.start() : type_match.end()]}"
 
-    return f"{prefix}{type_ignore_part}  {noqa_part}{eol}"
+    return f"{prefix}{non_ruff_comment}{type_ignore_part}  {noqa_part}{eol}"
 
 
 class RuffBoost(Boost):
@@ -106,6 +126,9 @@ class RuffBoost(Boost):
             ruff_section["lint"] = table()
         lint_section: Any = ruff_section["lint"]
         lint_section["select"] = ["ALL"]
+        # ERA001 ("commented-out code") cannot be suppressed via noqa because
+        # adding `# noqa: ERA001` itself gets flagged as commented-out code.
+        lint_section["ignore"] = ["ERA001"]
         return data
 
     def _parse_violations(self, output: str) -> ViolationsByLocation:
@@ -147,9 +170,14 @@ class RuffBoost(Boost):
         lines = full_path.read_text(encoding="utf-8").splitlines(keepends=True)
         for lineno, codes in sorted(line_violations.items()):
             idx = lineno - 1
-            if idx >= len(lines):
+            if idx < 0:
                 continue
-            lines[idx] = _merge_noqa(raw_line=lines[idx], codes=codes)
+            if idx >= len(lines):
+                # File is shorter than expected (e.g. an empty __init__.py);
+                # prepend a noqa comment so ruff can see the suppression.
+                lines.insert(0, f"# noqa: {', '.join(sorted(codes))}\n")
+            else:
+                lines[idx] = _merge_noqa(raw_line=lines[idx], codes=codes)
 
         full_path.write_text("".join(lines), encoding="utf-8")
 

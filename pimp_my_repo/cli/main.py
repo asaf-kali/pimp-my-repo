@@ -1,12 +1,12 @@
 """CLI entry point for pimp-my-repo."""
 
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import typer
+from loguru import logger
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TaskID, TextColumn
-from rich.table import Table
 from typer import Exit
 
 from pimp_my_repo.core.booster import execute_boosts
@@ -21,55 +21,38 @@ app = typer.Typer(
     help="🧙🏼‍♂️ A CLI wizard designed to modernize your Python repositories",
 )
 
-
-_PROGRESS_DESCRIPTIONS = {
-    "applied": "[green]✓ {name} applied[/green]",
-    "skipped": "[yellow]⊘ {name} skipped: {message}[/yellow]",
-    "failed": "[red]✗ {name} failed[/red]",
+_STATUS_CONFIG: dict[str, tuple[str, str]] = {
+    "applied": ("✓", "green"),
+    "skipped": ("⊘", "yellow"),
+    "failed": ("✗", "red"),
 }
+
+
+def _setup_logging(*, verbose: bool) -> None:
+    logger.remove()
+    level = "DEBUG" if verbose else "WARNING"
+    logger.add(sys.stderr, level=level, format="<level>{level}</level>: {message}", colorize=True)
 
 
 @app.command()
 def run(
-    path: str = typer.Option(
-        ".",
-        "--path",
-        "-p",
-        help="Path to the repository to pimp",
-    ),
-    wizard: bool = typer.Option(  # noqa: FBT001
+    path: str = typer.Option(".", "--path", "-p", help="Path to the repository to pimp"),
+    verbose: bool = typer.Option(  # noqa: FBT001
         False,  # noqa: FBT003
-        "--wizard",
-        "-w",
-        help="Enable interactive wizard mode (not implemented yet)",
+        "--verbose",
+        "-v",
+        help="Show detailed progress logs from each boost",
     ),
 ) -> None:
     """Pimp a repository."""
+    _setup_logging(verbose=verbose)
     console = Console()
 
-    if wizard:
-        console.print("[yellow]Wizard mode is not yet implemented[/yellow]")
-        raise Exit(code=1)
-
     repo_path = Path(path).resolve()
-
-    # Pre-flight checks
-    console.print(f"[bold]Pimping repository at: {repo_path}[/bold]")
+    console.print(f"[bold]Pimping repository at:[/bold] [cyan]{repo_path}[/cyan]")
     _validate_path(repo_path, console)
 
-    # Initialize boosts
-    boost_classes = get_all_boosts()
-    console.print(f"[cyan]Found {len(boost_classes)} boosts[/cyan]")
-
-    # Execute boosts
-    try:
-        results = run_boosts(repo_path=repo_path, console=console)
-    except Exception as e:
-        console.print("[red]An error occurred while running boosts[/red]")
-        console.print(f"[red]Error:[/red] {e}")
-        raise Exit(code=1) from e
-
-    # Print summary
+    results = run_boosts(repo_path=repo_path, console=console)
     _print_summary(results, console)
 
 
@@ -82,7 +65,6 @@ def run_boosts(repo_path: Path, console: Console | None = None) -> list[BoostRes
 
 
 def _validate_path(repo_path: Path, console: Console) -> None:
-    """Validate that the repository path exists and is a directory."""
     if not repo_path.exists():
         console.print(f"[red]Error:[/red] Path does not exist: {repo_path}")
         raise Exit(code=1)
@@ -92,10 +74,16 @@ def _validate_path(repo_path: Path, console: Console) -> None:
         raise Exit(code=1)
 
 
-def _update_progress(progress: Progress, task_id: TaskID, result: BoostResult) -> None:
-    template = _PROGRESS_DESCRIPTIONS.get(result.status, "{name}: {message}")
-    description = template.format(name=result.name, message=result.message)
-    progress.update(task_id=task_id, description=description)
+def _print_boost_result(console: Console, result: BoostResult) -> None:
+    icon, style = _STATUS_CONFIG.get(result.status, ("?", "white"))
+    name = f"[cyan]{result.name:<12}[/cyan]"
+    if result.status == "applied":
+        console.print(f"  [{style}]{icon}[/{style}] {name}")
+    elif result.status == "skipped":
+        console.print(f"  [{style}]{icon}[/{style}] {name}  [dim]{result.message}[/dim]")
+    else:
+        short_msg = result.message.splitlines()[0][:80]
+        console.print(f"  [{style}]{icon}[/{style}] {name}  [{style}]{short_msg}[/{style}]")
 
 
 def _run_boosts_with_progress(
@@ -103,45 +91,27 @@ def _run_boosts_with_progress(
     boost_classes: list[type[Boost]],
     console: Console,
 ) -> list[BoostResult]:
-    """Drive the execute_boosts generator, rendering live progress for each result."""
+    """Run each boost with a per-boost spinner; print each result as it completes."""
+    gen = execute_boosts(repo_path=repo_path, boost_classes=boost_classes)
     results: list[BoostResult] = []
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
-        task_ids = [progress.add_task(description=f"Processing {bc.get_name()}...", total=None) for bc in boost_classes]
-        for task_id, result in zip(
-            task_ids, execute_boosts(repo_path=repo_path, boost_classes=boost_classes), strict=True
-        ):
-            _update_progress(progress=progress, task_id=task_id, result=result)
-            results.append(result)
+    for bc in boost_classes:
+        with console.status(f"  [dim]running[/dim] [cyan]{bc.get_name()}[/cyan]…"):
+            result = next(gen)
+        _print_boost_result(console, result)
+        results.append(result)
     return results
 
 
 def _print_summary(results: list[BoostResult], console: Console) -> None:
-    """Print summary table of boost execution results."""
-    console.print("\n[bold]Summary:[/bold]")
-    table = Table(show_header=True, header_style="bold magenta")
-    table.add_column("Boost", style="cyan")
-    table.add_column("Status", style="bold")
-    table.add_column("Message")
-
-    for result in results:
-        status_style = {
-            "applied": "[green]✓ Applied[/green]",
-            "skipped": "[yellow]⊘ Skipped[/yellow]",
-            "failed": "[red]✗ Failed[/red]",
-        }.get(result.status, result.status)
-        table.add_row(result.name, status_style, result.message)
-
-    console.print(table)
-
-    applied_count = sum(1 for r in results if r.status == "applied")
-    if applied_count > 0:
-        console.print(f"\n[green]✓ Successfully applied {applied_count} boost(s)[/green]")
+    applied = sum(1 for r in results if r.status == "applied")
+    failed = sum(1 for r in results if r.status == "failed")
+    console.print()
+    if failed:
+        console.print(f"[red]✗ {failed} boost(s) failed[/red]  ", end="")
+    if applied:
+        console.print(f"[green]✓ {applied} boost(s) applied[/green]")
     else:
-        console.print("\n[yellow]No boosts were applied[/yellow]")
+        console.print("[yellow]No boosts applied[/yellow]")
 
 
 def main() -> None:

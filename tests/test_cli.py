@@ -17,8 +17,6 @@ def test_cli_is_working(mock_repo: RepositoryController) -> None:
     )
     assert result.returncode in (0, 1)
     assert "Pimping repository at:" in result.stdout
-    assert "Found" in result.stdout
-    assert "boosts" in result.stdout
 
 
 def test_main_is_working(mock_repo: RepositoryController) -> None:
