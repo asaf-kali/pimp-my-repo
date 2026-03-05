@@ -1,19 +1,35 @@
 # CHANGELOG
 
 
-## v0.2.3 (2026-02-27)
+## v0.2.3 (2026-03-06)
 
 ### Other
+
+- 🏖️ Support more usecases ([#6](https://github.com/asaf-kali/pimp-my-repo/pull/6),
+  [`c5b0d5d`](https://github.com/asaf-kali/pimp-my-repo/commit/c5b0d5df7f0dd87d89cc30246e30d244754d537e))
+
+* Sort our subprocess.run calls
+
+* UV boost: add more support
+
+* Ruff boost robustness
+
+* Mypy robustness fixes
 
 - 🏭️ Refactoring and code style ([#4](https://github.com/asaf-kali/pimp-my-repo/pull/4),
   [`c652b06`](https://github.com/asaf-kali/pimp-my-repo/commit/c652b06beeab3883dac25ff9844835b182db4e69))
 
 Adjust project code quality
 
+### 📜
+
+- 📜 Add LICENSE ([#7](https://github.com/asaf-kali/pimp-my-repo/pull/7),
+  [`703d869`](https://github.com/asaf-kali/pimp-my-repo/commit/703d8690eecb4f4c6777f5cbd0c257c10f7b67d8))
+
 ### 🛠️
 
 - 🛠️ Bug fixes and refactoring ([#5](https://github.com/asaf-kali/pimp-my-repo/pull/5),
-  [`2e00c16`](https://github.com/asaf-kali/pimp-my-repo/commit/2e00c1679570ac5f50542259e70d0978d6f0d3f6))
+  [`20575c7`](https://github.com/asaf-kali/pimp-my-repo/commit/20575c71a982e36761dec0065a3745909209eb93))
 
 
 ## v0.2.2 (2026-02-25)
