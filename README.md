@@ -36,3 +36,7 @@ uv tool install pimp-my-repo
 # With pipx:
 pipx install pimp-my-repo
 ```
+
+
+## License
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
