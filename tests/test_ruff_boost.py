@@ -1,5 +1,6 @@
 """Tests for Ruff boost implementation."""
 
+import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
@@ -162,12 +163,17 @@ def test_raises_skip_when_no_pyproject(ruff_boost_uv_ok: RuffBoost) -> None:
 
 @pytest.mark.smoke
 def test_parses_single_violation(ruff_boost: RuffBoost) -> None:
-    output = "src/foo.py:10:5: E501 Line too long (120 > 79 characters)"
+    output = json.dumps([{"filename": "src/foo.py", "code": "E501", "noqa_row": 10}])
     assert ruff_boost._parse_violations(output) == {ViolationLocation("src/foo.py", 10): {"E501"}}  # noqa: SLF001
 
 
 def test_parses_violations_on_different_lines(ruff_boost: RuffBoost) -> None:
-    output = "src/foo.py:10:5: E501 Line too long\nsrc/foo.py:20:1: F401 `os` imported but unused\n"
+    output = json.dumps(
+        [
+            {"filename": "src/foo.py", "code": "E501", "noqa_row": 10},
+            {"filename": "src/foo.py", "code": "F401", "noqa_row": 20},
+        ]
+    )
     result = ruff_boost._parse_violations(output)  # noqa: SLF001
     assert result == {
         ViolationLocation("src/foo.py", 10): {"E501"},
@@ -176,22 +182,48 @@ def test_parses_violations_on_different_lines(ruff_boost: RuffBoost) -> None:
 
 
 def test_accumulates_multiple_codes_on_same_line(ruff_boost: RuffBoost) -> None:
-    output = "src/foo.py:5:1: E501 Line too long\nsrc/foo.py:5:1: F401 Unused import\n"
+    output = json.dumps(
+        [
+            {"filename": "src/foo.py", "code": "E501", "noqa_row": 5},
+            {"filename": "src/foo.py", "code": "F401", "noqa_row": 5},
+        ]
+    )
     result = ruff_boost._parse_violations(output)  # noqa: SLF001
     assert result == {ViolationLocation("src/foo.py", 5): {"E501", "F401"}}
 
 
 def test_parses_violations_across_multiple_files(ruff_boost: RuffBoost) -> None:
-    output = "src/foo.py:1:1: F401 Unused import\nsrc/bar.py:2:1: E501 Line too long\n"
+    output = json.dumps(
+        [
+            {"filename": "src/foo.py", "code": "F401", "noqa_row": 1},
+            {"filename": "src/bar.py", "code": "E501", "noqa_row": 2},
+        ]
+    )
     result = ruff_boost._parse_violations(output)  # noqa: SLF001
     assert ViolationLocation("src/foo.py", 1) in result
     assert ViolationLocation("src/bar.py", 2) in result
 
 
-def test_ignores_non_violation_lines(ruff_boost: RuffBoost) -> None:
-    output = "src/foo.py:10:5: E501 Line too long\nFound 1 error.\nNo fixes available.\n"
+def test_ignores_violations_with_no_noqa_row(ruff_boost: RuffBoost) -> None:
+    output = json.dumps(
+        [
+            {"filename": "src/foo.py", "code": "E501", "noqa_row": 10},
+            {"filename": "src/foo.py", "code": "F401", "noqa_row": None},
+        ]
+    )
     result = ruff_boost._parse_violations(output)  # noqa: SLF001
     assert len(result) == 1
+
+
+def test_skips_unsuppressible_codes(ruff_boost: RuffBoost) -> None:
+    output = json.dumps(
+        [
+            {"filename": "src/foo.py", "code": "ERA001", "noqa_row": 5},
+            {"filename": "src/foo.py", "code": "E501", "noqa_row": 5},
+        ]
+    )
+    result = ruff_boost._parse_violations(output)  # noqa: SLF001
+    assert result == {ViolationLocation("src/foo.py", 5): {"E501"}}
 
 
 def test_empty_output(ruff_boost: RuffBoost) -> None:
@@ -341,7 +373,7 @@ def test_apply_makes_two_intermediate_commits(patched_ruff_apply: PatchedRuffApp
 
 def test_apply_runs_format(patched_ruff_apply: PatchedRuffApply) -> None:
     patched_ruff_apply.boost.apply()
-    patched_ruff_apply.mock_format.assert_called_once()
+    assert patched_ruff_apply.mock_format.call_count == 3  # noqa: PLR2004
 
 
 def test_apply_stops_when_check_passes(patched_ruff_apply: PatchedRuffApply) -> None:
@@ -358,7 +390,7 @@ def test_apply_inserts_noqa_on_violation(
 ) -> None:
     mock_repo.write_file("src/foo.py", "import os\n")
     patched_ruff_apply.mock_check.side_effect = [
-        fail_result("src/foo.py:1:1: F401 `os` imported but unused"),
+        fail_result(json.dumps([{"filename": "src/foo.py", "code": "F401", "noqa_row": 1}])),
         ok_result(),
     ]
     patched_ruff_apply.boost.apply()
@@ -373,8 +405,8 @@ def test_apply_iterates_until_check_passes(
 ) -> None:
     mock_repo.write_file("src/foo.py", "import os\n")
     patched_ruff_apply.mock_check.side_effect = [
-        fail_result("src/foo.py:1:1: F401 Unused import"),
-        fail_result("src/foo.py:1:1: E501 Line too long"),
+        fail_result(json.dumps([{"filename": "src/foo.py", "code": "F401", "noqa_row": 1}])),
+        fail_result(json.dumps([{"filename": "src/foo.py", "code": "E501", "noqa_row": 1}])),
         ok_result(),
     ]
     patched_ruff_apply.boost.apply()
@@ -387,7 +419,9 @@ def test_apply_stops_after_max_iterations(
     fail_result: SubprocessResultFactory,
 ) -> None:
     mock_repo.write_file("src/foo.py", "import os\n")
-    patched_ruff_apply.mock_check.return_value = fail_result("src/foo.py:1:1: F401 Persistent violation")
+    patched_ruff_apply.mock_check.return_value = fail_result(
+        json.dumps([{"filename": "src/foo.py", "code": "F401", "noqa_row": 1}])
+    )
     patched_ruff_apply.boost.apply()
     assert patched_ruff_apply.mock_check.call_count == _MAX_RUFF_ITERATIONS
 

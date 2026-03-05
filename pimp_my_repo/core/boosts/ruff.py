@@ -1,5 +1,6 @@
 """Ruff boost implementation."""
 
+import json
 import re
 from typing import TYPE_CHECKING, Any, NamedTuple
 
@@ -13,6 +14,10 @@ if TYPE_CHECKING:
     import subprocess
 
 _MAX_RUFF_ITERATIONS = 3
+
+# Rules that must never be suppressed via noqa:
+# - ERA001: treats the noqa comment itself as commented-out code → oscillation loop.
+_UNSUPPRESSIBLE_CODES: frozenset[str] = frozenset({"ERA001"})
 
 
 class ViolationLocation(NamedTuple):
@@ -28,21 +33,39 @@ type LineViolations = dict[int, ErrorCodes]
 type ViolationsByFile = dict[str, LineViolations]
 
 
+_NOQA_RE = re.compile(r"# noqa:([^#\n]*)")
+_TYPE_IGNORE_RE = re.compile(r"# type: ignore(?:\[([^\]]*)\])?")
+
+
 def _merge_noqa(*, raw_line: str, codes: ErrorCodes) -> str:
-    """Merge noqa codes into a source line, preserving or creating the comment."""
+    """Merge noqa codes into a source line, preserving type: ignore before noqa."""
     line = raw_line.rstrip("\n").rstrip("\r")
     eol = raw_line[len(line) :]
 
-    noqa_match = re.search(r"#\s*noqa(?::\s*([A-Z0-9,\s]+))?", line)
-    if not noqa_match:
-        return f"{line}  # noqa: {', '.join(sorted(codes))}{eol}"
+    noqa_match = _NOQA_RE.search(line)
+    type_match = _TYPE_IGNORE_RE.search(line)
 
-    existing_str = noqa_match.group(1) or ""
-    existing = {c.strip() for c in existing_str.split(",") if c.strip()}
-    all_codes = existing | codes
-    new_noqa = f"# noqa: {', '.join(sorted(all_codes))}"
-    merged = re.sub(r"#\s*noqa(?::\s*[A-Z0-9,\s]+)?", new_noqa, line).rstrip()
-    return f"{merged}{eol}"
+    # Determine prefix (before any trailing comments).
+    first_comment_start = len(line)
+    if noqa_match is not None:
+        first_comment_start = min(first_comment_start, noqa_match.start())
+    if type_match is not None:
+        first_comment_start = min(first_comment_start, type_match.start())
+    prefix = line[:first_comment_start].rstrip()
+
+    # Merge noqa codes.
+    existing_noqa: list[str] = []
+    if noqa_match is not None:
+        existing_noqa = [c.strip() for c in noqa_match.group(1).split(",") if c.strip()]
+    all_codes = sorted(set(existing_noqa) | codes)
+    noqa_part = f"# noqa: {', '.join(all_codes)}"
+
+    # Preserve type: ignore if present (must come before noqa for mypy).
+    type_ignore_part = ""
+    if type_match is not None:
+        type_ignore_part = f"  {line[type_match.start() : type_match.end()]}"
+
+    return f"{prefix}{type_ignore_part}  {noqa_part}{eol}"
 
 
 class RuffBoost(Boost):
@@ -69,7 +92,7 @@ class RuffBoost(Boost):
         return self.uv.run("run", "ruff", "format", ".", check=False)
 
     def _run_ruff_check(self) -> subprocess.CompletedProcess[str]:
-        return self.uv.run("run", "ruff", "check", ".", check=False)
+        return self.uv.run("run", "ruff", "check", ".", "--output-format=json", check=False)
 
     def _ensure_ruff_config(self, data: TOMLDocument) -> TOMLDocument:
         if "tool" not in data:
@@ -86,14 +109,24 @@ class RuffBoost(Boost):
         return data
 
     def _parse_violations(self, output: str) -> ViolationsByLocation:
-        """Parse ruff check output into {ViolationLocation: {rule_codes}}."""
+        """Parse ruff JSON output into {ViolationLocation: {rule_codes}}, using noqa_row."""
         violations: ViolationsByLocation = {}
-        for line in output.splitlines():
-            match = re.match(r"^(.+?):(\d+):\d+:\s+([A-Z][A-Z0-9]+)\s", line)
-            if not match:
+        try:
+            raw_violations = json.loads(output)
+        except (json.JSONDecodeError, ValueError):  # fmt: off
+            logger.warning("Failed to parse ruff JSON output")
+            return violations
+
+        for raw in raw_violations:
+            code: str = raw.get("code", "")
+            if code in _UNSUPPRESSIBLE_CODES:
                 continue
-            key = ViolationLocation(filepath=match.group(1), lineno=int(match.group(2)))
-            violations.setdefault(key, set()).add(match.group(3))
+            noqa_row: int | None = raw.get("noqa_row")
+            if noqa_row is None:
+                continue
+            key = ViolationLocation(filepath=raw["filename"], lineno=noqa_row)
+            violations.setdefault(key, set()).add(code)
+
         return violations
 
     def _apply_noqa(self, violations: ViolationsByLocation) -> None:
@@ -136,6 +169,8 @@ class RuffBoost(Boost):
 
         logger.info("Running ruff format...")
         self._run_ruff_format()
+        self._run_ruff_format()
+        self._run_ruff_format()
         self.git.commit("🎨 Auto-format with ruff", no_verify=True)
 
         for iteration in range(1, _MAX_RUFF_ITERATIONS + 1):
@@ -151,7 +186,7 @@ class RuffBoost(Boost):
             logger.info("ruff check passed with no violations")
             return False
 
-        violations = self._parse_violations(result.stdout + result.stderr)
+        violations = self._parse_violations(result.stdout)
         if not violations:
             logger.info("No parseable violations found; stopping")
             return False
