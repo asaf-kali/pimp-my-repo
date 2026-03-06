@@ -507,6 +507,22 @@ def test_apply_stops_early_when_no_parseable_violations(
     patched_mypy_apply.mock_mypy.assert_called_once()
 
 
+def test_excludes_syntax_error_file_in_pyproject(
+    mock_repo: RepositoryController,
+    patched_mypy_apply: PatchedMypyApply,
+    fail_result: SubprocessResultFactory,
+    ok_result: SubprocessResultFactory,
+) -> None:
+    patched_mypy_apply.mock_mypy.side_effect = [
+        fail_result("src/bad.py:5: error: Invalid syntax  [syntax]\n"),
+        ok_result(),
+    ]
+    patched_mypy_apply.boost.apply()
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    # re.escape produces "src/bad\.py"; TOML serializes the backslash as "\\" in the file
+    assert r"src/bad\\.py" in content
+
+
 # =============================================================================
 # MISC
 # =============================================================================

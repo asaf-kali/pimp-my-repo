@@ -164,14 +164,35 @@ class MypyBoost(Boost):
             return False
 
         violations = self._parse_violations(result.stdout + result.stderr)
-        if not violations:
+
+        syntax_files = list(dict.fromkeys(loc.filepath for loc, codes in violations.items() if "syntax" in codes))
+        if syntax_files:
+            self._exclude_mypy_files(syntax_files)
+            violations = {loc: codes for loc, codes in violations.items() if loc.filepath not in set(syntax_files)}
+
+        if not violations and not syntax_files:
             logger.info("No parseable violations found; stopping")
             return False
 
-        logger.info(f"Found {len(violations)} violations, applying type: ignore comments...")
-        self._apply_type_ignores(violations)
-        self._run_ruff()
+        if violations:
+            logger.info(f"Found {len(violations)} violations, applying type: ignore comments...")
+            self._apply_type_ignores(violations)
+            self._run_ruff()
         return True
+
+    def _exclude_mypy_files(self, files: list[str]) -> None:
+        """Add files to [tool.mypy] exclude list in pyproject.toml (as regex patterns)."""
+        logger.info(f"Excluding {len(files)} file(s) with syntax errors from mypy: {files}")
+        data = self.pyproject.read()
+        tool_section: Any = data["tool"]
+        mypy_section: Any = tool_section["mypy"]
+        existing: list[str] = list(mypy_section.get("exclude", []))
+        patterns = [re.escape(f) for f in files]
+        new_excludes = list(dict.fromkeys(existing + patterns))
+        if new_excludes == existing:
+            return
+        mypy_section["exclude"] = new_excludes
+        self.pyproject.write(data)
 
     def _run_ruff(self) -> None:
         """Run ruff suppress iterations if ruff is configured in the repo."""

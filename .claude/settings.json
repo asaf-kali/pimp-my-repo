@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "TaskCompleted": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "just lint"
+          },
+          {
+            "type": "command",
+            "command": "just test"
+          }
+        ]
+      }
+    ]
+  }
+}

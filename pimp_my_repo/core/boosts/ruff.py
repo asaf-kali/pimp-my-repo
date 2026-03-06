@@ -2,6 +2,7 @@
 
 import json
 import re
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from loguru import logger
@@ -175,14 +176,54 @@ class RuffBoost(Boost):
             logger.info("ruff check passed with no violations")
             return False
 
+        excluded = self._exclude_syntax_error_files(result.stdout)
         violations = self._parse_violations(result.stdout)
-        if not violations:
+        if not violations and not excluded:
             logger.info("No parseable violations found; stopping")
             return False
 
-        logger.info(f"Found {len(violations)} violations, applying noqa comments...")
-        self._apply_noqa(violations)
+        if violations:
+            logger.info(f"Found {len(violations)} violations, applying noqa comments...")
+            self._apply_noqa(violations)
         return True
+
+    def _parse_syntax_error_files(self, output: str) -> list[str]:
+        """Extract relative paths of files with syntax errors from ruff JSON output."""
+        try:
+            raw_violations = json.loads(output)
+        except json.JSONDecodeError, ValueError:
+            return []
+        files: list[str] = []
+        for v in raw_violations:
+            if v.get("code") == "invalid-syntax":
+                abs_path = v.get("filename", "")
+                try:
+                    rel_path = str(Path(abs_path).relative_to(self.repo_path))
+                except ValueError:
+                    rel_path = abs_path
+                files.append(rel_path)
+        return list(dict.fromkeys(files))
+
+    def _exclude_syntax_error_files(self, output: str) -> bool:
+        """Add files with syntax errors to [tool.ruff.exclude]. Returns True if any added."""
+        files = self._parse_syntax_error_files(output)
+        if not files:
+            return False
+        logger.info(f"Excluding {len(files)} file(s) with syntax errors from ruff: {files}")
+        self._add_ruff_excludes(files)
+        return True
+
+    def _add_ruff_excludes(self, files: list[str]) -> None:
+        """Append files to [tool.ruff.exclude] in pyproject.toml."""
+        data = self.pyproject.read()
+        tool_section: Any = data["tool"]
+        ruff_section: Any = tool_section["ruff"]
+        existing: list[str] = list(ruff_section.get("exclude", []))
+        new_excludes = list(dict.fromkeys(existing + files))
+        if new_excludes == existing:
+            return
+        ruff_section["exclude"] = new_excludes
+        self.pyproject.write(data)
 
     def commit_message(self) -> str:
         """Generate commit message for Ruff boost."""
