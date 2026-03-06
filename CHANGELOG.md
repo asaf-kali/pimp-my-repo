@@ -1,6 +1,66 @@
 # CHANGELOG
 
 
+## v0.2.4 (2026-03-06)
+
+### 🏗️
+
+- 🏗️ UI fixes, increase mypy stability ([#9](https://github.com/asaf-kali/pimp-my-repo/pull/9),
+  [`814afdc`](https://github.com/asaf-kali/pimp-my-repo/commit/814afdc2b9a686f6d378779d2410e1c1041c34ec))
+
+* Support syntax violations
+
+* Minor refactoring
+
+* 🐛 Exclude files with unsuppressable mypy errors
+
+When mypy reports errors that can't be suppressed with type: ignore (syntax errors or no-code
+  blocking errors like "source file found twice"), exclude those files in [tool.mypy] instead of
+  looping indefinitely.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+* 🐛 Fix type: ignore placement for triple-quoted string openings
+
+When mypy reports an error on a line that opens a multiline triple-quoted string (e.g. `x = """` or
+  `func("""`), placing `# type: ignore[...]` after `"""` embeds it inside the string literal where
+  mypy cannot see it.
+
+Fix by detecting unclosed triple-quotes in `_place_type_ignore`: - Function call pattern `func("""`:
+  split the line at `"""`, place the comment after `(`, and move the triple-quote to the next line.
+  - Assignment pattern `x = """`: wrap the RHS with `()` by adding `(` on the opening line and `)`
+  immediately after the closing `"""`.
+
+Process violations in reverse line order so that line insertions do not shift the indices of
+  not-yet-processed earlier violations.
+
+* Auto commit
+
+* Mypy: Bug: The mypy iteration loop failed to converge when a syntax-error (or
+  uncoded-blocking-error) file persisted in mypy's output even after being added to pyproject.toml's
+  exclude list. The stop condition checked not syntax_files — but syntax_files is derived from
+  mypy's output, not from whether the exclusion was new. So if mypy kept reporting the same
+  already-excluded file, syntax_files remained non-empty and the loop ran all 7 iterations doing
+  nothing productive.
+
+Fix (mypy.py): - _exclude_mypy_files now returns bool — True if new patterns were added, False if
+  all were already present - _exclude_blocking_uncoded_errors likewise returns bool -
+  _process_mypy_iteration uses these booleans (newly_excluded_syntax, newly_excluded_uncoded) in the
+  stop condition instead of the raw sets
+
+Tests added: test_stops_when_syntax_file_already_excluded and
+  test_stops_when_uncoded_blocking_file_already_excluded — both verify the loop stops after exactly
+  2 iterations (first iteration excludes the file, second finds no new progress and stops).
+
+* UI refactor
+
+* Mypy boost fixes
+
+---------
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+
 ## v0.2.3 (2026-03-06)
 
 ### Other

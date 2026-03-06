@@ -583,7 +583,7 @@ wheels = [
 
 [[package]]
 name = "pimp-my-repo"
-version = "0.2.3"
+version = "0.2.4"
 source = { editable = "." }
 dependencies = [
     { name = "jinja2" },
