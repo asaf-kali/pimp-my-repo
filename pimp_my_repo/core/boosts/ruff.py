@@ -204,32 +204,34 @@ def _merge_noqa(*, raw_line: str, codes: ErrorCodes) -> str:
     noqa_matches = list(_NOQA_RE.finditer(line))
     type_match = _TYPE_IGNORE_RE.search(line)
 
-    # Determine prefix (before any trailing comments).
-    first_comment_start = len(line)
+    # Split line into code and comment section at the first recognized comment.
+    first_comment = len(line)
     if noqa_matches:
-        first_comment_start = min(first_comment_start, noqa_matches[0].start())
+        first_comment = min(first_comment, noqa_matches[0].start())
     if type_match is not None:
-        first_comment_start = min(first_comment_start, type_match.start())
-    prefix = line[:first_comment_start].rstrip()
+        first_comment = min(first_comment, type_match.start())
+    code = line[:first_comment].rstrip()
+    comment_section = line[first_comment:]
 
-    # Collect ruff codes and non-ruff directives from ALL noqa matches.
+    # Parse noqa annotations: collect ruff codes and non-ruff directives (e.g. isort:skip).
     existing_ruff_codes: list[str] = []
     non_ruff_parts: list[str] = []
     for m in noqa_matches:
-        raw_codes_str = m.group(1).strip()
-        existing_ruff_codes.extend(_RUFF_CODE_RE.findall(raw_codes_str))
-        leftover = _RUFF_CODE_RE.sub("", raw_codes_str).replace(",", " ")
+        raw = m.group(1).strip()
+        existing_ruff_codes.extend(_RUFF_CODE_RE.findall(raw))
+        leftover = _RUFF_CODE_RE.sub("", raw).replace(",", " ")
         non_ruff_parts.extend(leftover.split())
 
+    # Remove noqa annotations from comment section, keeping type: ignore and other comments.
+    previous_comments = re.sub(r" {2,}", "  ", _NOQA_RE.sub("", comment_section)).strip()
+    # Non-ruff directives (e.g. isort:skip) go in their own comment before noqa.
+    if non_ruff_parts:
+        non_ruff = f"# {' '.join(non_ruff_parts)}"
+        previous_comments = f"{non_ruff}  {previous_comments}" if previous_comments else non_ruff
+
+    # Build new noqa and reconstruct with noqa at the end.
     all_codes = sorted(set(existing_ruff_codes) | codes)
-    noqa_part = f"# noqa: {', '.join(all_codes)}"
-
-    # Non-ruff directives (e.g. isort:skip) become their own comment before noqa.
-    non_ruff_comment = f"  # {' '.join(non_ruff_parts)}" if non_ruff_parts else ""
-
-    # Preserve type: ignore if present (must come before noqa for mypy).
-    type_ignore_part = ""
-    if type_match is not None:
-        type_ignore_part = f"  {line[type_match.start() : type_match.end()]}"
-
-    return f"{prefix}{non_ruff_comment}{type_ignore_part}  {noqa_part}{eol}"
+    new_noqa = f"# noqa: {', '.join(all_codes)}"
+    if previous_comments:
+        return f"{code}  {previous_comments}  {new_noqa}{eol}"
+    return f"{code}  {new_noqa}{eol}"

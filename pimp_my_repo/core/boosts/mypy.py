@@ -257,46 +257,43 @@ def _merge_type_ignore(*, raw_line: str, codes: ErrorCodes) -> str:
     eol = raw_line[len(line) :]
     marker = "# type: ignore"
 
-    # If we already ignore everything (bare type: ignore with no codes), keep as-is.
-    if marker in line and "[" not in line.split(marker, maxsplit=1)[1]:
+    # If already a bare type: ignore (no codes), it suppresses everything; keep as-is.
+    if marker in line and not line.split(marker, maxsplit=1)[1].startswith("["):
         return raw_line
 
-    # Find the start of trailing comments. Check both "  # " (normal) and "  #:" (Sphinx doc
-    # comments) so that type: ignore is placed before any inline comment, including #: style.
+    # Split line into code and comment section.
+    # Check both "  # " and "  #:" (Sphinx doc comments) — take whichever comes first
+    # so that type: ignore is placed before any inline comment, including #: style.
     idx_space = line.find("  # ")
     idx_colon = line.find("  #:")
-    hash_idx = min((i for i in [idx_space, idx_colon] if i >= 0), default=-1)
-    if hash_idx >= 0:
-        prefix = line[:hash_idx].rstrip()
-        other_comments = line[hash_idx:].strip()
+    comment_start = min((i for i in [idx_space, idx_colon] if i >= 0), default=-1)
+    if comment_start >= 0:
+        code = line[:comment_start].rstrip()
+        comment_section = line[comment_start:].strip()
     elif '"' not in line and "'" not in line:
-        # No quotes: safe to use first #
         hash_idx = line.find("#")
-        if hash_idx >= 0:
-            prefix = line[:hash_idx].rstrip()
-            other_comments = line[hash_idx:].strip()
-        else:
-            prefix = line
-            other_comments = ""
+        code = line[:hash_idx].rstrip() if hash_idx >= 0 else line
+        comment_section = line[hash_idx:].strip() if hash_idx >= 0 else ""
     else:
-        prefix = line
-        other_comments = ""
+        code = line
+        comment_section = ""
 
-    # Extract and merge type: ignore codes from ALL type: ignore comments on the line.
-    # Mypy only uses the first comment; multiple type: ignore must be merged into one.
+    # Extract all existing type: ignore codes from the comment section.
+    # Mypy only uses the first; merge all into one unified comment.
     existing_codes: list[str] = []
-    for type_match in _TYPE_IGNORE_RE.finditer(other_comments):
-        if type_match.group(1):
-            existing_codes.extend(c.strip() for c in type_match.group(1).split(",") if c.strip())
+    for m in _TYPE_IGNORE_RE.finditer(comment_section):
+        if m.group(1):
+            existing_codes.extend(c.strip() for c in m.group(1).split(",") if c.strip())
     all_codes = sorted(set(existing_codes) | codes)
-    type_ignore_part = f"{marker}[{', '.join(all_codes)}]"
+    new_type_ignore = f"{marker}[{', '.join(all_codes)}]"
 
-    # Rebuild other_comments without type: ignore, preserving noqa and other comments.
-    # Use re.sub to collapse only 3+ spaces (artifacts from removing the type: ignore token)
-    # to exactly 2 spaces, leaving intentional double-space separators intact.
-    remaining = re.sub(r" {3,}", "  ", _TYPE_IGNORE_RE.sub("", other_comments)).strip()
+    # Remove type: ignore from comment section, keeping noqa and other comments.
+    # Collapse only 3+ spaces (artifacts of removal) to preserve intentional double-space gaps.
+    remaining = re.sub(r" {3,}", "  ", _TYPE_IGNORE_RE.sub("", comment_section)).strip()
     if remaining.startswith(",") or remaining.endswith(","):
         remaining = remaining.strip(",").strip()
-    other_part = f"  {remaining}" if remaining and remaining != "#" else ""
 
-    return f"{prefix}  {type_ignore_part}{other_part}{eol}"
+    # Reconstruct with type: ignore FIRST, then remaining comments (noqa etc.) after.
+    if remaining and remaining != "#":
+        return f"{code}  {new_type_ignore}  {remaining}{eol}"
+    return f"{code}  {new_type_ignore}{eol}"
