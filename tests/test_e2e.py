@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from rich.console import Console
 
-from pimp_my_repo.cli.main import run_boosts
+from pimp_my_repo.cli.runner import run_boosts
 
 if TYPE_CHECKING:
     from pimp_my_repo.core.tools.repo import RepositoryController

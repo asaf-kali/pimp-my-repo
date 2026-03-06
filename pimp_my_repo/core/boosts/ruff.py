@@ -2,6 +2,7 @@
 
 import json
 import re
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from loguru import logger
@@ -13,7 +14,7 @@ from pimp_my_repo.core.tools.pyproject import PyProjectNotFoundError
 if TYPE_CHECKING:
     import subprocess
 
-_MAX_RUFF_ITERATIONS = 7
+_MAX_RUFF_ITERATIONS = 10
 
 # Rules that must never be suppressed via noqa:
 # - ERA001: treats the noqa comment itself as commented-out code → oscillation loop.
@@ -62,6 +63,10 @@ class RuffBoost(Boost):
         logger.info("Running ruff format...")
         self._run_ruff_format()
         self.run_suppress_iterations()
+
+    def commit_message(self) -> str:
+        """Generate commit message for Ruff boost."""
+        return "✅ Silence ruff violations"
 
     def run_suppress_iterations(self) -> None:
         """Run ruff check + noqa suppression iterations, re-formatting after each.
@@ -175,18 +180,56 @@ class RuffBoost(Boost):
             logger.info("ruff check passed with no violations")
             return False
 
+        excluded = self._exclude_syntax_error_files(result.stdout)
         violations = self._parse_violations(result.stdout)
-        if not violations:
+        if not violations and not excluded:
             logger.info("No parseable violations found; stopping")
             return False
 
-        logger.info(f"Found {len(violations)} violations, applying noqa comments...")
-        self._apply_noqa(violations)
+        if violations:
+            logger.info(f"Found {len(violations)} violations, applying noqa comments...")
+            self._apply_noqa(violations)
         return True
 
-    def commit_message(self) -> str:
-        """Generate commit message for Ruff boost."""
-        return "✅ Silence ruff violations"
+    def _parse_syntax_error_files(self, output: str) -> set[str]:
+        """Extract relative paths of files with syntax errors from ruff JSON output."""
+        files: set[str] = set()
+        try:
+            raw_violations = json.loads(output)
+        except (json.JSONDecodeError, ValueError):  # fmt: off
+            return files
+        for v in raw_violations:
+            if v.get("code") != "invalid-syntax":
+                continue
+            abs_path = v.get("filename", "")
+            try:
+                rel_path = str(Path(abs_path).relative_to(self.repo_path))
+            except ValueError:
+                rel_path = abs_path
+            files.add(rel_path)
+        return files
+
+    def _exclude_syntax_error_files(self, output: str) -> bool:
+        """Add files with syntax errors to [tool.ruff.exclude]. Returns True if any added."""
+        files = self._parse_syntax_error_files(output)
+        if not files:
+            return False
+        logger.info(f"Excluding {len(files)} file(s) with syntax errors from ruff: {files}")
+        self._add_ruff_excludes(files)
+        return True
+
+    def _add_ruff_excludes(self, files: set[str]) -> None:
+        """Append files to [tool.ruff.extend-exclude] in pyproject.toml."""
+        data = self.pyproject.read()
+        tool_section: Any = data["tool"]
+        ruff_section: Any = tool_section["ruff"]
+        existing: set[str] = set(ruff_section.get("extend-exclude") or set())
+        new_excludes = existing | files
+        if new_excludes == existing:
+            return
+        ordered = sorted(new_excludes)
+        ruff_section["extend-exclude"] = ordered
+        self.pyproject.write(data)
 
 
 def _merge_noqa(*, raw_line: str, codes: ErrorCodes) -> str:

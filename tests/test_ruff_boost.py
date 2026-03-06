@@ -472,6 +472,21 @@ def test_apply_stops_early_when_no_parseable_violations(
     patched_ruff_apply.mock_check.assert_called_once()
 
 
+def test_excludes_syntax_error_file_in_pyproject(
+    mock_repo: RepositoryController,
+    patched_ruff_apply: PatchedRuffApply,
+    fail_result: SubprocessResultFactory,
+    ok_result: SubprocessResultFactory,
+) -> None:
+    patched_ruff_apply.mock_check.side_effect = [
+        fail_result(json.dumps([{"filename": "src/bad.py", "code": "invalid-syntax", "noqa_row": None}])),
+        ok_result(),
+    ]
+    patched_ruff_apply.boost.apply()
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert "src/bad.py" in content
+
+
 # =============================================================================
 # MISC
 # =============================================================================
