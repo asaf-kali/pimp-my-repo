@@ -139,7 +139,9 @@ class MypyBoost(Boost):
             return
 
         lines = full_path.read_text(encoding="utf-8").splitlines(keepends=True)
-        for lineno, codes in sorted(line_violations.items()):
+        # Reverse order: inserting lines for triple-quote fixes shifts later indices,
+        # but those are already processed when iterating highest-to-lowest.
+        for lineno, codes in sorted(line_violations.items(), reverse=True):
             idx = lineno - 1
             if idx >= len(lines):
                 continue
@@ -148,7 +150,7 @@ class MypyBoost(Boost):
             if codes_to_remove:
                 lines[idx] = _remove_type_ignore_codes(raw_line=lines[idx], codes=codes_to_remove)
             if effective_codes:
-                lines[idx] = _merge_type_ignore(raw_line=lines[idx], codes=effective_codes)
+                _place_type_ignore(lines=lines, idx=idx, codes=effective_codes)
             if not codes_to_remove and not effective_codes:
                 # Bare unused-ignore with no parseable codes: remove the whole comment.
                 lines[idx] = _remove_type_ignore(lines[idx])
@@ -269,6 +271,78 @@ class MypyBoost(Boost):
     def commit_message(self) -> str:
         """Generate commit message for Mypy boost."""
         return "✅ Silence mypy violations"
+
+
+def _find_unclosed_triple_quote_pos(line: str) -> tuple[int, str] | None:
+    """Return (position, triple_quote) of the first unclosed triple-quote opener in line.
+
+    Scans left-to-right, pairing openers with closers. If the last opener has no closer
+    on the same line, returns its position so we can place the comment before it.
+    """
+    stripped = line.rstrip("\n").rstrip("\r")
+    i = 0
+    while i < len(stripped):
+        ch = stripped[i]
+        if ch in ('"', "'"):
+            triple_quote = ch * 3
+            if stripped[i : i + 3] == triple_quote:
+                closer = stripped.find(triple_quote, i + 3)
+                if closer == -1:
+                    return (i, triple_quote)
+                i = closer + 3
+                continue
+        i += 1
+    return None
+
+
+def _find_closing_triple_quote(*, lines: list[str], start_idx: int, quote: str) -> int | None:
+    """Return the index of the first line that contains the closing triple-quote."""
+    for i in range(start_idx, len(lines)):
+        if quote in lines[i]:
+            return i
+    return None
+
+
+def _place_type_ignore(*, lines: list[str], idx: int, codes: ErrorCodes) -> None:
+    """Apply type: ignore to lines[idx], handling triple-quoted string openings.
+
+    If the line opens an unclosed triple-quoted string, placing a comment after the
+    opening triple-quote would embed it inside the string where mypy cannot see it.
+    Instead, the comment is placed before the triple-quote by splitting the line.
+    The caller must process violations in reverse line order so that any inserted
+    lines do not shift the indices of not-yet-processed earlier violations.
+    """
+    raw_line = lines[idx]
+    result = _find_unclosed_triple_quote_pos(raw_line)
+    if result is None:
+        lines[idx] = _merge_type_ignore(raw_line=raw_line, codes=codes)
+        return
+
+    triple_quote_pos, triple_quote = result
+    line = raw_line.rstrip("\n").rstrip("\r")
+    eol = raw_line[len(line) :]
+
+    code_part = line[:triple_quote_pos]
+    string_part = line[triple_quote_pos:]
+    indent = len(line) - len(line.lstrip())
+    type_ignore = f"# type: ignore[{', '.join(sorted(codes))}]"
+
+    if code_part.rstrip().endswith("("):
+        # Function call: place comment after (, move triple-quote to next line.
+        lines[idx] = f"{code_part.rstrip()}  {type_ignore}{eol}"
+        lines.insert(idx + 1, f"{' ' * (indent + 4)}{string_part.lstrip()}{eol}")
+    else:
+        # Assignment or other expression: wrap the RHS with () so the comment applies.
+        # Find the closing triple-quote BEFORE inserting (indices shift after insert).
+        closing_idx = _find_closing_triple_quote(lines=lines, start_idx=idx + 1, quote=triple_quote)
+        if closing_idx is not None:
+            closing_raw = lines[closing_idx]
+            closing_line = closing_raw.rstrip("\n").rstrip("\r")
+            closing_eol = closing_raw[len(closing_line) :]
+            close_pos = closing_line.find(triple_quote) + len(triple_quote)
+            lines[closing_idx] = f"{closing_line[:close_pos]}){closing_line[close_pos:]}{closing_eol}"
+        lines[idx] = f"{code_part.rstrip()} (  {type_ignore}{eol}"
+        lines.insert(idx + 1, f"{' ' * (indent + 4)}{string_part.lstrip()}{eol}")
 
 
 def _remove_type_ignore(raw_line: str) -> str:

@@ -341,6 +341,29 @@ def test_unused_ignore_with_other_codes_keeps_others(mock_repo: RepositoryContro
     assert "unused-ignore" not in content
 
 
+def test_type_ignore_placed_before_triple_quote_in_function_call(
+    mock_repo: RepositoryController, mypy_boost: MypyBoost
+) -> None:
+    """type: ignore must be placed before \"\"\" in function calls to avoid being inside the string."""
+    mock_repo.write_file("src/foo.py", 'result = func("""\ncontent\n""")\n')
+    mypy_boost._apply_type_ignores({_vl("src/foo.py", 1): {"no-untyped-call"}})  # noqa: SLF001
+    lines = (mock_repo.path / "src/foo.py").read_text().splitlines()
+    assert "# type: ignore[no-untyped-call]" in lines[0]
+    assert '"""' not in lines[0]
+
+
+def test_type_ignore_placed_before_triple_quote_in_assignment(
+    mock_repo: RepositoryController, mypy_boost: MypyBoost
+) -> None:
+    """type: ignore must wrap the assignment with () when the RHS opens a triple-quoted string."""
+    mock_repo.write_file("src/foo.py", 'sql = """\nCREATE TABLE\n"""\n')
+    mypy_boost._apply_type_ignores({_vl("src/foo.py", 1): {"assignment"}})  # noqa: SLF001
+    lines = (mock_repo.path / "src/foo.py").read_text().splitlines()
+    assert "# type: ignore[assignment]" in lines[0]
+    assert '"""' not in lines[0]
+    assert '""")' in (mock_repo.path / "src/foo.py").read_text()
+
+
 def test_merges_two_type_ignore_comments_into_one(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
     """Multiple type: ignore comments on a line must be merged into a single one."""
     mock_repo.write_file("src/foo.py", "x = foo()  # type: ignore[arg-type]  # type: ignore[return-value]\n")
