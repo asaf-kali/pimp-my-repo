@@ -295,6 +295,36 @@ def test_has_migration_source_ignores_non_poetry_pyproject(mock_repo: Repository
     assert uv_boost._has_migration_source() is False  # noqa: SLF001
 
 
+def test_has_project_table_true(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+    """_has_project_table returns True when pyproject.toml has [project]."""
+    mock_repo.write_file("pyproject.toml", '[project]\nname = "myapp"\n')
+    assert uv_boost._has_project_table() is True  # noqa: SLF001
+
+
+def test_has_project_table_false_tool_only(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+    """_has_project_table returns False when pyproject.toml has only [tool.*] sections."""
+    mock_repo.write_file("pyproject.toml", '[tool.poetry]\nname = "myapp"\n')
+    assert uv_boost._has_project_table() is False  # noqa: SLF001
+
+
+def test_has_project_table_false_no_pyproject(uv_boost: UvBoost) -> None:
+    """_has_project_table returns False when pyproject.toml does not exist."""
+    assert uv_boost._has_project_table() is False  # noqa: SLF001
+
+
+def test_has_migration_source_pep621_with_root_requirements(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+    """[project] table takes precedence — no migration even if requirements.txt is present."""
+    mock_repo.write_file("pyproject.toml", '[project]\nname = "myapp"\ndependencies = ["requests"]\n')
+    mock_repo.write_file("requirements.txt", "requests>=2.0.0")
+    assert uv_boost._has_migration_source() is False  # noqa: SLF001
+
+
+def test_has_migration_source_ignores_docs_requirements(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+    """requirements.txt inside docs/ should not trigger migration (Django-style repos)."""
+    mock_repo.write_file("docs/requirements.txt", "sphinx>=7.0.0")
+    assert uv_boost._has_migration_source() is False  # noqa: SLF001
+
+
 # =============================================================================
 # APPLY
 # =============================================================================

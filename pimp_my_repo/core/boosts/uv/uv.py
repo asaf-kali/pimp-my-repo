@@ -159,7 +159,11 @@ class UvBoost(Boost):
             result.groups[group].append(file_path)
 
     def _detect_requirements_files(self) -> ProjectRequirements:
-        """Detect and categorize all requirements files.
+        """Detect and categorize requirements files at the repository root.
+
+        Only scans the root directory (and one level deep for a dedicated
+        ``requirements/`` sub-directory) to avoid picking up unrelated files
+        such as ``docs/requirements.txt`` or test-fixture templates.
 
         Returns:
             ProjectRequirements with main file and grouped files
@@ -167,12 +171,15 @@ class UvBoost(Boost):
         """
         result = ProjectRequirements()
 
-        # Find all requirements files
-        suffix_files = list(self.tools.repo_path.rglob("requirements*.txt"))
-        prefix_files = list(self.tools.repo_path.rglob("*-requirements.txt"))
-        all_files = set(suffix_files) | set(prefix_files)
+        root = self.tools.repo_path
+        candidates = list(root.glob("requirements*.txt")) + list(root.glob("*-requirements.txt"))
 
-        for file_path in all_files:
+        # Also look inside a top-level ``requirements/`` directory (common convention).
+        req_dir = root / "requirements"
+        if req_dir.is_dir():
+            candidates += list(req_dir.glob("*.txt"))
+
+        for file_path in candidates:
             self._categorize_requirements_file(file_path, result)
 
         return result
@@ -231,14 +238,28 @@ class UvBoost(Boost):
             config.write(f)
         logger.info("Augmented setup.cfg with metadata from setup.py (best-effort)")
 
-    def _has_migration_source(self) -> bool:
+    def _has_project_table(self) -> bool:
+        """Return True if pyproject.toml already has a [project] section (PEP 621)."""
+        try:
+            data = self.pyproject.read()
+        except (OSError, ValueError):  # fmt: skip
+            return False
+        return "project" in data
+
+    def _has_migration_source(self) -> bool:  # noqa: PLR0911
         """Check if there are any migration sources supported by migrate-to-uv.
 
         migrate-to-uv supports: Poetry (pyproject.toml with [tool.poetry]),
         Pipfile, and setup.cfg with [metadata]/[options]. A bare setup.cfg (no
         metadata) or a bare setup.py triggers best-effort augmentation instead.
+
+        Projects that already have a [project] table (PEP 621) need no migration.
         """
         detected = detect_dependency_files(self.tools.repo_path)
+
+        # Already using modern PEP 621 format — migrate-to-uv has nothing to do.
+        if detected.pyproject_toml and self._has_project_table():
+            return False
 
         if detected.poetry_lock:
             return True
