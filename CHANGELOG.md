@@ -21,6 +21,11 @@
 
 Adjust project code quality
 
+### 🐛
+
+- 🐛 Stability fixes ([#8](https://github.com/asaf-kali/pimp-my-repo/pull/8),
+  [`7c21c42`](https://github.com/asaf-kali/pimp-my-repo/commit/7c21c4226e693ab52d1a507321f40fdd53237835))
+
 ### 📜
 
 - 📜 Add LICENSE ([#7](https://github.com/asaf-kali/pimp-my-repo/pull/7),
