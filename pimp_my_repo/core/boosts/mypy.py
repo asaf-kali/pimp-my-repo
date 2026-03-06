@@ -1,6 +1,7 @@
 """Mypy boost implementation."""
 
 import re
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from loguru import logger
@@ -26,6 +27,11 @@ _MYPY_NOTE_UNCOVERED_RE = re.compile(
 _TYPE_IGNORE_RE = re.compile(r"# type: ignore(?:\[([^\]]*)\])?")
 # Parses which codes are unused from: Unused "type: ignore[X, Y]" comment  [unused-ignore]
 _MYPY_UNUSED_IGNORE_RE = re.compile(r'Unused "type: ignore\[(?P<codes>[^\]]+)\]" comment\s+\[unused-ignore\]')
+# Matches any "error:" line regardless of whether it has a [code] suffix
+_MYPY_ANY_ERROR_RE = re.compile(r"^(?P<path>.+?)(?::\d+(?::\d+)?)?: error: ")
+# "Source file found twice" errors must exclude the parent directory, not just the file,
+# because mypy's exclude option doesn't prevent discovery-stage errors on specific files.
+_MYPY_FOUND_TWICE_RE = re.compile(r"Source file found twice under different module names")
 
 
 class ViolationLocation(NamedTuple):
@@ -165,12 +171,15 @@ class MypyBoost(Boost):
 
         violations = self._parse_violations(result.stdout + result.stderr)
 
-        syntax_files = list(dict.fromkeys(loc.filepath for loc, codes in violations.items() if "syntax" in codes))
+        syntax_files = {loc.filepath for loc, codes in violations.items() if "syntax" in codes}
         if syntax_files:
             self._exclude_mypy_files(syntax_files)
-            violations = {loc: codes for loc, codes in violations.items() if loc.filepath not in set(syntax_files)}
+            violations = {loc: codes for loc, codes in violations.items() if loc.filepath not in syntax_files}
 
-        if not violations and not syntax_files:
+        output = result.stdout + result.stderr
+        uncoded_files = self._exclude_blocking_uncoded_errors(output)
+
+        if not violations and not syntax_files and not uncoded_files:
             logger.info("No parseable violations found; stopping")
             return False
 
@@ -180,19 +189,48 @@ class MypyBoost(Boost):
             self._run_ruff()
         return True
 
-    def _exclude_mypy_files(self, files: list[str]) -> None:
+    def _exclude_mypy_files(self, files: set[str]) -> None:
         """Add files to [tool.mypy] exclude list in pyproject.toml (as regex patterns)."""
         logger.info(f"Excluding {len(files)} file(s) with syntax errors from mypy: {files}")
         data = self.pyproject.read()
         tool_section: Any = data["tool"]
         mypy_section: Any = tool_section["mypy"]
-        existing: list[str] = list(mypy_section.get("exclude", []))
-        patterns = [re.escape(f) for f in files]
-        new_excludes = list(dict.fromkeys(existing + patterns))
+        existing: set[str] = set(mypy_section.get("exclude", []))
+        new_excludes = existing | {re.escape(f) for f in files}
         if new_excludes == existing:
             return
-        mypy_section["exclude"] = new_excludes
+        mypy_section["exclude"] = sorted(new_excludes)
         self.pyproject.write(data)
+
+    def _exclude_blocking_uncoded_errors(self, output: str) -> set[str]:
+        """Exclude files with no-code blocking errors. Returns the excluded file set."""
+        if "errors prevented further checking" not in output:
+            return set()
+        files = self._parse_uncoded_error_files(output)
+        if files:
+            self._exclude_mypy_files(files)
+        return files
+
+    def _parse_uncoded_error_files(self, output: str) -> set[str]:
+        """Extract files/dirs with mypy errors that have no [code] (can't be suppressed inline).
+
+        For "source file found twice" errors, returns the parent directory (with trailing slash)
+        because mypy's exclude cannot prevent file-discovery errors for a specific file path.
+        """
+        files: set[str] = set()
+        for line in output.splitlines():
+            if ": error: " not in line:
+                continue
+            if _MYPY_ERROR_RE.match(line):
+                continue  # has a [code]; handled by _parse_violations
+            m = _MYPY_ANY_ERROR_RE.match(line)
+            if not m:
+                continue
+            filepath = m.group("path")
+            if _MYPY_FOUND_TWICE_RE.search(line):
+                filepath = str(Path(filepath).parent) + "/"
+            files.add(filepath)
+        return files
 
     def _run_ruff(self) -> None:
         """Run ruff suppress iterations if ruff is configured in the repo."""

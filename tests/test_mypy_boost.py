@@ -507,6 +507,24 @@ def test_apply_stops_early_when_no_parseable_violations(
     patched_mypy_apply.mock_mypy.assert_called_once()
 
 
+def test_excludes_uncoded_blocking_error_file_in_pyproject(
+    mock_repo: RepositoryController,
+    patched_mypy_apply: PatchedMypyApply,
+    fail_result: SubprocessResultFactory,
+    ok_result: SubprocessResultFactory,
+) -> None:
+    mypy_output = (
+        'tests/pkg/wild.py: error: Source file found twice under different module names: "a" and "b"\n'
+        "Found 1 error in 1 file (errors prevented further checking)\n"
+    )
+    patched_mypy_apply.mock_mypy.side_effect = [fail_result(mypy_output), ok_result()]
+    patched_mypy_apply.boost.apply()
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    # "found twice" errors exclude the parent directory, not just the specific file
+    assert "tests/pkg/" in content
+    assert "wild.py" not in content
+
+
 def test_excludes_syntax_error_file_in_pyproject(
     mock_repo: RepositoryController,
     patched_mypy_apply: PatchedMypyApply,
