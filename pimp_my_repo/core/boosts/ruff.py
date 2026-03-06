@@ -33,63 +33,41 @@ type ViolationsByLocation = dict[ViolationLocation, ErrorCodes]
 type LineViolations = dict[int, ErrorCodes]
 type ViolationsByFile = dict[str, LineViolations]
 
-
-# Matches noqa annotations case-insensitively, with or without a colon.
-# Handles: `# noqa: F401`, `# NOQA: F401`, `# NOQA isort:skip`, bare `# noqa`.
-_NOQA_RE = re.compile(r"#\s*noqa\b\s*:?\s*([^#\n]*)", re.IGNORECASE)
+# To avoid this project's ruff confusion, we will address the noqa comments as no-qa.
+# Matches no-qa annotations case-insensitively, with or without a colon.
+# Handles: `# no-qa: F401`, `# NO-QA: F401`, `# NO-QA isort:skip`, bare `# no-qa`.
+_NOQA_RE = re.compile(r"#\s*no-qa\b\s*:?\s*([^#\n]*)", re.IGNORECASE)
 # Matches valid ruff rule codes: 1-4 uppercase letters followed by digits.
 _RUFF_CODE_RE = re.compile(r"\b([A-Z]{1,4}\d+)\b")
 _TYPE_IGNORE_RE = re.compile(r"# type: ignore(?:\[([^\]]*)\])?")
 
 
-def _merge_noqa(*, raw_line: str, codes: ErrorCodes) -> str:
-    """Merge noqa codes into a source line.
-
-    Handles all noqa variants (case-insensitive, with or without colon) and
-    non-ruff directives like ``isort:skip``. All noqa comments on the line are
-    merged into a single canonical ``# noqa: CODE1, CODE2``. Non-ruff content
-    is preserved as a separate leading comment so tools like isort still see it.
-    ``# type: ignore`` is placed before ``# noqa`` as mypy requires.
-    """
-    line = raw_line.rstrip("\n").rstrip("\r")
-    eol = raw_line[len(line) :]
-
-    noqa_matches = list(_NOQA_RE.finditer(line))
-    type_match = _TYPE_IGNORE_RE.search(line)
-
-    # Determine prefix (before any trailing comments).
-    first_comment_start = len(line)
-    if noqa_matches:
-        first_comment_start = min(first_comment_start, noqa_matches[0].start())
-    if type_match is not None:
-        first_comment_start = min(first_comment_start, type_match.start())
-    prefix = line[:first_comment_start].rstrip()
-
-    # Collect ruff codes and non-ruff directives from ALL noqa matches.
-    existing_ruff_codes: list[str] = []
-    non_ruff_parts: list[str] = []
-    for m in noqa_matches:
-        raw_codes_str = m.group(1).strip()
-        existing_ruff_codes.extend(_RUFF_CODE_RE.findall(raw_codes_str))
-        leftover = _RUFF_CODE_RE.sub("", raw_codes_str).replace(",", " ")
-        non_ruff_parts.extend(leftover.split())
-
-    all_codes = sorted(set(existing_ruff_codes) | codes)
-    noqa_part = f"# noqa: {', '.join(all_codes)}"
-
-    # Non-ruff directives (e.g. isort:skip) become their own comment before noqa.
-    non_ruff_comment = f"  # {' '.join(non_ruff_parts)}" if non_ruff_parts else ""
-
-    # Preserve type: ignore if present (must come before noqa for mypy).
-    type_ignore_part = ""
-    if type_match is not None:
-        type_ignore_part = f"  {line[type_match.start() : type_match.end()]}"
-
-    return f"{prefix}{non_ruff_comment}{type_ignore_part}  {noqa_part}{eol}"
-
-
 class RuffBoost(Boost):
     """Boost for integrating Ruff linter and formatter."""
+
+    def apply(self) -> None:
+        """Add ruff, configure it, auto-format, then suppress all check violations."""
+        self._verify_uv_present()
+        self._verify_pyproject_present()
+
+        self.uv.add_package("ruff", group="lint")
+
+        logger.info("Configuring [tool.ruff.lint] select = ['ALL'] in pyproject.toml...")
+        pyproject_data = self.pyproject.read()
+        pyproject_data = self._ensure_ruff_config(pyproject_data)
+        self.pyproject.write(pyproject_data)
+
+        self.git.commit("🔧 Configure ruff", no_verify=True)
+
+        logger.info("Running ruff format...")
+        self._run_ruff_format()
+
+        for iteration in range(1, _MAX_RUFF_ITERATIONS + 1):
+            if not self._suppress_violations_iteration(iteration=iteration):
+                break
+            # Re-format after noqa additions: adding inline comments can shift
+            # formatter decisions (e.g. magic trailing comma, line wrapping).
+            self._run_ruff_format()
 
     def _verify_uv_present(self) -> None:
         try:
@@ -126,7 +104,7 @@ class RuffBoost(Boost):
             ruff_section["lint"] = table()
         lint_section: Any = ruff_section["lint"]
         lint_section["select"] = ["ALL"]
-        # ERA001: adding `# noqa: ERA001` itself gets flagged as commented-out code.
+        # ERA001: adding `# no-qa: ERA001` itself gets flagged as commented-out code.
         # COM812, ISC001: conflict with ruff formatter, causing format/check oscillation.
         # D203, D212: incompatible with D211/D213 (ruff picks one but warns; be explicit).
         lint_section["ignore"] = ["ERA001", "COM812", "ISC001", "D203", "D212"]
@@ -182,32 +160,6 @@ class RuffBoost(Boost):
 
         full_path.write_text("".join(lines), encoding="utf-8")
 
-    def apply(self) -> None:
-        """Add ruff, configure it, auto-format, then suppress all check violations."""
-        self._verify_uv_present()
-        self._verify_pyproject_present()
-
-        self.uv.add_package("ruff", group="lint")
-
-        logger.info("Configuring [tool.ruff.lint] select = ['ALL'] in pyproject.toml...")
-        pyproject_data = self.pyproject.read()
-        pyproject_data = self._ensure_ruff_config(pyproject_data)
-        self.pyproject.write(pyproject_data)
-
-        self.git.commit("🔧 Configure ruff", no_verify=True)
-
-        logger.info("Running ruff format...")
-        self._run_ruff_format()
-        self.git.commit("🎨 Auto-format with ruff", no_verify=True)
-
-        for iteration in range(1, _MAX_RUFF_ITERATIONS + 1):
-            if not self._suppress_violations_iteration(iteration=iteration):
-                break
-            # Re-format after noqa additions: adding inline comments can shift
-            # formatter decisions (e.g. magic trailing comma, line wrapping).
-            self._run_ruff_format()
-            self.git.commit("🎨 Re-format after noqa additions", no_verify=True)
-
     def _suppress_violations_iteration(self, *, iteration: int) -> bool:
         """Run one ruff-check-then-noqa cycle. Returns True if another iteration is needed."""
         logger.info(f"Running ruff check (iteration {iteration}/{_MAX_RUFF_ITERATIONS})...")
@@ -224,9 +176,54 @@ class RuffBoost(Boost):
 
         logger.info(f"Found {len(violations)} violations, applying noqa comments...")
         self._apply_noqa(violations)
-        self.git.commit("✅ Silence ruff violations", no_verify=True)
         return True
 
     def commit_message(self) -> str:
         """Generate commit message for Ruff boost."""
         return "✅ Silence ruff violations"
+
+
+def _merge_noqa(*, raw_line: str, codes: ErrorCodes) -> str:
+    """Merge noqa codes into a source line.
+
+    Handles all noqa variants (case-insensitive, with or without colon) and
+    non-ruff directives like ``isort:skip``. All noqa comments on the line are
+    merged into a single canonical ``# noqa: CODE1, CODE2``. Non-ruff content
+    is preserved as a separate leading comment so tools like isort still see it.
+    ``# type: ignore`` is placed before ``# noqa`` as mypy requires.
+    """
+    line = raw_line.rstrip("\n").rstrip("\r")
+    eol = raw_line[len(line) :]
+
+    noqa_matches = list(_NOQA_RE.finditer(line))
+    type_match = _TYPE_IGNORE_RE.search(line)
+
+    # Determine prefix (before any trailing comments).
+    first_comment_start = len(line)
+    if noqa_matches:
+        first_comment_start = min(first_comment_start, noqa_matches[0].start())
+    if type_match is not None:
+        first_comment_start = min(first_comment_start, type_match.start())
+    prefix = line[:first_comment_start].rstrip()
+
+    # Collect ruff codes and non-ruff directives from ALL noqa matches.
+    existing_ruff_codes: list[str] = []
+    non_ruff_parts: list[str] = []
+    for m in noqa_matches:
+        raw_codes_str = m.group(1).strip()
+        existing_ruff_codes.extend(_RUFF_CODE_RE.findall(raw_codes_str))
+        leftover = _RUFF_CODE_RE.sub("", raw_codes_str).replace(",", " ")
+        non_ruff_parts.extend(leftover.split())
+
+    all_codes = sorted(set(existing_ruff_codes) | codes)
+    noqa_part = f"# noqa: {', '.join(all_codes)}"
+
+    # Non-ruff directives (e.g. isort:skip) become their own comment before noqa.
+    non_ruff_comment = f"  # {' '.join(non_ruff_parts)}" if non_ruff_parts else ""
+
+    # Preserve type: ignore if present (must come before noqa for mypy).
+    type_ignore_part = ""
+    if type_match is not None:
+        type_ignore_part = f"  {line[type_match.start() : type_match.end()]}"
+
+    return f"{prefix}{non_ruff_comment}{type_ignore_part}  {noqa_part}{eol}"

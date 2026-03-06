@@ -12,7 +12,7 @@ from pimp_my_repo.core.tools.pyproject import PyProjectNotFoundError
 if TYPE_CHECKING:
     import subprocess
 
-_MAX_MYPY_ITERATIONS = 3
+_MAX_MYPY_ITERATIONS = 7
 
 # Supports both "path:line: error:" and "path:line:column: error:" (--show-column-numbers)
 _MYPY_ERROR_RE = re.compile(
@@ -36,68 +36,6 @@ type ErrorCodes = set[str]
 type ViolationsByLocation = dict[ViolationLocation, ErrorCodes]
 type LineViolations = dict[int, ErrorCodes]
 type ViolationsByFile = dict[str, LineViolations]
-
-
-def _remove_type_ignore(raw_line: str) -> str:
-    """Remove type: ignore from a line (for unused-ignore violations)."""
-    line = raw_line.rstrip("\n").rstrip("\r")
-    eol = raw_line[len(line) :]
-    removed = _TYPE_IGNORE_RE.sub("", line).rstrip()
-    if removed.endswith(","):
-        removed = removed.rstrip(",").rstrip()
-    return f"{removed}{eol}"
-
-
-def _merge_type_ignore(*, raw_line: str, codes: ErrorCodes) -> str:
-    """Add or merge type: ignore[codes] into a source line.
-
-    Mypy only recognizes type: ignore when it is the FIRST comment on a line
-    (before any other # comment). Place it before noqa and any other trailing
-    comments, merging all existing type: ignore comments into one.
-    """
-    line = raw_line.rstrip("\n").rstrip("\r")
-    eol = raw_line[len(line) :]
-    marker = "# type: ignore"
-
-    # If we already ignore everything (bare type: ignore with no codes), keep as-is.
-    if marker in line and "[" not in line.split(marker, maxsplit=1)[1]:
-        return raw_line
-
-    # Find the start of trailing comments. Use the first "  # " to split off the
-    # comment block (e.g. "code  # type: ignore[...]  # noqa: X").
-    hash_idx = line.find("  # ")
-    if hash_idx >= 0:
-        prefix = line[:hash_idx].rstrip()
-        other_comments = line[hash_idx:].strip()
-    elif '"' not in line and "'" not in line:
-        # No quotes: safe to use first #
-        hash_idx = line.find("#")
-        if hash_idx >= 0:
-            prefix = line[:hash_idx].rstrip()
-            other_comments = line[hash_idx:].strip()
-        else:
-            prefix = line
-            other_comments = ""
-    else:
-        prefix = line
-        other_comments = ""
-
-    # Extract and merge type: ignore codes from ALL type: ignore comments on the line.
-    # Mypy only uses the first comment; multiple type: ignore must be merged into one.
-    existing_codes: list[str] = []
-    for type_match in _TYPE_IGNORE_RE.finditer(other_comments):
-        if type_match.group(1):
-            existing_codes.extend(c.strip() for c in type_match.group(1).split(",") if c.strip())
-    all_codes = sorted(set(existing_codes) | codes)
-    type_ignore_part = f"{marker}[{', '.join(all_codes)}]"
-
-    # Rebuild other_comments without type: ignore, preserving noqa and other comments.
-    remaining = _TYPE_IGNORE_RE.sub("", other_comments).replace("  ", " ").strip()
-    if remaining.startswith(",") or remaining.endswith(","):
-        remaining = remaining.strip(",").strip()
-    other_part = f"  {remaining}" if remaining and remaining != "#" else ""
-
-    return f"{prefix}  {type_ignore_part}{other_part}{eol}"
 
 
 class MypyBoost(Boost):
@@ -216,7 +154,6 @@ class MypyBoost(Boost):
 
         logger.info(f"Found {len(violations)} violations, applying type: ignore comments...")
         self._apply_type_ignores(violations)
-        self.git.commit("✅ Silence mypy violations", no_verify=True)
         return True
 
     def _add_dmypy_to_gitignore(self) -> None:
@@ -248,3 +185,65 @@ class MypyBoost(Boost):
     def commit_message(self) -> str:
         """Generate commit message for Mypy boost."""
         return "✅ Silence mypy violations"
+
+
+def _remove_type_ignore(raw_line: str) -> str:
+    """Remove type: ignore from a line (for unused-ignore violations)."""
+    line = raw_line.rstrip("\n").rstrip("\r")
+    eol = raw_line[len(line) :]
+    removed = _TYPE_IGNORE_RE.sub("", line).rstrip()
+    if removed.endswith(","):
+        removed = removed.rstrip(",").rstrip()
+    return f"{removed}{eol}"
+
+
+def _merge_type_ignore(*, raw_line: str, codes: ErrorCodes) -> str:
+    """Add or merge type: ignore[codes] into a source line.
+
+    Mypy only recognizes type: ignore when it is the FIRST comment on a line
+    (before any other # comment). Place it before noqa and any other trailing
+    comments, merging all existing type: ignore comments into one.
+    """
+    line = raw_line.rstrip("\n").rstrip("\r")
+    eol = raw_line[len(line) :]
+    marker = "# type: ignore"
+
+    # If we already ignore everything (bare type: ignore with no codes), keep as-is.
+    if marker in line and "[" not in line.split(marker, maxsplit=1)[1]:
+        return raw_line
+
+    # Find the start of trailing comments. Use the first "  # " to split off the
+    # comment block (e.g. "code  # type: ignore[...]  # no-qa: X").
+    hash_idx = line.find("  # ")
+    if hash_idx >= 0:
+        prefix = line[:hash_idx].rstrip()
+        other_comments = line[hash_idx:].strip()
+    elif '"' not in line and "'" not in line:
+        # No quotes: safe to use first #
+        hash_idx = line.find("#")
+        if hash_idx >= 0:
+            prefix = line[:hash_idx].rstrip()
+            other_comments = line[hash_idx:].strip()
+        else:
+            prefix = line
+            other_comments = ""
+    else:
+        prefix = line
+        other_comments = ""
+
+    # Extract and merge type: ignore codes from ALL type: ignore comments on the line.
+    # Mypy only uses the first comment; multiple type: ignore must be merged into one.
+    existing_codes: list[str] = []
+    for type_match in _TYPE_IGNORE_RE.finditer(other_comments):
+        if type_match.group(1):
+            existing_codes.extend(c.strip() for c in type_match.group(1).split(",") if c.strip())
+    all_codes = sorted(set(existing_codes) | codes)
+    type_ignore_part = f"{marker}[{', '.join(all_codes)}]"
+
+    # Rebuild other_comments without type: ignore, preserving noqa and other comments.
+    remaining = _TYPE_IGNORE_RE.sub("", other_comments).replace("  ", " ").strip()
+    if remaining.startswith(",") or remaining.endswith(","):
+        remaining = remaining.strip(",").strip()
+    other_part = f"  {remaining}" if remaining and remaining != "#" else ""
+
+    return f"{prefix}  {type_ignore_part}{other_part}{eol}"
