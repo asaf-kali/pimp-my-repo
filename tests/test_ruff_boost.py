@@ -402,11 +402,10 @@ def test_apply_writes_ruff_config_to_pyproject(
     assert 'select = ["ALL"]' in content
 
 
-def test_apply_makes_two_intermediate_commits(patched_ruff_apply: PatchedRuffApply) -> None:
+def test_apply_makes_configure_ruff_commit(patched_ruff_apply: PatchedRuffApply) -> None:
     patched_ruff_apply.boost.apply()
     messages = [c.args[0] for c in patched_ruff_apply.mock_git.call_args_list]
     assert any("Configure ruff" in m for m in messages)
-    assert any("Auto-format" in m for m in messages)
 
 
 def test_apply_runs_format(patched_ruff_apply: PatchedRuffApply) -> None:

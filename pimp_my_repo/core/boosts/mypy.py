@@ -7,6 +7,7 @@ from loguru import logger
 from tomlkit import TOMLDocument, table
 
 from pimp_my_repo.core.boosts.base import Boost, BoostSkippedError
+from pimp_my_repo.core.boosts.ruff import RuffBoost
 from pimp_my_repo.core.tools.pyproject import PyProjectNotFoundError
 
 if TYPE_CHECKING:
@@ -23,6 +24,8 @@ _MYPY_NOTE_UNCOVERED_RE = re.compile(
     r"^(?P<path>.+?):(?P<line>\d+)(?::\d+)?: note: Error code \"(?P<code>[^\"]+)\" not covered",
 )
 _TYPE_IGNORE_RE = re.compile(r"# type: ignore(?:\[([^\]]*)\])?")
+# Parses which codes are unused from: Unused "type: ignore[X, Y]" comment  [unused-ignore]
+_MYPY_UNUSED_IGNORE_RE = re.compile(r'Unused "type: ignore\[(?P<codes>[^\]]+)\]" comment\s+\[unused-ignore\]')
 
 
 class ViolationLocation(NamedTuple):
@@ -95,7 +98,18 @@ class MypyBoost(Boost):
             match = _MYPY_ERROR_RE.match(line)
             if match:
                 key = ViolationLocation(filepath=match.group("path"), lineno=int(match.group("line")))
-                violations.setdefault(key, set()).add(match.group("code"))
+                code = match.group("code")
+                if code == "unused-ignore":
+                    # Extract which specific codes are unused so we only remove those,
+                    # leaving any codes that are still suppressing real errors intact.
+                    unused_match = _MYPY_UNUSED_IGNORE_RE.search(line)
+                    if unused_match:
+                        for uc in unused_match.group("codes").split(","):
+                            violations.setdefault(key, set()).add(f"!{uc.strip()}")
+                    else:
+                        violations.setdefault(key, set()).add("unused-ignore")
+                else:
+                    violations.setdefault(key, set()).add(code)
                 continue
             match = _MYPY_NOTE_UNCOVERED_RE.match(line)
             if match:
@@ -123,13 +137,15 @@ class MypyBoost(Boost):
             idx = lineno - 1
             if idx >= len(lines):
                 continue
-            # unused-ignore means the existing type: ignore is stale; strip it.
-            # Other codes on the same line still apply normally.
-            effective_codes = codes - {"unused-ignore"}
-            if not effective_codes:
-                lines[idx] = _remove_type_ignore(lines[idx])
-            else:
+            codes_to_remove = {c[1:] for c in codes if c.startswith("!")}
+            effective_codes = {c for c in codes if not c.startswith("!") and c != "unused-ignore"}
+            if codes_to_remove:
+                lines[idx] = _remove_type_ignore_codes(raw_line=lines[idx], codes=codes_to_remove)
+            if effective_codes:
                 lines[idx] = _merge_type_ignore(raw_line=lines[idx], codes=effective_codes)
+            if not codes_to_remove and not effective_codes:
+                # Bare unused-ignore with no parseable codes: remove the whole comment.
+                lines[idx] = _remove_type_ignore(lines[idx])
 
         full_path.write_text("".join(lines), encoding="utf-8")
 
@@ -154,7 +170,16 @@ class MypyBoost(Boost):
 
         logger.info(f"Found {len(violations)} violations, applying type: ignore comments...")
         self._apply_type_ignores(violations)
+        self._run_ruff()
         return True
+
+    def _run_ruff(self) -> None:
+        """Run ruff suppress iterations if ruff is configured in the repo."""
+        data = self.pyproject.read()
+        tool_section = data.get("tool")
+        if not tool_section or "ruff" not in tool_section:
+            return
+        RuffBoost(tools=self.tools).run_suppress_iterations()
 
     def _add_dmypy_to_gitignore(self) -> None:
         """Ensure .dmypy.json is listed in .gitignore."""
@@ -197,6 +222,30 @@ def _remove_type_ignore(raw_line: str) -> str:
     return f"{removed}{eol}"
 
 
+def _remove_type_ignore_codes(*, raw_line: str, codes: set[str]) -> str:
+    """Remove specific codes from # type: ignore[...] on a line.
+
+    If all codes in the bracket are removed, removes the whole comment.
+    A bare # type: ignore (no codes) is left unchanged.
+    """
+
+    def replace_match(m: re.Match[str]) -> str:
+        existing_str = m.group(1)
+        if not existing_str:
+            return m.group(0)  # bare type: ignore, leave as-is
+        remaining = [c.strip() for c in existing_str.split(",") if c.strip() not in codes]
+        if not remaining:
+            return ""
+        return f"# type: ignore[{', '.join(remaining)}]"
+
+    line = raw_line.rstrip("\n").rstrip("\r")
+    eol = raw_line[len(line) :]
+    result = _TYPE_IGNORE_RE.sub(replace_match, line).rstrip()
+    if result.endswith(","):
+        result = result.rstrip(",").rstrip()
+    return f"{result}{eol}"
+
+
 def _merge_type_ignore(*, raw_line: str, codes: ErrorCodes) -> str:
     """Add or merge type: ignore[codes] into a source line.
 
@@ -212,9 +261,11 @@ def _merge_type_ignore(*, raw_line: str, codes: ErrorCodes) -> str:
     if marker in line and "[" not in line.split(marker, maxsplit=1)[1]:
         return raw_line
 
-    # Find the start of trailing comments. Use the first "  # " to split off the
-    # comment block (e.g. "code  # type: ignore[...]  # no-qa: X").
-    hash_idx = line.find("  # ")
+    # Find the start of trailing comments. Check both "  # " (normal) and "  #:" (Sphinx doc
+    # comments) so that type: ignore is placed before any inline comment, including #: style.
+    idx_space = line.find("  # ")
+    idx_colon = line.find("  #:")
+    hash_idx = min((i for i in [idx_space, idx_colon] if i >= 0), default=-1)
     if hash_idx >= 0:
         prefix = line[:hash_idx].rstrip()
         other_comments = line[hash_idx:].strip()
@@ -241,7 +292,9 @@ def _merge_type_ignore(*, raw_line: str, codes: ErrorCodes) -> str:
     type_ignore_part = f"{marker}[{', '.join(all_codes)}]"
 
     # Rebuild other_comments without type: ignore, preserving noqa and other comments.
-    remaining = _TYPE_IGNORE_RE.sub("", other_comments).replace("  ", " ").strip()
+    # Use re.sub to collapse only 3+ spaces (artifacts from removing the type: ignore token)
+    # to exactly 2 spaces, leaving intentional double-space separators intact.
+    remaining = re.sub(r" {3,}", "  ", _TYPE_IGNORE_RE.sub("", other_comments)).strip()
     if remaining.startswith(",") or remaining.endswith(","):
         remaining = remaining.strip(",").strip()
     other_part = f"  {remaining}" if remaining and remaining != "#" else ""

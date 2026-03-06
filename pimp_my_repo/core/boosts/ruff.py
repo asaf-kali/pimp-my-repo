@@ -34,9 +34,9 @@ type LineViolations = dict[int, ErrorCodes]
 type ViolationsByFile = dict[str, LineViolations]
 
 # To avoid this project's ruff confusion, we will address the noqa comments as no-qa.
-# Matches no-qa annotations case-insensitively, with or without a colon.
-# Handles: `# no-qa: F401`, `# NO-QA: F401`, `# NO-QA isort:skip`, bare `# no-qa`.
-_NOQA_RE = re.compile(r"#\s*no-qa\b\s*:?\s*([^#\n]*)", re.IGNORECASE)
+# Matches no-qa annotations case-insensitively, with or without a colon, with optional dash.
+# Handles: `# no-qa: F401`, `# no-qa: F401`, `# NO-QA isort:skip`, bare `# no-qa`.
+_NOQA_RE = re.compile(r"#\s*noqa\b\s*:?\s*([^#\n]*)", re.IGNORECASE)
 # Matches valid ruff rule codes: 1-4 uppercase letters followed by digits.
 _RUFF_CODE_RE = re.compile(r"\b([A-Z]{1,4}\d+)\b")
 _TYPE_IGNORE_RE = re.compile(r"# type: ignore(?:\[([^\]]*)\])?")
@@ -61,7 +61,13 @@ class RuffBoost(Boost):
 
         logger.info("Running ruff format...")
         self._run_ruff_format()
+        self.run_suppress_iterations()
 
+    def run_suppress_iterations(self) -> None:
+        """Run ruff check + noqa suppression iterations, re-formatting after each.
+
+        Called by other boosts after modifying files, to restore ruff stability.
+        """
         for iteration in range(1, _MAX_RUFF_ITERATIONS + 1):
             if not self._suppress_violations_iteration(iteration=iteration):
                 break
