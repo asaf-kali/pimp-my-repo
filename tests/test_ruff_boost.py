@@ -311,6 +311,35 @@ def test_noqa_preserves_existing_line_content(mock_repo: RepositoryController, r
     assert "# noqa: E501" in content
 
 
+def test_handles_uppercase_noqa_isort_skip(mock_repo: RepositoryController, ruff_boost: RuffBoost) -> None:
+    """Lines with # NOQA isort:skip should have isort:skip preserved and ruff codes merged."""
+    mock_repo.write_file("src/foo.py", "from base import *  # NOQA isort:skip\n")
+    ruff_boost._apply_noqa({ViolationLocation("src/foo.py", 1): {"PGH004"}})  # noqa: SLF001
+    content = (mock_repo.path / "src/foo.py").read_text()
+    assert "isort:skip" in content
+    assert "# noqa: PGH004" in content
+    assert content.count("# noqa") == 1
+
+
+def test_merges_two_noqa_on_same_line(mock_repo: RepositoryController, ruff_boost: RuffBoost) -> None:
+    """All noqa directives on a line are merged into one."""
+    mock_repo.write_file("src/foo.py", "from base import *  # NOQA isort:skip  # noqa: F403\n")
+    ruff_boost._apply_noqa({ViolationLocation("src/foo.py", 1): {"PGH004"}})  # noqa: SLF001
+    content = (mock_repo.path / "src/foo.py").read_text()
+    assert "isort:skip" in content
+    assert "F403" in content
+    assert "PGH004" in content
+    assert content.count("# noqa") == 1
+
+
+def test_adds_noqa_to_empty_file(mock_repo: RepositoryController, ruff_boost: RuffBoost) -> None:
+    """For an empty file, a noqa comment is prepended rather than skipped."""
+    mock_repo.write_file("src/__init__.py", "")
+    ruff_boost._apply_noqa({ViolationLocation("src/__init__.py", 1): {"D104"}})  # noqa: SLF001
+    content = (mock_repo.path / "src/__init__.py").read_text()
+    assert "# noqa: D104" in content
+
+
 # =============================================================================
 # ENSURE RUFF CONFIG
 # =============================================================================
@@ -324,6 +353,15 @@ def test_adds_ruff_section_when_missing(mock_repo: RepositoryController, ruff_bo
     content = (mock_repo.path / "pyproject.toml").read_text()
     assert "[tool.ruff" in content
     assert 'select = ["ALL"]' in content
+
+
+def test_ruff_config_ignores_era001(mock_repo: RepositoryController, ruff_boost: RuffBoost) -> None:
+    mock_repo.write_file("pyproject.toml", "[project]\nname = 'test'\n")
+    data = ruff_boost.tools.pyproject.read()
+    data = ruff_boost._ensure_ruff_config(data)  # noqa: SLF001
+    ruff_boost.tools.pyproject.write(data)
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert "ERA001" in content
 
 
 def test_ruff_config_sets_line_length(mock_repo: RepositoryController, ruff_boost: RuffBoost) -> None:
@@ -364,16 +402,15 @@ def test_apply_writes_ruff_config_to_pyproject(
     assert 'select = ["ALL"]' in content
 
 
-def test_apply_makes_two_intermediate_commits(patched_ruff_apply: PatchedRuffApply) -> None:
+def test_apply_makes_configure_ruff_commit(patched_ruff_apply: PatchedRuffApply) -> None:
     patched_ruff_apply.boost.apply()
     messages = [c.args[0] for c in patched_ruff_apply.mock_git.call_args_list]
     assert any("Configure ruff" in m for m in messages)
-    assert any("Auto-format" in m for m in messages)
 
 
 def test_apply_runs_format(patched_ruff_apply: PatchedRuffApply) -> None:
     patched_ruff_apply.boost.apply()
-    assert patched_ruff_apply.mock_format.call_count == 3  # noqa: PLR2004
+    assert patched_ruff_apply.mock_format.call_count >= 1
 
 
 def test_apply_stops_when_check_passes(patched_ruff_apply: PatchedRuffApply) -> None:

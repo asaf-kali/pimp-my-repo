@@ -14,6 +14,19 @@ _ALWAYS_TEMPLATES = ["macos", "windows", "linux", "jetbrains+all", "visualstudio
 class GitignoreBoost(Boost):
     """Boost for adding a comprehensive .gitignore file."""
 
+    def apply(self) -> None:
+        """Fetch .gitignore from gitignore.io, commit it, then reset git tracking."""
+        templates = self._detect_templates()
+        logger.info(f"Detected gitignore templates: {templates}")
+
+        generated = self._fetch_gitignore(templates)
+        if generated is None:
+            msg = "Could not fetch .gitignore content from gitignore.io"
+            raise RuntimeError(msg)
+
+        self._append_gitignore(generated)
+        logger.info("Written .gitignore")
+
     def _detect_templates(self) -> list[str]:
         """Detect project type and return matching gitignore.io template names."""
         templates = list(_ALWAYS_TEMPLATES)
@@ -50,10 +63,6 @@ class GitignoreBoost(Boost):
         content = f"{existing}{separator}\n{_GITIGNORE_HEADER}\n{generated}"
         gitignore_path.write_text(content, encoding="utf-8")
 
-    def _reset_git_tracking(self) -> None:
-        """Untrack all files then re-add, so gitignored files leave the index."""
-        self.git.reset_tracking()
-
     def _fetch_gitignore(self, templates: list[str]) -> str | None:
         """Fetch .gitignore content from the gitignore.io API."""
         url = f"{_GITIGNORE_API}/{','.join(templates)}"
@@ -67,28 +76,6 @@ class GitignoreBoost(Boost):
             logger.warning(f"Failed to fetch .gitignore from gitignore.io: {exc}")
             return None
 
-    def apply(self) -> None:
-        """Fetch .gitignore from gitignore.io, commit it, then reset git tracking."""
-        templates = self._detect_templates()
-        logger.info(f"Detected gitignore templates: {templates}")
-
-        generated = self._fetch_gitignore(templates)
-        if generated is None:
-            msg = "Could not fetch .gitignore content from gitignore.io"
-            raise RuntimeError(msg)
-
-        self._append_gitignore(generated)
-        logger.info("Written .gitignore")
-        self._commit_gitignore()
-
-        logger.info("Resetting git tracking to honour new .gitignore rules...")
-        self._reset_git_tracking()
-
-    def _commit_gitignore(self) -> None:
-        """Commit the .gitignore addition if something changed."""
-        self.git.add(".gitignore")
-        self.git.commit("✨ Add .gitignore", no_verify=True)
-
     def commit_message(self) -> str:
         """Generate commit message for Gitignore boost."""
-        return "🧹 Remove gitignored files from tracking"
+        return "🙈 Add .gitignore"

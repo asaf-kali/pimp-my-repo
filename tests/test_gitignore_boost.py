@@ -270,18 +270,6 @@ def test_preserves_existing_content(mock_repo: RepositoryController, gitignore_b
 
 
 # =============================================================================
-# RESET GIT TRACKING
-# =============================================================================
-
-
-def test_calls_rm_cached_then_add(
-    gitignore_boost_with_mocked_reset: GitignoreBoostWithMockedReset,
-) -> None:
-    gitignore_boost_with_mocked_reset.boost._reset_git_tracking()  # noqa: SLF001
-    gitignore_boost_with_mocked_reset.mock_reset.assert_called_once()
-
-
-# =============================================================================
 # APPLY
 # =============================================================================
 
@@ -292,17 +280,6 @@ def test_apply_writes_gitignore(
 ) -> None:
     patched_gitignore_apply.boost.apply()
     assert (mock_repo.path / ".gitignore").exists()
-
-
-def test_apply_makes_intermediate_commit(patched_gitignore_apply: PatchedGitignoreApply) -> None:
-    patched_gitignore_apply.boost.apply()
-    messages = [c.args[0] for c in patched_gitignore_apply.mock_commit.call_args_list]
-    assert any("✨ Add .gitignore" in m for m in messages)
-
-
-def test_apply_resets_tracking(patched_gitignore_apply: PatchedGitignoreApply) -> None:
-    patched_gitignore_apply.boost.apply()
-    patched_gitignore_apply.mock_reset.assert_called_once()
 
 
 @pytest.mark.smoke
@@ -323,7 +300,7 @@ def test_apply_fails_when_fetch_fails(
 
 
 def test_commit_message(gitignore_boost: GitignoreBoost) -> None:
-    assert gitignore_boost.commit_message() == "🧹 Remove gitignored files from tracking"
+    assert gitignore_boost.commit_message() == "🙈 Add .gitignore"
 
 
 def test_get_name() -> None:

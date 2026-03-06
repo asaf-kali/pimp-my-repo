@@ -35,6 +35,6 @@ def run_command(
     if result.returncode != 0 and check:
         if log_on_error:
             output = (result.stderr or result.stdout).strip()
-            logger.error(f"Command {cmd!r} failed: {output}")
+            logger.debug(f"Command {cmd!r} failed: {output}")
         raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
     return result
