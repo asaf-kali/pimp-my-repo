@@ -30,8 +30,10 @@ Each boost: configures the tool in `pyproject.toml`, runs it, suppresses all vio
 - **"errors prevented further checking"** → parse uncoded errors (no `[code]`), exclude those files
 - **Triple-quoted strings** (critical): if violation line opens `"""` or `'''`, placing comment after it embeds it inside the string. Fix:
   - `func("""` → split at `"""`, comment after `(`, triple-quote to next line
-  - `x = """` → wrap with `()`, add `)` after closing triple-quote
+  - `x = """` → place `# type: ignore` on the **closing** `"""` line (mypy recognizes it there); do NOT wrap with `()` — ruff UP034 removes extraneous parens, causing oscillation
   - Process violations in **reverse line order** so line insertions don't shift pending indices
+- **`'"""'` (single-quoted string containing triple double-quotes)**: must NOT be treated as an unclosed triple-quote; `_find_unclosed_triple_quote_pos` skips single-char quoted strings before checking for triple-quote sequences
+- **Syntax error escalation**: try file-level exclusion first; if mypy still reports the file (discovery-stage import), escalate to parent directory exclusion (append `/` to path)
 
 ## Key implementation details
 - TOML: `re.escape("a/b.py")` = `a/b\.py` → serialized as `a/b\\.py` in file (double backslash)

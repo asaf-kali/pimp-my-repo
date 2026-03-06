@@ -352,16 +352,36 @@ def test_type_ignore_placed_before_triple_quote_in_function_call(
     assert '"""' not in lines[0]
 
 
-def test_type_ignore_placed_before_triple_quote_in_assignment(
+def test_type_ignore_placed_on_closing_triple_quote_in_assignment(
     mock_repo: RepositoryController, mypy_boost: MypyBoost
 ) -> None:
-    """type: ignore must wrap the assignment with () when the RHS opens a triple-quoted string."""
+    """For assignments, type: ignore goes on the CLOSING triple-quote line.
+
+    mypy attributes the assignment error to the opening triple-quote line but recognises
+    a type: ignore on the closing line as suppressing it. Placing it on the opening line
+    via a () wrapper is removed by ruff UP034, causing an oscillation loop.
+    """
     mock_repo.write_file("src/foo.py", 'sql = """\nCREATE TABLE\n"""\n')
     mypy_boost._apply_type_ignores({_vl("src/foo.py", 1): {"assignment"}})  # noqa: SLF001
-    lines = (mock_repo.path / "src/foo.py").read_text().splitlines()
-    assert "# type: ignore[assignment]" in lines[0]
-    assert '"""' not in lines[0]
-    assert '""")' in (mock_repo.path / "src/foo.py").read_text()
+    content = (mock_repo.path / "src/foo.py").read_text()
+    closing_line = content.splitlines()[-1]
+    assert "# type: ignore[assignment]" in content
+    assert '"""' in closing_line
+    assert "# type: ignore[assignment]" in closing_line
+
+
+def test_type_ignore_on_line_with_single_quoted_triple_double_quote(
+    mock_repo: RepositoryController, mypy_boost: MypyBoost
+) -> None:
+    """A single-quoted string containing '\"\"\"' must not be confused with a triple-quote opener.
+
+    Without this fix, _find_unclosed_triple_quote_pos mistakes '\"\"\"' for an unclosed \"\"\"
+    and places the type: ignore on some later line instead of the current one.
+    """
+    mock_repo.write_file("src/foo.py", """x = '\"\"\"'\n""")
+    mypy_boost._apply_type_ignores({_vl("src/foo.py", 1): {"attr-defined"}})  # noqa: SLF001
+    content = (mock_repo.path / "src/foo.py").read_text()
+    assert "# type: ignore[attr-defined]" in content.splitlines()[0]
 
 
 def test_merges_two_type_ignore_comments_into_one(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
@@ -564,20 +584,45 @@ def test_excludes_syntax_error_file_in_pyproject(
     assert r"src/bad\\.py" in content
 
 
+def test_escalates_to_parent_dir_when_syntax_file_exclusion_fails(
+    mock_repo: RepositoryController,
+    patched_mypy_apply: PatchedMypyApply,
+    fail_result: SubprocessResultFactory,
+    ok_result: SubprocessResultFactory,
+) -> None:
+    """When file-level exclusion doesn't prevent mypy from reporting a syntax error, escalate.
+
+    This happens e.g. when the file is imported during package discovery. Escalating to
+    excluding the parent directory makes mypy skip the whole package.
+    """
+    syntax_error_output = "src/pkg/bad.py:5: error: Invalid syntax  [syntax]\n"
+    patched_mypy_apply.mock_mypy.side_effect = [
+        fail_result(syntax_error_output),  # iteration 1: exclude src/pkg/bad.py (new)
+        fail_result(syntax_error_output),  # iteration 2: file already excluded → escalate to src/pkg/
+        ok_result(),  # iteration 3: mypy passes after parent-dir exclusion
+    ]
+    patched_mypy_apply.boost.apply()
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert "src/pkg/" in content
+    assert patched_mypy_apply.mock_mypy.call_count == 3  # noqa: PLR2004
+
+
 def test_stops_when_syntax_file_already_excluded(
     patched_mypy_apply: PatchedMypyApply,
     fail_result: SubprocessResultFactory,
 ) -> None:
-    """Mypy may keep reporting a syntax-error file even after it is excluded in pyproject.toml.
+    """Even if escalation to parent dir can't make mypy stop, the loop still terminates.
 
-    (e.g. the exclude pattern didn't prevent discovery). The loop must stop after the second
-    iteration when no new files were added to the exclude list.
+    Iteration 1 excludes the file, iteration 2 escalates to the parent dir,
+    iteration 3 finds nothing new to exclude and stops.
     """
     syntax_error_output = "src/bad.py:5: error: Invalid syntax  [syntax]\n"
     patched_mypy_apply.mock_mypy.return_value = fail_result(syntax_error_output)
     patched_mypy_apply.boost.apply()
-    # Iteration 1: excludes src/bad.py (new). Iteration 2: already excluded, no progress → stop.
-    assert patched_mypy_apply.mock_mypy.call_count == 2  # noqa: PLR2004
+    # Iteration 1: excludes src/bad.py (new file pattern).
+    # Iteration 2: file already excluded → escalates to src/ (new parent pattern).
+    # Iteration 3: both already excluded → no progress → stop.
+    assert patched_mypy_apply.mock_mypy.call_count == 3  # noqa: PLR2004
 
 
 def test_stops_when_uncoded_blocking_file_already_excluded(

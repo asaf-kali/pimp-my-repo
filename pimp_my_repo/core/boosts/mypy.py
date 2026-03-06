@@ -14,7 +14,7 @@ from pimp_my_repo.core.tools.pyproject import PyProjectNotFoundError
 if TYPE_CHECKING:
     import subprocess
 
-_MAX_MYPY_ITERATIONS = 7
+_MAX_MYPY_ITERATIONS = 10
 
 # Supports both "path:line: error:" and "path:line:column: error:" (--show-column-numbers)
 _MYPY_ERROR_RE = re.compile(
@@ -55,6 +55,10 @@ class MypyBoost(Boost):
         self._verify_preconditions()
         self._configure_mypy()
         self._apply_ignores()
+
+    def commit_message(self) -> str:
+        """Generate commit message for Mypy boost."""
+        return "✅ Silence mypy violations"
 
     def _verify_preconditions(self) -> None:
         self._verify_uv_present()
@@ -145,15 +149,7 @@ class MypyBoost(Boost):
             idx = lineno - 1
             if idx >= len(lines):
                 continue
-            codes_to_remove = {c[1:] for c in codes if c.startswith("!")}
-            effective_codes = {c for c in codes if not c.startswith("!") and c != "unused-ignore"}
-            if codes_to_remove:
-                lines[idx] = _remove_type_ignore_codes(raw_line=lines[idx], codes=codes_to_remove)
-            if effective_codes:
-                _place_type_ignore(lines=lines, idx=idx, codes=effective_codes)
-            if not codes_to_remove and not effective_codes:
-                # Bare unused-ignore with no parseable codes: remove the whole comment.
-                lines[idx] = _remove_type_ignore(lines[idx])
+            _apply_violation_to_line(lines=lines, idx=idx, codes=codes)
 
         full_path.write_text("".join(lines), encoding="utf-8")
 
@@ -171,15 +167,9 @@ class MypyBoost(Boost):
             logger.info("mypy passed with no errors")
             return False
 
-        violations = self._parse_violations(result.stdout + result.stderr)
-
-        syntax_files = {loc.filepath for loc, codes in violations.items() if "syntax" in codes}
-        newly_excluded_syntax = False
-        if syntax_files:
-            newly_excluded_syntax = self._exclude_mypy_files(syntax_files)
-            violations = {loc: codes for loc, codes in violations.items() if loc.filepath not in syntax_files}
-
         output = result.stdout + result.stderr
+        violations = self._parse_violations(output)
+        violations, newly_excluded_syntax = self._handle_syntax_violations(violations)
         newly_excluded_uncoded = self._exclude_blocking_uncoded_errors(output)
 
         if not violations and not newly_excluded_syntax and not newly_excluded_uncoded:
@@ -191,6 +181,22 @@ class MypyBoost(Boost):
             self._apply_type_ignores(violations)
             self._run_ruff()
         return True
+
+    def _handle_syntax_violations(self, violations: ViolationsByLocation) -> tuple[ViolationsByLocation, bool]:
+        """Exclude syntax-error files. Returns (remaining_violations, newly_excluded)."""
+        syntax_files = {loc.filepath for loc, codes in violations.items() if "syntax" in codes}
+        if not syntax_files:
+            return violations, False
+        newly_excluded = self._exclude_mypy_files(syntax_files)
+        if not newly_excluded:
+            # File-level exclusion already present but mypy still reports the file.
+            # mypy cannot prevent discovery-stage syntax errors via file-level patterns
+            # (e.g. when the file is imported during package discovery). Escalate to
+            # excluding the parent directory.
+            parent_dirs = {str(Path(f).parent) + "/" for f in syntax_files}
+            newly_excluded = self._exclude_mypy_files(parent_dirs)
+        remaining = {loc: codes for loc, codes in violations.items() if loc.filepath not in syntax_files}
+        return remaining, newly_excluded
 
     def _exclude_mypy_files(self, files: set[str]) -> bool:
         """Add files to [tool.mypy] exclude list in pyproject.toml (as regex patterns).
@@ -273,30 +279,40 @@ class MypyBoost(Boost):
     def _add_mypy(self) -> None:
         self.uv.add_package("mypy", group="lint")
 
-    def commit_message(self) -> str:
-        """Generate commit message for Mypy boost."""
-        return "✅ Silence mypy violations"
-
 
 def _find_unclosed_triple_quote_pos(line: str) -> tuple[int, str] | None:
     """Return (position, triple_quote) of the first unclosed triple-quote opener in line.
 
-    Scans left-to-right, pairing openers with closers. If the last opener has no closer
-    on the same line, returns its position so we can place the comment before it.
+    Scans left-to-right, pairing openers with closers. Single- and double-quoted
+    non-triple strings are skipped so that e.g. '\"\"\"' is not mistaken for a
+    triple-quote opener. If the last opener has no closer on the same line, returns
+    its position so we can place the comment before it.
     """
     stripped = line.rstrip("\n").rstrip("\r")
     i = 0
     while i < len(stripped):
         ch = stripped[i]
-        if ch in ('"', "'"):
-            triple_quote = ch * 3
-            if stripped[i : i + 3] == triple_quote:
-                closer = stripped.find(triple_quote, i + 3)
-                if closer == -1:
-                    return (i, triple_quote)
-                i = closer + 3
-                continue
-        i += 1
+        if ch not in ('"', "'"):
+            i += 1
+            continue
+        triple_quote = ch * 3
+        if stripped[i : i + 3] == triple_quote:
+            closer = stripped.find(triple_quote, i + 3)
+            if closer == -1:
+                return (i, triple_quote)
+            i = closer + 3
+        else:
+            # Single-char quoted string: skip to its end, respecting backslash escapes,
+            # so that e.g. '\"\"\"' is not mistaken for a triple-quote opener.
+            i += 1  # skip opening quote
+            while i < len(stripped):
+                if stripped[i] == "\\":
+                    i += 2  # skip escaped character
+                elif stripped[i] == ch:
+                    i += 1  # skip closing quote
+                    break
+                else:
+                    i += 1
     return None
 
 
@@ -313,9 +329,15 @@ def _place_type_ignore(*, lines: list[str], idx: int, codes: ErrorCodes) -> None
 
     If the line opens an unclosed triple-quoted string, placing a comment after the
     opening triple-quote would embed it inside the string where mypy cannot see it.
-    Instead, the comment is placed before the triple-quote by splitting the line.
-    The caller must process violations in reverse line order so that any inserted
-    lines do not shift the indices of not-yet-processed earlier violations.
+
+    For function calls (code_part ends with '('), the comment is placed after '(' and
+    the triple-quote is moved to the next line. The caller must process violations in
+    reverse line order so that inserted lines do not shift pending indices.
+
+    For assignments, the comment is placed on the CLOSING triple-quote line instead of
+    the opening line. mypy attributes the error to the opening line but recognises a
+    type: ignore on the closing line as suppressing it — and this avoids creating
+    parenthesised wrappers that ruff may remove via UP034 (causing oscillation).
     """
     raw_line = lines[idx]
     result = _find_unclosed_triple_quote_pos(raw_line)
@@ -326,28 +348,53 @@ def _place_type_ignore(*, lines: list[str], idx: int, codes: ErrorCodes) -> None
     triple_quote_pos, triple_quote = result
     line = raw_line.rstrip("\n").rstrip("\r")
     eol = raw_line[len(line) :]
-
     code_part = line[:triple_quote_pos]
-    string_part = line[triple_quote_pos:]
-    indent = len(line) - len(line.lstrip())
-    type_ignore = f"# type: ignore[{', '.join(sorted(codes))}]"
 
     if code_part.rstrip().endswith("("):
-        # Function call: place comment after (, move triple-quote to next line.
+        # Function call: place comment after ( and move triple-quote to next line.
+        type_ignore = f"# type: ignore[{', '.join(sorted(codes))}]"
         lines[idx] = f"{code_part.rstrip()}  {type_ignore}{eol}"
-        lines.insert(idx + 1, f"{' ' * (indent + 4)}{string_part.lstrip()}{eol}")
-    else:
-        # Assignment or other expression: wrap the RHS with () so the comment applies.
-        # Find the closing triple-quote BEFORE inserting (indices shift after insert).
-        closing_idx = _find_closing_triple_quote(lines=lines, start_idx=idx + 1, quote=triple_quote)
-        if closing_idx is not None:
-            closing_raw = lines[closing_idx]
-            closing_line = closing_raw.rstrip("\n").rstrip("\r")
-            closing_eol = closing_raw[len(closing_line) :]
-            close_pos = closing_line.find(triple_quote) + len(triple_quote)
-            lines[closing_idx] = f"{closing_line[:close_pos]}){closing_line[close_pos:]}{closing_eol}"
-        lines[idx] = f"{code_part.rstrip()} (  {type_ignore}{eol}"
-        lines.insert(idx + 1, f"{' ' * (indent + 4)}{string_part.lstrip()}{eol}")
+        lines.insert(idx + 1, f"{' ' * (len(line) - len(line.lstrip()) + 4)}{line[triple_quote_pos:].lstrip()}{eol}")
+        return
+
+    _place_type_ignore_on_closing_triple_quote(
+        lines=lines,
+        idx=idx,
+        triple_quote=triple_quote,
+        codes=codes,
+    )
+
+
+def _place_type_ignore_on_closing_triple_quote(
+    *,
+    lines: list[str],
+    idx: int,
+    triple_quote: str,
+    codes: ErrorCodes,
+) -> None:
+    """Handle assignment triple-quote: place type: ignore on the closing triple-quote line.
+
+    mypy attributes assignment errors to the opening \"\"\" line but recognises a
+    type: ignore on the closing \"\"\" line as suppressing it. This avoids creating ()
+    wrappers that ruff may remove via UP034, which would cause an oscillation loop.
+    """
+    closing_idx = _find_closing_triple_quote(lines=lines, start_idx=idx + 1, quote=triple_quote)
+    if closing_idx is None:
+        return
+    lines[closing_idx] = _merge_type_ignore(raw_line=lines[closing_idx], codes=codes)
+
+
+def _apply_violation_to_line(*, lines: list[str], idx: int, codes: ErrorCodes) -> None:
+    """Apply or remove type: ignore codes on a single source line."""
+    codes_to_remove = {c[1:] for c in codes if c.startswith("!")}
+    effective_codes = {c for c in codes if not c.startswith("!") and c != "unused-ignore"}
+    if codes_to_remove:
+        lines[idx] = _remove_type_ignore_codes(raw_line=lines[idx], codes=codes_to_remove)
+    if effective_codes:
+        _place_type_ignore(lines=lines, idx=idx, codes=effective_codes)
+    if not codes_to_remove and not effective_codes:
+        # Bare unused-ignore with no parseable codes: remove the whole comment.
+        lines[idx] = _remove_type_ignore(lines[idx])
 
 
 def _remove_type_ignore(raw_line: str) -> str:

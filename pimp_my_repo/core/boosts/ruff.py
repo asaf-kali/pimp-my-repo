@@ -14,7 +14,7 @@ from pimp_my_repo.core.tools.pyproject import PyProjectNotFoundError
 if TYPE_CHECKING:
     import subprocess
 
-_MAX_RUFF_ITERATIONS = 7
+_MAX_RUFF_ITERATIONS = 10
 
 # Rules that must never be suppressed via noqa:
 # - ERA001: treats the noqa comment itself as commented-out code → oscillation loop.
