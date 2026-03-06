@@ -64,6 +64,10 @@ class RuffBoost(Boost):
         self._run_ruff_format()
         self.run_suppress_iterations()
 
+    def commit_message(self) -> str:
+        """Generate commit message for Ruff boost."""
+        return "✅ Silence ruff violations"
+
     def run_suppress_iterations(self) -> None:
         """Run ruff check + noqa suppression iterations, re-formatting after each.
 
@@ -187,22 +191,23 @@ class RuffBoost(Boost):
             self._apply_noqa(violations)
         return True
 
-    def _parse_syntax_error_files(self, output: str) -> list[str]:
+    def _parse_syntax_error_files(self, output: str) -> set[str]:
         """Extract relative paths of files with syntax errors from ruff JSON output."""
+        files: set[str] = set()
         try:
             raw_violations = json.loads(output)
-        except json.JSONDecodeError, ValueError:
-            return []
-        files: list[str] = []
+        except (json.JSONDecodeError, ValueError):  # fmt: off
+            return files
         for v in raw_violations:
-            if v.get("code") == "invalid-syntax":
-                abs_path = v.get("filename", "")
-                try:
-                    rel_path = str(Path(abs_path).relative_to(self.repo_path))
-                except ValueError:
-                    rel_path = abs_path
-                files.append(rel_path)
-        return list(dict.fromkeys(files))
+            if v.get("code") != "invalid-syntax":
+                continue
+            abs_path = v.get("filename", "")
+            try:
+                rel_path = str(Path(abs_path).relative_to(self.repo_path))
+            except ValueError:
+                rel_path = abs_path
+            files.add(rel_path)
+        return files
 
     def _exclude_syntax_error_files(self, output: str) -> bool:
         """Add files with syntax errors to [tool.ruff.exclude]. Returns True if any added."""
@@ -213,21 +218,18 @@ class RuffBoost(Boost):
         self._add_ruff_excludes(files)
         return True
 
-    def _add_ruff_excludes(self, files: list[str]) -> None:
-        """Append files to [tool.ruff.exclude] in pyproject.toml."""
+    def _add_ruff_excludes(self, files: set[str]) -> None:
+        """Append files to [tool.ruff.extend-exclude] in pyproject.toml."""
         data = self.pyproject.read()
         tool_section: Any = data["tool"]
         ruff_section: Any = tool_section["ruff"]
-        existing: list[str] = list(ruff_section.get("exclude", []))
-        new_excludes = list(dict.fromkeys(existing + files))
+        existing: set[str] = set(ruff_section.get("extend-exclude") or set())
+        new_excludes = existing | files
         if new_excludes == existing:
             return
-        ruff_section["exclude"] = new_excludes
+        ordered = sorted(new_excludes)
+        ruff_section["extend-exclude"] = ordered
         self.pyproject.write(data)
-
-    def commit_message(self) -> str:
-        """Generate commit message for Ruff boost."""
-        return "✅ Silence ruff violations"
 
 
 def _merge_noqa(*, raw_line: str, codes: ErrorCodes) -> str:
