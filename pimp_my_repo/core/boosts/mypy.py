@@ -219,12 +219,26 @@ class MypyBoost(Boost):
         self.git.commit("✅ Silence mypy violations", no_verify=True)
         return True
 
+    def _add_dmypy_to_gitignore(self) -> None:
+        """Ensure .dmypy.json is listed in .gitignore."""
+        entry = ".dmypy.json"
+        gitignore_path = self.repo_path / ".gitignore"
+        if gitignore_path.exists():
+            existing = gitignore_path.read_text(encoding="utf-8")
+            if entry in existing:
+                return
+            separator = "" if existing.endswith("\n") else "\n"
+            gitignore_path.write_text(f"{existing}{separator}{entry}\n", encoding="utf-8")
+        else:
+            gitignore_path.write_text(f"{entry}\n", encoding="utf-8")
+
     def _configure_mypy(self) -> None:
         self._add_mypy()
         logger.info("Configuring [tool.mypy] strict = true in pyproject.toml...")
         pyproject_data = self.pyproject.read()
         pyproject_data = self._ensure_mypy_config(pyproject_data)
         self.pyproject.write(pyproject_data)
+        self._add_dmypy_to_gitignore()
         self.git.commit("🔧 Configure mypy with strict mode", no_verify=True)
         logger.info("Committed mypy configuration")
 

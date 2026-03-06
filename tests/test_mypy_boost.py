@@ -396,6 +396,37 @@ def test_sets_strict_true_on_existing_mypy_section(mock_repo: RepositoryControll
 
 
 # =============================================================================
+# ADD DMYPY TO GITIGNORE
+# =============================================================================
+
+
+def test_add_dmypy_creates_gitignore_when_absent(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
+    mypy_boost._add_dmypy_to_gitignore()  # noqa: SLF001
+    assert (mock_repo.path / ".gitignore").read_text() == ".dmypy.json\n"
+
+
+def test_add_dmypy_appends_to_existing_gitignore(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
+    mock_repo.write_file(".gitignore", "*.pyc\n__pycache__/\n")
+    mypy_boost._add_dmypy_to_gitignore()  # noqa: SLF001
+    content = (mock_repo.path / ".gitignore").read_text()
+    assert "*.pyc" in content
+    assert ".dmypy.json" in content
+
+
+def test_add_dmypy_idempotent(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
+    mock_repo.write_file(".gitignore", ".dmypy.json\n")
+    mypy_boost._add_dmypy_to_gitignore()  # noqa: SLF001
+    assert (mock_repo.path / ".gitignore").read_text().count(".dmypy.json") == 1
+
+
+def test_add_dmypy_adds_newline_before_entry(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
+    mock_repo.write_file(".gitignore", "*.pyc")  # no trailing newline
+    mypy_boost._add_dmypy_to_gitignore()  # noqa: SLF001
+    content = (mock_repo.path / ".gitignore").read_text()
+    assert content == "*.pyc\n.dmypy.json\n"
+
+
+# =============================================================================
 # APPLY
 # =============================================================================
 
