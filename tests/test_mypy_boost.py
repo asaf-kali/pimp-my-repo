@@ -564,6 +564,37 @@ def test_excludes_syntax_error_file_in_pyproject(
     assert r"src/bad\\.py" in content
 
 
+def test_stops_when_syntax_file_already_excluded(
+    patched_mypy_apply: PatchedMypyApply,
+    fail_result: SubprocessResultFactory,
+) -> None:
+    """Mypy may keep reporting a syntax-error file even after it is excluded in pyproject.toml.
+
+    (e.g. the exclude pattern didn't prevent discovery). The loop must stop after the second
+    iteration when no new files were added to the exclude list.
+    """
+    syntax_error_output = "src/bad.py:5: error: Invalid syntax  [syntax]\n"
+    patched_mypy_apply.mock_mypy.return_value = fail_result(syntax_error_output)
+    patched_mypy_apply.boost.apply()
+    # Iteration 1: excludes src/bad.py (new). Iteration 2: already excluded, no progress → stop.
+    assert patched_mypy_apply.mock_mypy.call_count == 2  # noqa: PLR2004
+
+
+def test_stops_when_uncoded_blocking_file_already_excluded(
+    patched_mypy_apply: PatchedMypyApply,
+    fail_result: SubprocessResultFactory,
+) -> None:
+    """Same convergence guarantee for uncoded blocking errors (e.g. 'found twice')."""
+    mypy_output = (
+        'tests/pkg/wild.py: error: Source file found twice under different module names: "a" and "b"\n'
+        "Found 1 error in 1 file (errors prevented further checking)\n"
+    )
+    patched_mypy_apply.mock_mypy.return_value = fail_result(mypy_output)
+    patched_mypy_apply.boost.apply()
+    # Iteration 1: excludes tests/pkg/ (new). Iteration 2: already excluded, no progress → stop.
+    assert patched_mypy_apply.mock_mypy.call_count == 2  # noqa: PLR2004
+
+
 # =============================================================================
 # MISC
 # =============================================================================

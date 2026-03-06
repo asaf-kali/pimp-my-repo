@@ -174,14 +174,15 @@ class MypyBoost(Boost):
         violations = self._parse_violations(result.stdout + result.stderr)
 
         syntax_files = {loc.filepath for loc, codes in violations.items() if "syntax" in codes}
+        newly_excluded_syntax = False
         if syntax_files:
-            self._exclude_mypy_files(syntax_files)
+            newly_excluded_syntax = self._exclude_mypy_files(syntax_files)
             violations = {loc: codes for loc, codes in violations.items() if loc.filepath not in syntax_files}
 
         output = result.stdout + result.stderr
-        uncoded_files = self._exclude_blocking_uncoded_errors(output)
+        newly_excluded_uncoded = self._exclude_blocking_uncoded_errors(output)
 
-        if not violations and not syntax_files and not uncoded_files:
+        if not violations and not newly_excluded_syntax and not newly_excluded_uncoded:
             logger.info("No parseable violations found; stopping")
             return False
 
@@ -191,8 +192,11 @@ class MypyBoost(Boost):
             self._run_ruff()
         return True
 
-    def _exclude_mypy_files(self, files: set[str]) -> None:
-        """Add files to [tool.mypy] exclude list in pyproject.toml (as regex patterns)."""
+    def _exclude_mypy_files(self, files: set[str]) -> bool:
+        """Add files to [tool.mypy] exclude list in pyproject.toml (as regex patterns).
+
+        Returns True if new files were actually added, False if all were already excluded.
+        """
         logger.info(f"Excluding {len(files)} file(s) with syntax errors from mypy: {files}")
         data = self.pyproject.read()
         tool_section: Any = data["tool"]
@@ -200,18 +204,19 @@ class MypyBoost(Boost):
         existing: set[str] = set(mypy_section.get("exclude", []))
         new_excludes = existing | {re.escape(f) for f in files}
         if new_excludes == existing:
-            return
+            return False
         mypy_section["exclude"] = sorted(new_excludes)
         self.pyproject.write(data)
+        return True
 
-    def _exclude_blocking_uncoded_errors(self, output: str) -> set[str]:
-        """Exclude files with no-code blocking errors. Returns the excluded file set."""
+    def _exclude_blocking_uncoded_errors(self, output: str) -> bool:
+        """Exclude files with no-code blocking errors. Returns True if new files were excluded."""
         if "errors prevented further checking" not in output:
-            return set()
+            return False
         files = self._parse_uncoded_error_files(output)
-        if files:
-            self._exclude_mypy_files(files)
-        return files
+        if not files:
+            return False
+        return self._exclude_mypy_files(files)
 
     def _parse_uncoded_error_files(self, output: str) -> set[str]:
         """Extract files/dirs with mypy errors that have no [code] (can't be suppressed inline).
