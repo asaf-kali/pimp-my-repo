@@ -53,6 +53,7 @@ package = true
 
 [project.scripts]
 pimp-my-repo = "pimp_my_repo.cli.main:main"
+pmr = "pimp_my_repo.cli.main:main"
 
 [build-system]
 requires = [ "hatchling" ]
@@ -106,7 +107,7 @@ patch_tags = [
 
 [tool.pytest.ini_options]
 pythonpath = "app"
-testpaths = ["tests"]
+testpaths = [ "tests" ]
 addopts = "-s --disable-pytest-warnings -v"
 markers = [
     "smoke: marks tests as fast smoke tests covering core functionality",
@@ -141,7 +142,7 @@ exclude = [
 
 [tool.ruff.lint.flake8-type-checking]
 runtime-evaluated-base-classes = [
-  "pydantic.BaseModel",
+    "pydantic.BaseModel",
 ]
 
 [tool.mypy]
