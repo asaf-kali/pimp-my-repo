@@ -1,5 +1,6 @@
 """Mypy boost implementation."""
 
+import abc
 import re
 import shutil
 from abc import abstractmethod
@@ -86,7 +87,7 @@ class SyntaxHandlingResult(NamedTuple):
     newly_excluded: bool
 
 
-class BaseMypyBoost(Boost):
+class BaseMypyBoost(Boost, abc.ABC):
     """Abstract base for mypy-based boosts. Subclasses supply the type-checker runner."""
 
     def apply(self) -> None:
@@ -94,9 +95,6 @@ class BaseMypyBoost(Boost):
         self._verify_preconditions()
         self._configure_mypy()
         self._apply_ignores()
-
-    def commit_message(self) -> str:
-        return "✅ Silence mypy violations"
 
     @abstractmethod
     def _run_type_checker(self) -> subprocess.CompletedProcess[str]:
@@ -364,6 +362,9 @@ class BaseMypyBoost(Boost):
 class MypyBoost(BaseMypyBoost):
     """Boost that silences mypy violations using plain mypy (authoritative, slower)."""
 
+    def commit_message(self) -> str:
+        return "✅ Silence mypy violations"
+
     def _run_type_checker(self) -> subprocess.CompletedProcess[str]:
         return self.uv.run("run", "mypy", ".", check=False)
 
@@ -375,6 +376,9 @@ class DmypyBoost(BaseMypyBoost):
     dmypy finds some real errors that plain mypy misses (e.g. in complex inheritance), but also
     produces false positives that result in unnecessary type: ignore comments.
     """
+
+    def commit_message(self) -> str:
+        return "✅ Silence dmypy violations"
 
     def _run_type_checker(self) -> subprocess.CompletedProcess[str]:
         self.uv.run("run", "dmypy", "kill", check=False)
