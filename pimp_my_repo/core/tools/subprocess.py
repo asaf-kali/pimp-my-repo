@@ -1,5 +1,6 @@
 """Shared subprocess execution utility."""
 
+import os
 import subprocess
 from typing import TYPE_CHECKING
 
@@ -23,14 +24,19 @@ def run_command(
         cwd: Working directory for the command. Defaults to the current directory.
         check: If True and the command exits non-zero, raise CalledProcessError.
         log_on_error: If True, log stderr/stdout before raising on non-zero exit.
+        env_vars: Environment variables to set for the command. Defaults to None.
 
     """
+    env_vars = os.environ.copy()
+    env_vars.pop("VIRTUAL_ENV", None)  # Ensure subprocess doesn't inherit virtualenv
+    env_vars.pop("VIRTUAL_ENV_PROMPT", None)
     result = subprocess.run(  # noqa: S603
         cmd,
         cwd=cwd,
         capture_output=True,
         text=True,
         check=False,
+        env=env_vars,
     )
     if result.returncode != 0 and check:
         if log_on_error:
