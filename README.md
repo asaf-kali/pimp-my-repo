@@ -3,9 +3,9 @@
 🧙🏼‍♂️ A CLI wizard designed to modernize your Python repositories by adding essential development tools.
 
 [![PyPI](https://img.shields.io/pypi/v/pimp-my-repo)](https://pypi.org/project/pimp-my-repo/)
-[![Test](https://github.com/asaf-kali/pimp-my-repo/actions/workflows/test.yml/badge.svg)](https://github.com/asaf-kali/pimp-my-repo/actions/workflows/test.yml)
-[![Lint](https://github.com/asaf-kali/pimp-my-repo/actions/workflows/lint.yml/badge.svg)](https://github.com/asaf-kali/pimp-my-repo/actions/workflows/lint.yml)
-[![Type Check](https://github.com/asaf-kali/pimp-my-repo/actions/workflows/type-check.yml/badge.svg)](https://github.com/asaf-kali/pimp-my-repo/actions/workflows/type-check.yml)
+[![Checks](https://github.com/asaf-kali/pimp-my-repo/actions/workflows/checks.yml/badge.svg)](https://github.com/asaf-kali/pimp-my-repo/actions/workflows/checks.yml)
+[![Tests](https://github.com/asaf-kali/pimp-my-repo/actions/workflows/tests.yml/badge.svg)](https://github.com/asaf-kali/pimp-my-repo/actions/workflows/tests.yml)
+[![Release](https://github.com/asaf-kali/pimp-my-repo/actions/workflows/release.yml/badge.svg)](https://github.com/asaf-kali/pimp-my-repo/actions/workflows/release.yml)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Type checked: mypy](https://img.shields.io/badge/type%20check-mypy-22aa11)](http://mypy-lang.org/)
 

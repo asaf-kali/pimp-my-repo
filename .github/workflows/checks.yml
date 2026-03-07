@@ -1,0 +1,21 @@
+name: Checks
+
+on:
+  workflow_call:
+
+jobs:
+  check-ruff:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: ./.github/actions/setup
+    - run: just install-all
+    - run: just check-ruff
+
+  check-mypy:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: ./.github/actions/setup
+    - run: just install-all
+    - run: just check-mypy

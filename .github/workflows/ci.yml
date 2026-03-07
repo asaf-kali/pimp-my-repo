@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  checks:
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    uses: ./.github/workflows/checks.yml
+
+  tests:
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    uses: ./.github/workflows/tests.yml
+
+  release:
+    needs: [checks, tests]
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/release.yml
+    secrets: inherit
+    permissions:
+      contents: write
+      id-token: write

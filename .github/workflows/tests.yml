@@ -1,12 +1,24 @@
-name: E2E Tests
+name: Tests
 
 on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
+  workflow_call:
 
 jobs:
+  test-unit:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: ./.github/actions/setup
+    - run: just install-test
+    - run: just cover-xml
+    - name: Extract coverage percentage
+      run: |
+        COVERAGE=$(just cover-percentage)
+        echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
+        echo "Coverage: $COVERAGE%"
+
   test-e2e:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -22,26 +34,9 @@ jobs:
           # Takes too long:
           # - https://github.com/pandas-dev/pandas.git
           # - https://github.com/scikit-learn/scikit-learn.git
-
     steps:
     - uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.14'
-
-    - name: Install UV
-      uses: astral-sh/setup-uv@v4
-      with:
-        version: "latest"
-        enable-cache: true
-
-    - name: Install just
-      uses: extractions/setup-just@v2
-
-    - name: Install dependencies
-      run: just install-run
-
+    - uses: ./.github/actions/setup
+    - run: just install-run
     - name: Run E2E test - ${{ matrix.repo }}
       run: just test-e2e ${{ matrix.repo }}
