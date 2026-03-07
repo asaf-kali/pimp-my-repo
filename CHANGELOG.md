@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.2.8 (2026-03-07)
+
+### 🖼️
+
+- 🖼️ Fix CI workflow structure ([#14](https://github.com/asaf-kali/pimp-my-repo/pull/14),
+  [`8211864`](https://github.com/asaf-kali/pimp-my-repo/commit/82118644fba5c5d6e9260a9117e6b30d46aa073e))
+
+- 🖼️ Simplify CI structure ([#15](https://github.com/asaf-kali/pimp-my-repo/pull/15),
+  [`9f078e7`](https://github.com/asaf-kali/pimp-my-repo/commit/9f078e76555b3be816c565f36cf8fbf65887415e))
+
+
 ## v0.2.7 (2026-03-07)
 
 ### 🛠️
