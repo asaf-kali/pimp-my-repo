@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.2.9 (2026-03-07)
+
+### 🖼️
+
+- 🖼️ Fix CI release ([#16](https://github.com/asaf-kali/pimp-my-repo/pull/16),
+  [`0597192`](https://github.com/asaf-kali/pimp-my-repo/commit/05971922a4f06e6e770183706098f9d390c1667e))
+
+
 ## v0.2.8 (2026-03-07)
 
 ### 🖼️
