@@ -1,6 +1,8 @@
 """Mypy boost implementation."""
 
 import re
+import shutil
+from abc import abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
@@ -55,8 +57,8 @@ class SyntaxHandlingResult(NamedTuple):
     newly_excluded: bool
 
 
-class MypyBoost(Boost):
-    """Boost for integrating Mypy type checker in strict mode."""
+class BaseMypyBoost(Boost):
+    """Abstract base for mypy-based boosts. Subclasses supply the type-checker runner."""
 
     def apply(self) -> None:
         """Add mypy, configure strict mode, commit, then suppress all violations."""
@@ -65,8 +67,14 @@ class MypyBoost(Boost):
         self._apply_ignores()
 
     def commit_message(self) -> str:
-        """Generate commit message for Mypy boost."""
         return "✅ Silence mypy violations"
+
+    @abstractmethod
+    def _run_type_checker(self) -> subprocess.CompletedProcess[str]:
+        """Run the type checker and return its result."""
+
+    def _configure_extras(self) -> None:
+        """Override to add subclass-specific setup steps inside _configure_mypy."""
 
     def _verify_preconditions(self) -> None:
         self._verify_uv_present()
@@ -88,9 +96,6 @@ class MypyBoost(Boost):
         except PyProjectNotFoundError as exc:
             msg = "No pyproject.toml found"
             raise BoostSkippedError(msg) from exc
-
-    def _run_mypy(self) -> subprocess.CompletedProcess[str]:
-        return self.uv.run("run", "mypy", ".", check=False)
 
     def _ensure_mypy_config(self, data: TOMLDocument) -> TOMLDocument:
         if "tool" not in data:
@@ -175,9 +180,9 @@ class MypyBoost(Boost):
                 break
 
     def _process_mypy_iteration(self, iteration: int) -> bool:
-        """Run mypy and apply ignores for one iteration. Returns True if should continue."""
+        """Run the type checker and apply ignores for one iteration. Returns True if should continue."""
         logger.info(f"Running mypy (iteration {iteration}/{_MAX_MYPY_ITERATIONS})...")
-        result = self._run_mypy()
+        result = self._run_type_checker()
 
         if result.returncode == 0:
             logger.info("mypy passed with no errors")
@@ -282,6 +287,44 @@ class MypyBoost(Boost):
             return
         RuffBoost(tools=self.tools).run_suppress_iterations()
 
+    def _configure_mypy(self) -> None:
+        self._add_mypy()
+        logger.info("Configuring [tool.mypy] strict = true in pyproject.toml...")
+        pyproject_data = self.pyproject.read()
+        pyproject_data = self._ensure_mypy_config(pyproject_data)
+        self.pyproject.write(pyproject_data)
+        self._configure_extras()
+        self.git.commit("🔧 Configure mypy with strict mode", no_verify=True)
+        logger.info("Committed mypy configuration")
+
+    def _add_mypy(self) -> None:
+        self.uv.add_package("mypy", group="lint")
+
+
+class MypyBoost(BaseMypyBoost):
+    """Boost that silences mypy violations using plain mypy (authoritative, slower)."""
+
+    def _run_type_checker(self) -> subprocess.CompletedProcess[str]:
+        return self.uv.run("run", "mypy", ".", check=False)
+
+
+class DmypyBoost(BaseMypyBoost):
+    """Boost that silences mypy violations using the dmypy daemon (faster, minor divergence risk).
+
+    Not enabled by default. Use --only dmypy to opt in.
+    dmypy finds some real errors that plain mypy misses (e.g. in complex inheritance), but also
+    produces false positives that result in unnecessary type: ignore comments.
+    """
+
+    def _run_type_checker(self) -> subprocess.CompletedProcess[str]:
+        self.uv.run("run", "dmypy", "kill", check=False)
+        shutil.rmtree(self.repo_path / ".mypy_cache", ignore_errors=True)
+        (self.repo_path / ".dmypy.json").unlink(missing_ok=True)
+        return self.uv.run("run", "dmypy", "run", ".", check=False)
+
+    def _configure_extras(self) -> None:
+        self._add_dmypy_to_gitignore()
+
     def _add_dmypy_to_gitignore(self) -> None:
         """Ensure .dmypy.json is listed in .gitignore."""
         entry = ".dmypy.json"
@@ -294,19 +337,6 @@ class MypyBoost(Boost):
             gitignore_path.write_text(f"{existing}{separator}{entry}\n", encoding="utf-8")
         else:
             gitignore_path.write_text(f"{entry}\n", encoding="utf-8")
-
-    def _configure_mypy(self) -> None:
-        self._add_mypy()
-        logger.info("Configuring [tool.mypy] strict = true in pyproject.toml...")
-        pyproject_data = self.pyproject.read()
-        pyproject_data = self._ensure_mypy_config(pyproject_data)
-        self.pyproject.write(pyproject_data)
-        self._add_dmypy_to_gitignore()
-        self.git.commit("🔧 Configure mypy with strict mode", no_verify=True)
-        logger.info("Committed mypy configuration")
-
-    def _add_mypy(self) -> None:
-        self.uv.add_package("mypy", group="lint")
 
 
 def _find_unclosed_triple_quote_pos(line: str) -> TripleQuotePos | None:

@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pimp_my_repo.core.boosts.base import BoostSkippedError
-from pimp_my_repo.core.boosts.mypy import _MAX_MYPY_ITERATIONS, MypyBoost, ViolationLocation
+from pimp_my_repo.core.boosts.mypy import _MAX_MYPY_ITERATIONS, DmypyBoost, MypyBoost, ViolationLocation
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -23,6 +23,12 @@ _vl = ViolationLocation
 def mypy_boost(boost_tools: BoostTools) -> MypyBoost:
     """Create a MypyBoost instance without pyproject.toml."""
     return MypyBoost(boost_tools)
+
+
+@pytest.fixture
+def dmypy_boost(boost_tools: BoostTools) -> DmypyBoost:
+    """Create a DmypyBoost instance without pyproject.toml."""
+    return DmypyBoost(boost_tools)
 
 
 @pytest.fixture
@@ -51,7 +57,7 @@ def patched_mypy_apply(
     with (
         patch.object(mypy_boost_with_pyproject.tools.uv, "run", return_value=ok_result()) as mock_uv,
         patch.object(mypy_boost_with_pyproject.tools.git, "commit") as mock_git,
-        patch.object(mypy_boost_with_pyproject, "_run_mypy", return_value=ok_result()) as mock_mypy,
+        patch.object(mypy_boost_with_pyproject, "_run_type_checker", return_value=ok_result()) as mock_mypy,
     ):
         yield PatchedMypyApply(
             boost=mypy_boost_with_pyproject,
@@ -81,7 +87,7 @@ def patched_mypy_apply_with_add_package(
     with (
         patch.object(mypy_boost_with_pyproject.tools.uv, "run", return_value=ok_result()) as mock_uv,
         patch.object(mypy_boost_with_pyproject.tools.git, "commit") as mock_git,
-        patch.object(mypy_boost_with_pyproject, "_run_mypy", return_value=ok_result()) as mock_mypy,
+        patch.object(mypy_boost_with_pyproject, "_run_type_checker", return_value=ok_result()) as mock_mypy,
         patch.object(mypy_boost_with_pyproject.tools.uv, "add_package") as mock_add_package,
     ):
         yield PatchedMypyApplyWithAddPackage(
@@ -471,28 +477,28 @@ def test_sets_strict_true_on_existing_mypy_section(mock_repo: RepositoryControll
 # =============================================================================
 
 
-def test_add_dmypy_creates_gitignore_when_absent(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
-    mypy_boost._add_dmypy_to_gitignore()  # noqa: SLF001
+def test_add_dmypy_creates_gitignore_when_absent(mock_repo: RepositoryController, dmypy_boost: DmypyBoost) -> None:
+    dmypy_boost._add_dmypy_to_gitignore()  # noqa: SLF001
     assert (mock_repo.path / ".gitignore").read_text() == ".dmypy.json\n"
 
 
-def test_add_dmypy_appends_to_existing_gitignore(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
+def test_add_dmypy_appends_to_existing_gitignore(mock_repo: RepositoryController, dmypy_boost: DmypyBoost) -> None:
     mock_repo.write_file(".gitignore", "*.pyc\n__pycache__/\n")
-    mypy_boost._add_dmypy_to_gitignore()  # noqa: SLF001
+    dmypy_boost._add_dmypy_to_gitignore()  # noqa: SLF001
     content = (mock_repo.path / ".gitignore").read_text()
     assert "*.pyc" in content
     assert ".dmypy.json" in content
 
 
-def test_add_dmypy_idempotent(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
+def test_add_dmypy_idempotent(mock_repo: RepositoryController, dmypy_boost: DmypyBoost) -> None:
     mock_repo.write_file(".gitignore", ".dmypy.json\n")
-    mypy_boost._add_dmypy_to_gitignore()  # noqa: SLF001
+    dmypy_boost._add_dmypy_to_gitignore()  # noqa: SLF001
     assert (mock_repo.path / ".gitignore").read_text().count(".dmypy.json") == 1
 
 
-def test_add_dmypy_adds_newline_before_entry(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
+def test_add_dmypy_adds_newline_before_entry(mock_repo: RepositoryController, dmypy_boost: DmypyBoost) -> None:
     mock_repo.write_file(".gitignore", "*.pyc")  # no trailing newline
-    mypy_boost._add_dmypy_to_gitignore()  # noqa: SLF001
+    dmypy_boost._add_dmypy_to_gitignore()  # noqa: SLF001
     content = (mock_repo.path / ".gitignore").read_text()
     assert content == "*.pyc\n.dmypy.json\n"
 

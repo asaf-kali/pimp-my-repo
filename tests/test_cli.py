@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from pimp_my_repo.core.tools.repo import RepositoryController
 
 ALL_BOOST_NAMES = ["gitignore", "uv", "ruff", "mypy", "precommit", "justfile"]
+ALL_OPT_IN_NAMES = ["dmypy"]
 
 
 def test_cli_is_working(mock_repo: RepositoryController) -> None:
@@ -46,10 +47,10 @@ def test_cli_with_clean_git(mock_repo: RepositoryController) -> None:
 
 
 def test_list_flag_prints_boost_names() -> None:
-    """--list prints all boost names and exits 0."""
+    """--list prints all boost names (default + opt-in) and exits 0."""
     result = run_command(["pimp-my-repo", "--list"], check=False)
     assert result.returncode == 0
-    for name in ALL_BOOST_NAMES:
+    for name in ALL_BOOST_NAMES + ALL_OPT_IN_NAMES:
         assert name in result.stdout
 
 
