@@ -1,6 +1,66 @@
 # CHANGELOG
 
 
+## v0.2.6 (2026-03-07)
+
+### Other
+
+- 🎡 CI fixes ([#11](https://github.com/asaf-kali/pimp-my-repo/pull/11),
+  [`e074397`](https://github.com/asaf-kali/pimp-my-repo/commit/e074397e200ad035c369e11a9f81e5ce30098312))
+
+* E2E config fix
+
+* Adjust CI E2E tests
+
+### 🌴
+
+- 🌴 Mypy boost: increase coverage ([#12](https://github.com/asaf-kali/pimp-my-repo/pull/12),
+  [`54bb93a`](https://github.com/asaf-kali/pimp-my-repo/commit/54bb93af120d6d495df44c2438dd4da15ecad81c))
+
+* Justfile fixes
+
+* UV boost - support more cases
+
+* Handle invalid Python package names in mypy boost
+
+Directories with hyphens (e.g. pyfiglet's fonts-standard/) are not valid Python package names. Mypy
+  reports these as fatal errors (exit code 2) with no file/line context, so the existing violation
+  parsers miss them.
+
+Add _exclude_invalid_package_names() to detect these messages, find the matching directories under
+  the repo root, and add them to [tool.mypy] exclude.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+* Fix mypy boost to handle pretty=true output format
+
+When a project has `pretty = true` in [tool.mypy], mypy wraps long error lines across multiple
+  lines. This breaks the per-line regex parser, causing the boost to see "No parseable violations
+  found" and skip suppression.
+
+Force `pretty = false` in the mypy config we write so error lines are always single-line and match
+  _MYPY_ERROR_RE regardless of the project's prior config.
+
+* Support mypy pretty=true output without overriding it
+
+Previously we forced pretty=false in the mypy config to avoid wrapped lines breaking the per-line
+  regex parser.
+
+Now we normalize the output before parsing instead: - _normalize_mypy_output() joins continuation
+  lines (pretty=true wraps long error messages across multiple lines) and skips indented
+  source-context and caret lines added by pretty mode. - _MYPY_ERROR_RE drops the $ anchor so greedy
+  .* finds the last [code] on a joined line even when a summary line is appended after the code. -
+  Parsers for standalone non-path messages (invalid package names) still use raw_output to avoid
+  losing lines that the joiner might merge with others.
+
+Projects can now keep their preferred pretty=true setting and it is handled correctly through the
+  normalization step.
+
+---------
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+
 ## v0.2.5 (2026-03-07)
 
 ### 🐛
