@@ -1,6 +1,37 @@
 # CHANGELOG
 
 
+## v0.2.5 (2026-03-07)
+
+### 🐛
+
+- 🐛 Fixed mypy boost, adjust ruff boost structure
+  ([#10](https://github.com/asaf-kali/pimp-my-repo/pull/10),
+  [`f008da7`](https://github.com/asaf-kali/pimp-my-repo/commit/f008da7b5f103ed41f7d724eeec64b81a76e2561))
+
+* README additions
+
+* Add e2e tests
+
+* Subprocess env vars fix
+
+* Adjust ruff boost structure
+
+* Log format fix
+
+* Run dmypy instead of mypy
+
+* Run both mypy and dmypy, refactor
+
+* Mypy end of line removal fix
+
+* mypy and dmypy tools disagree fix
+
+* mypy converge fix
+
+* Separate dmypy from mypy boost
+
+
 ## v0.2.4 (2026-03-06)
 
 ### 🏗️
