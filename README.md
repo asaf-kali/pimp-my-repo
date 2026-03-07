@@ -20,9 +20,18 @@
 - 🏗️ Add CI job configurations for `GitHub Actions` or `GitLab Pipeline` to enforce your rules in a continuous integration
   environment.
 
+## Why?
+
+Adopting strict linting and type checking in a legacy Python repo is painful — there are hundreds
+of existing violations to deal with before you can even turn the rules on.
+**pimp-my-repo** automates that process: it configures common linting tools in strict mode, automatically
+suppresses all existing violations (via `# noqa` / `# type: ignore` comments), and commits the
+result. The goal is a clean baseline instantly — after which new code must comply.
+Once merged, you can gradually revisit and fix the suppressed issues at your own pace.
+
 ## Usage
 
-No hussle. In your repository root, run:
+In your repository root, run:
 ```bash
 uvx pimp-my-repo
 ```
