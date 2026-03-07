@@ -17,8 +17,8 @@ jobs:
           - https://github.com/psf/requests.git
           - https://github.com/simplejson/simplejson.git
           - https://github.com/docopt/docopt.git
+          - https://github.com/pwaller/pyfiglet.git
           # Need to work on stability before enabling these:
-          # - https://github.com/pwaller/pyfiglet.git
           # - https://github.com/pallets/itsdangerous.git
           # Takes too long:
           # - https://github.com/pandas-dev/pandas.git

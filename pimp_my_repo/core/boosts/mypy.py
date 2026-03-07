@@ -34,6 +34,9 @@ _MYPY_ANY_ERROR_RE = re.compile(r"^(?P<path>.+?)(?::\d+(?::\d+)?)?: error: ")
 # "Source file found twice" errors must exclude the parent directory, not just the file,
 # because mypy's exclude option doesn't prevent discovery-stage errors on specific files.
 _MYPY_FOUND_TWICE_RE = re.compile(r"Source file found twice under different module names")
+# Directories with hyphens (e.g. "fonts-standard") are invalid Python package names.
+# Mypy outputs these as fatal errors with no file/line context.
+_MYPY_INVALID_PKG_NAME_RE = re.compile(r"^(\S+) is not a valid Python package name$", re.MULTILINE)
 
 
 class ViolationLocation(NamedTuple):
@@ -192,12 +195,18 @@ class BaseMypyBoost(Boost):
         violations = self._parse_violations(output)
         violations, newly_excluded_syntax = self._handle_syntax_violations(violations)
         newly_excluded_uncoded = self._exclude_blocking_uncoded_errors(output)
+        newly_excluded_invalid_pkg = self._exclude_invalid_package_names(output)
 
-        if not violations and not newly_excluded_syntax and not newly_excluded_uncoded:
+        if (
+            not violations
+            and not newly_excluded_syntax
+            and not newly_excluded_uncoded
+            and not newly_excluded_invalid_pkg
+        ):
             logger.info("No parseable violations found; stopping")
             return False
 
-        made_progress = newly_excluded_syntax or newly_excluded_uncoded
+        made_progress = newly_excluded_syntax or newly_excluded_uncoded or newly_excluded_invalid_pkg
         if violations:
             logger.info(f"Found {len(violations)} violations, applying type: ignore comments...")
             files_changed = self._apply_type_ignores(violations)
@@ -242,6 +251,27 @@ class BaseMypyBoost(Boost):
         mypy_section["exclude"] = sorted(new_excludes)
         self.pyproject.write(data)
         return True
+
+    def _exclude_invalid_package_names(self, output: str) -> bool:
+        """Exclude directories that are not valid Python package names (e.g. 'fonts-standard').
+
+        Mypy reports these as fatal errors with no file/line context. We find matching
+        directories under the repo root and add regex patterns to the mypy exclude list.
+
+        Returns True if any directories were excluded.
+        """
+        names = set(_MYPY_INVALID_PKG_NAME_RE.findall(output))
+        if not names:
+            return False
+        dirs: set[str] = set()
+        for name in names:
+            for found in self.tools.repo_path.rglob(name):
+                if found.is_dir():
+                    dirs.add(str(found.relative_to(self.tools.repo_path)) + "/")
+        if not dirs:
+            return False
+        logger.info(f"Excluding invalid package name directories: {sorted(dirs)}")
+        return self._exclude_mypy_files(dirs)
 
     def _exclude_blocking_uncoded_errors(self, output: str) -> bool:
         """Exclude files with no-code blocking errors. Returns True if new files were excluded.
