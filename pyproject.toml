@@ -65,7 +65,7 @@ build-backend = "hatchling.build"
 version_toml = [ "pyproject.toml:project.version" ]
 commit_parser = "emoji"
 build_command = """
-    uv lock --upgrade-package "$PACKAGE_NAME"
+    uv lock
     just build
     git add uv.lock
 """
