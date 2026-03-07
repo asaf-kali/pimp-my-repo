@@ -18,7 +18,7 @@ def test_cli_is_working(mock_repo: RepositoryController) -> None:
         check=False,
     )
     assert result.returncode in (0, 1)
-    assert "Pimping repository at:" in result.stdout
+    assert "Boosting repository at:" in result.stdout
 
 
 def test_main_is_working(mock_repo: RepositoryController) -> None:
@@ -42,7 +42,7 @@ def test_cli_with_clean_git(mock_repo: RepositoryController) -> None:
         check=False,
     )
     assert result.returncode in (0, 1)
-    assert "Pimping repository at:" in result.stdout
+    assert "Boosting repository at:" in result.stdout
 
 
 def test_list_flag_prints_boost_names() -> None:

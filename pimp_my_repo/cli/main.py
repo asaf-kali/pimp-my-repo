@@ -45,7 +45,7 @@ def run(
     boost_classes = _resolve_boosts(only=only, skip=skip, list_boosts=list_boosts, console=console)
 
     repo_path = Path(path).resolve()
-    console.print(f"[bold]Pimping repository at:[/bold] [cyan]{repo_path}[/cyan]")
+    console.print(f"[bold]Boosting repository at:[/bold] [cyan]{repo_path}[/cyan]")
     _validate_path(repo_path, console)
 
     results = run_boosts(repo_path=repo_path, console=console, boost_classes=boost_classes, verbose=verbose)
