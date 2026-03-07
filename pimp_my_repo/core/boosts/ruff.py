@@ -60,8 +60,6 @@ class RuffBoost(Boost):
 
         self.git.commit("🔧 Configure ruff", no_verify=True)
 
-        logger.info("Running ruff format...")
-        self._run_ruff_format()
         self.run_suppress_iterations()
 
     def commit_message(self) -> str:
@@ -74,11 +72,10 @@ class RuffBoost(Boost):
         Called by other boosts after modifying files, to restore ruff stability.
         """
         for iteration in range(1, _MAX_RUFF_ITERATIONS + 1):
-            if not self._suppress_violations_iteration(iteration=iteration):
-                break
-            # Re-format after noqa additions: adding inline comments can shift
-            # formatter decisions (e.g. magic trailing comma, line wrapping).
+            logger.info(f"Running ruff (iteration {iteration}/{_MAX_RUFF_ITERATIONS})...")
             self._run_ruff_format()
+            if not self._suppress_violations_iteration():
+                break
 
     def _verify_uv_present(self) -> None:
         try:
@@ -98,9 +95,11 @@ class RuffBoost(Boost):
             raise BoostSkippedError(msg) from exc
 
     def _run_ruff_format(self) -> subprocess.CompletedProcess[str]:
+        logger.debug("Running ruff format...")
         return self.uv.run("run", "ruff", "format", ".", check=False)
 
     def _run_ruff_check(self) -> subprocess.CompletedProcess[str]:
+        logger.debug("Running ruff check...")
         return self.uv.run("run", "ruff", "check", ".", "--output-format=json", check=False)
 
     def _ensure_ruff_config(self, data: TOMLDocument) -> TOMLDocument:
@@ -171,9 +170,8 @@ class RuffBoost(Boost):
 
         full_path.write_text("".join(lines), encoding="utf-8")
 
-    def _suppress_violations_iteration(self, *, iteration: int) -> bool:
+    def _suppress_violations_iteration(self) -> bool:
         """Run one ruff-check-then-noqa cycle. Returns True if another iteration is needed."""
-        logger.info(f"Running ruff check (iteration {iteration}/{_MAX_RUFF_ITERATIONS})...")
         result = self._run_ruff_check()
 
         if result.returncode == 0:

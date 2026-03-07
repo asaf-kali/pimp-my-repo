@@ -47,7 +47,7 @@ def _run_boosts_with_dashboard(
 
     logger.remove()
     level = "DEBUG" if verbose else "INFO"
-    logger.add(dashboard.add_log, level=level, format="<level>{level}</level>: {message}", colorize=True)
+    logger.add(dashboard.add_log, level=level, format="<level>{level:<8}</level> {message}", colorize=True)
 
     gen = execute_boosts(repo_path=repo_path, boost_classes=boost_classes)
     results: list[BoostResult] = []

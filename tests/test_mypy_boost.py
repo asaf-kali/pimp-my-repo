@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pimp_my_repo.core.boosts.base import BoostSkippedError
-from pimp_my_repo.core.boosts.mypy import _MAX_MYPY_ITERATIONS, MypyBoost, ViolationLocation
+from pimp_my_repo.core.boosts.mypy import _MAX_MYPY_ITERATIONS, DmypyBoost, MypyBoost, ViolationLocation
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -23,6 +23,12 @@ _vl = ViolationLocation
 def mypy_boost(boost_tools: BoostTools) -> MypyBoost:
     """Create a MypyBoost instance without pyproject.toml."""
     return MypyBoost(boost_tools)
+
+
+@pytest.fixture
+def dmypy_boost(boost_tools: BoostTools) -> DmypyBoost:
+    """Create a DmypyBoost instance without pyproject.toml."""
+    return DmypyBoost(boost_tools)
 
 
 @pytest.fixture
@@ -51,7 +57,7 @@ def patched_mypy_apply(
     with (
         patch.object(mypy_boost_with_pyproject.tools.uv, "run", return_value=ok_result()) as mock_uv,
         patch.object(mypy_boost_with_pyproject.tools.git, "commit") as mock_git,
-        patch.object(mypy_boost_with_pyproject, "_run_mypy", return_value=ok_result()) as mock_mypy,
+        patch.object(mypy_boost_with_pyproject, "_run_type_checker", return_value=ok_result()) as mock_mypy,
     ):
         yield PatchedMypyApply(
             boost=mypy_boost_with_pyproject,
@@ -81,7 +87,7 @@ def patched_mypy_apply_with_add_package(
     with (
         patch.object(mypy_boost_with_pyproject.tools.uv, "run", return_value=ok_result()) as mock_uv,
         patch.object(mypy_boost_with_pyproject.tools.git, "commit") as mock_git,
-        patch.object(mypy_boost_with_pyproject, "_run_mypy", return_value=ok_result()) as mock_mypy,
+        patch.object(mypy_boost_with_pyproject, "_run_type_checker", return_value=ok_result()) as mock_mypy,
         patch.object(mypy_boost_with_pyproject.tools.uv, "add_package") as mock_add_package,
     ):
         yield PatchedMypyApplyWithAddPackage(
@@ -332,6 +338,34 @@ def test_removes_type_ignore_for_unused_ignore(mock_repo: RepositoryController, 
     assert "x = foo()" in content
 
 
+def test_removes_type_ignore_preserves_trailing_comma(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
+    """Trailing comma before # type: ignore is code syntax and must not be stripped."""
+    mock_repo.write_file("src/foo.py", '    "key": self.quote_name(col),  # type: ignore[no-untyped-call]\n')
+    mypy_boost._apply_type_ignores({_vl("src/foo.py", 1): {"unused-ignore"}})  # noqa: SLF001
+    content = (mock_repo.path / "src/foo.py").read_text()
+    assert "# type: ignore" not in content
+    assert "self.quote_name(col)," in content
+
+
+def test_remove_codes_preserves_trailing_comma(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
+    """Trailing comma before # type: ignore is preserved when specific codes are removed."""
+    mock_repo.write_file("src/foo.py", '    "key": self.quote_name(col),  # type: ignore[no-untyped-call]\n')
+    mypy_boost._apply_type_ignores({_vl("src/foo.py", 1): {"!no-untyped-call"}})  # noqa: SLF001
+    content = (mock_repo.path / "src/foo.py").read_text()
+    assert "# type: ignore" not in content
+    assert "self.quote_name(col)," in content
+
+
+def test_conflicting_error_and_unused_ignore_prefers_error(
+    mock_repo: RepositoryController, mypy_boost: MypyBoost
+) -> None:
+    """When one tool reports an error [X] and another reports unused-ignore [X], keep the ignore."""
+    mock_repo.write_file("src/foo.py", "x: int = 'hello'  # type: ignore[assignment]\n")
+    mypy_boost._apply_type_ignores({_vl("src/foo.py", 1): {"assignment", "!assignment"}})  # noqa: SLF001
+    content = (mock_repo.path / "src/foo.py").read_text()
+    assert "# type: ignore[assignment]" in content
+
+
 def test_unused_ignore_with_other_codes_keeps_others(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
     """When unused-ignore accompanies real codes, keep the real codes only."""
     mock_repo.write_file("src/foo.py", "x = foo()  # type: ignore[no-untyped-call]\n")
@@ -443,28 +477,28 @@ def test_sets_strict_true_on_existing_mypy_section(mock_repo: RepositoryControll
 # =============================================================================
 
 
-def test_add_dmypy_creates_gitignore_when_absent(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
-    mypy_boost._add_dmypy_to_gitignore()  # noqa: SLF001
+def test_add_dmypy_creates_gitignore_when_absent(mock_repo: RepositoryController, dmypy_boost: DmypyBoost) -> None:
+    dmypy_boost._add_dmypy_to_gitignore()  # noqa: SLF001
     assert (mock_repo.path / ".gitignore").read_text() == ".dmypy.json\n"
 
 
-def test_add_dmypy_appends_to_existing_gitignore(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
+def test_add_dmypy_appends_to_existing_gitignore(mock_repo: RepositoryController, dmypy_boost: DmypyBoost) -> None:
     mock_repo.write_file(".gitignore", "*.pyc\n__pycache__/\n")
-    mypy_boost._add_dmypy_to_gitignore()  # noqa: SLF001
+    dmypy_boost._add_dmypy_to_gitignore()  # noqa: SLF001
     content = (mock_repo.path / ".gitignore").read_text()
     assert "*.pyc" in content
     assert ".dmypy.json" in content
 
 
-def test_add_dmypy_idempotent(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
+def test_add_dmypy_idempotent(mock_repo: RepositoryController, dmypy_boost: DmypyBoost) -> None:
     mock_repo.write_file(".gitignore", ".dmypy.json\n")
-    mypy_boost._add_dmypy_to_gitignore()  # noqa: SLF001
+    dmypy_boost._add_dmypy_to_gitignore()  # noqa: SLF001
     assert (mock_repo.path / ".gitignore").read_text().count(".dmypy.json") == 1
 
 
-def test_add_dmypy_adds_newline_before_entry(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
+def test_add_dmypy_adds_newline_before_entry(mock_repo: RepositoryController, dmypy_boost: DmypyBoost) -> None:
     mock_repo.write_file(".gitignore", "*.pyc")  # no trailing newline
-    mypy_boost._add_dmypy_to_gitignore()  # noqa: SLF001
+    dmypy_boost._add_dmypy_to_gitignore()  # noqa: SLF001
     content = (mock_repo.path / ".gitignore").read_text()
     assert content == "*.pyc\n.dmypy.json\n"
 
@@ -535,10 +569,24 @@ def test_apply_stops_after_max_iterations(
     patched_mypy_apply: PatchedMypyApply,
     fail_result: SubprocessResultFactory,
 ) -> None:
+    """MAX_ITERATIONS is the hard cap. In practice the loop stops earlier via no-progress detection."""
     mock_repo.write_file("src/foo.py", "x: int = 'hello'\n")
     patched_mypy_apply.mock_mypy.return_value = fail_result("src/foo.py:1: error: Persistent error  [misc]\n")
     patched_mypy_apply.boost.apply()
-    assert patched_mypy_apply.mock_mypy.call_count == _MAX_MYPY_ITERATIONS
+    assert patched_mypy_apply.mock_mypy.call_count <= _MAX_MYPY_ITERATIONS
+
+
+def test_apply_stops_on_no_progress(
+    mock_repo: RepositoryController,
+    patched_mypy_apply: PatchedMypyApply,
+    fail_result: SubprocessResultFactory,
+) -> None:
+    """Loop stops as soon as no file changes result from applying violations."""
+    mock_repo.write_file("src/foo.py", "x: int = 'hello'\n")
+    patched_mypy_apply.mock_mypy.return_value = fail_result("src/foo.py:1: error: Persistent error  [misc]\n")
+    patched_mypy_apply.boost.apply()
+    # Iteration 1: adds the ignore (file changes). Iteration 2: ignore already there, no change → stop.
+    assert patched_mypy_apply.mock_mypy.call_count == 2  # noqa: PLR2004
 
 
 def test_apply_stops_early_when_no_parseable_violations(
@@ -548,6 +596,26 @@ def test_apply_stops_early_when_no_parseable_violations(
     patched_mypy_apply.mock_mypy.return_value = fail_result("src/foo.py:1: error: Cannot import module\n")
     patched_mypy_apply.boost.apply()
     patched_mypy_apply.mock_mypy.assert_called_once()
+
+
+def test_apply_stops_when_conflicting_tools_make_no_file_changes(
+    mock_repo: RepositoryController,
+    patched_mypy_apply: PatchedMypyApply,
+    fail_result: SubprocessResultFactory,
+) -> None:
+    """When tools disagree (error vs unused-ignore for the same code), error wins and the ignore is kept.
+
+    Since no file changes result, the loop must stop instead of running to MAX_ITERATIONS.
+    """
+    mock_repo.write_file("src/foo.py", "x: int = 'hello'  # type: ignore[assignment]\n")
+    # Simulates dmypy reporting both error [assignment] and unused-ignore [assignment] for the same line.
+    conflicting_output = (
+        "src/foo.py:1: error: Incompatible types  [assignment]\n"
+        'src/foo.py:1: error: Unused "type: ignore[assignment]" comment  [unused-ignore]\n'
+    )
+    patched_mypy_apply.mock_mypy.return_value = fail_result(conflicting_output)
+    patched_mypy_apply.boost.apply()
+    assert patched_mypy_apply.mock_mypy.call_count < _MAX_MYPY_ITERATIONS
 
 
 def test_excludes_uncoded_blocking_error_file_in_pyproject(

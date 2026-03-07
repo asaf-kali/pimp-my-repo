@@ -8,7 +8,7 @@ from rich.console import Console
 from typer import Exit
 
 from pimp_my_repo.cli.runner import run_boosts
-from pimp_my_repo.core.registry import get_all_boosts
+from pimp_my_repo.core.registry import get_all_boosts, get_opt_in_boosts
 
 if TYPE_CHECKING:
     from pimp_my_repo.core.boosts.base import Boost
@@ -45,7 +45,7 @@ def run(
     boost_classes = _resolve_boosts(only=only, skip=skip, list_boosts=list_boosts, console=console)
 
     repo_path = Path(path).resolve()
-    console.print(f"[bold]Pimping repository at:[/bold] [cyan]{repo_path}[/cyan]")
+    console.print(f"[bold]Boosting repository at:[/bold] [cyan]{repo_path}[/cyan]")
     _validate_path(repo_path, console)
 
     results = run_boosts(repo_path=repo_path, console=console, boost_classes=boost_classes, verbose=verbose)
@@ -58,13 +58,17 @@ def _resolve_boosts(
     list_boosts: bool,  # noqa: FBT001
     console: Console,
 ) -> list[type[Boost]]:
-    all_boosts = get_all_boosts()
-    name_to_boost = {bc.get_name(): bc for bc in all_boosts}
+    default_boosts = get_all_boosts()
+    opt_in_boosts = get_opt_in_boosts()
+    all_known = default_boosts + opt_in_boosts
+    name_to_boost = {bc.get_name(): bc for bc in all_known}
 
     if list_boosts:
         console.print("[bold]Available boosts:[/bold]")
-        for name in name_to_boost:
-            console.print(f"  ✨ {name}")
+        for bc in default_boosts:
+            console.print(f"  ✨ {bc.get_name()}")
+        for bc in opt_in_boosts:
+            console.print(f"  ✨ {bc.get_name()} [dim](opt-in)[/dim]")
         raise Exit(0)
 
     if only and skip:
@@ -78,11 +82,11 @@ def _resolve_boosts(
         raise Exit(1)
 
     if only:
-        return [bc for bc in all_boosts if bc.get_name() in only]
+        return [name_to_boost[n] for n in only]
     if skip:
         skip_set = set(skip)
-        return [bc for bc in all_boosts if bc.get_name() not in skip_set]
-    return all_boosts
+        return [bc for bc in default_boosts if bc.get_name() not in skip_set]
+    return default_boosts
 
 
 def _validate_path(repo_path: Path, console: Console) -> None:
