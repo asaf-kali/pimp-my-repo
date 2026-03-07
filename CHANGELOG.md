@@ -1,6 +1,18 @@
 # CHANGELOG
 
 
+## v0.2.7 (2026-03-07)
+
+### 🛠️
+
+- 🛠️ Adjust UI, fix dmypy commit message ([#13](https://github.com/asaf-kali/pimp-my-repo/pull/13),
+  [`0c28802`](https://github.com/asaf-kali/pimp-my-repo/commit/0c28802b321b9fa5ac9112085edcb71be068624a))
+
+* Fix dmypy commit message
+
+* UI adjustments
+
+
 ## v0.2.6 (2026-03-07)
 
 ### Other
