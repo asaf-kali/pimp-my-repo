@@ -34,6 +34,9 @@ check-lock:
 
 # Test
 
+test-e2e url:
+	uv run scripts/test_e2e.py {{url}}
+
 test-fast:
 	just test -s -q -m "smoke"
 

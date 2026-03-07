@@ -1,0 +1,46 @@
+name: E2E Test
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test-e2e:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        repo:
+          - https://github.com/simplejson/simplejson.git
+          - https://github.com/docopt/docopt.git
+          - https://github.com/pwaller/pyfiglet.git
+          - https://github.com/django/django.git
+          - https://github.com/bottlepy/bottle.git
+          - https://github.com/psf/requests.git
+          - https://github.com/pallets/itsdangerous.git
+          - https://github.com/pandas-dev/pandas.git
+          - https://github.com/scikit-learn/scikit-learn.git
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.14'
+
+    - name: Install UV
+      uses: astral-sh/setup-uv@v4
+      with:
+        version: "latest"
+        enable-cache: true
+
+    - name: Install just
+      uses: extractions/setup-just@v2
+
+    - name: Install dependencies
+      run: just install-run
+
+    - name: Run E2E test - ${{ matrix.repo }}
+      run: just test-e2e ${{ matrix.repo }}
