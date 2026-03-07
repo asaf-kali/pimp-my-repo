@@ -139,22 +139,26 @@ class MypyBoost(Boost):
                 violations.setdefault(key, set()).add(match.group("code"))
         return violations
 
-    def _apply_type_ignores(self, violations: ViolationsByLocation) -> None:
-        """Insert or merge # type: ignore[codes] on each violating line."""
+    def _apply_type_ignores(self, violations: ViolationsByLocation) -> bool:
+        """Insert or merge # type: ignore[codes] on each violating line. Returns True if any file changed."""
         by_file: ViolationsByFile = {}
         for location, codes in violations.items():
             by_file.setdefault(location.file_path, {})[location.line_number] = codes
 
+        changed = False
         for filepath, line_violations in by_file.items():
-            self._apply_type_ignores_to_file(filepath=filepath, line_violations=line_violations)
+            changed |= self._apply_type_ignores_to_file(filepath=filepath, line_violations=line_violations)
+        return changed
 
-    def _apply_type_ignores_to_file(self, *, filepath: str, line_violations: LineViolations) -> None:
+    def _apply_type_ignores_to_file(self, *, filepath: str, line_violations: LineViolations) -> bool:
+        """Apply type: ignore edits to one file. Returns True if the file content changed."""
         full_path = self.repo_path / filepath
         if not full_path.exists():
             logger.warning(f"File not found, skipping: {full_path}")
-            return
+            return False
 
-        lines = full_path.read_text(encoding="utf-8").splitlines(keepends=True)
+        original = full_path.read_text(encoding="utf-8")
+        lines = original.splitlines(keepends=True)
         # Reverse order: inserting lines for triple-quote fixes shifts later indices,
         # but those are already processed when iterating highest-to-lowest.
         for lineno, codes in sorted(line_violations.items(), reverse=True):
@@ -163,7 +167,11 @@ class MypyBoost(Boost):
                 continue
             _apply_violation_to_line(lines=lines, idx=idx, codes=codes)
 
-        full_path.write_text("".join(lines), encoding="utf-8")
+        new_content = "".join(lines)
+        if new_content == original:
+            return False
+        full_path.write_text(new_content, encoding="utf-8")
+        return True
 
     def _apply_ignores(self) -> None:
         for iteration in range(1, _MAX_MYPY_ITERATIONS + 1):
@@ -189,10 +197,17 @@ class MypyBoost(Boost):
             logger.info("No parseable violations found; stopping")
             return False
 
+        made_progress = newly_excluded_syntax or newly_excluded_uncoded
         if violations:
             logger.info(f"Found {len(violations)} violations, applying type: ignore comments...")
-            self._apply_type_ignores(violations)
-            self._run_ruff()
+            files_changed = self._apply_type_ignores(violations)
+            if files_changed:
+                made_progress = True
+                self._run_ruff()
+
+        if not made_progress:
+            logger.info("No progress made (violations exist but files unchanged); stable state reached, stopping")
+            return False
         return True
 
     def _handle_syntax_violations(self, violations: ViolationsByLocation) -> SyntaxHandlingResult:
@@ -404,6 +419,8 @@ def _apply_violation_to_line(*, lines: list[str], idx: int, codes: ErrorCodes) -
     """Apply or remove type: ignore codes on a single source line."""
     codes_to_remove = {c[1:] for c in codes if c.startswith("!")}
     effective_codes = {c for c in codes if not c.startswith("!") and c != "unused-ignore"}
+    # Error wins: if both tools report "error [X]" and "unused-ignore [X]", keep the ignore.
+    codes_to_remove -= effective_codes
     if codes_to_remove:
         lines[idx] = _remove_type_ignore_codes(raw_line=lines[idx], codes=codes_to_remove)
     if effective_codes:

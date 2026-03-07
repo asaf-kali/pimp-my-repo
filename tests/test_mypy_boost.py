@@ -350,6 +350,16 @@ def test_remove_codes_preserves_trailing_comma(mock_repo: RepositoryController, 
     assert "self.quote_name(col)," in content
 
 
+def test_conflicting_error_and_unused_ignore_prefers_error(
+    mock_repo: RepositoryController, mypy_boost: MypyBoost
+) -> None:
+    """When one tool reports an error [X] and another reports unused-ignore [X], keep the ignore."""
+    mock_repo.write_file("src/foo.py", "x: int = 'hello'  # type: ignore[assignment]\n")
+    mypy_boost._apply_type_ignores({_vl("src/foo.py", 1): {"assignment", "!assignment"}})  # noqa: SLF001
+    content = (mock_repo.path / "src/foo.py").read_text()
+    assert "# type: ignore[assignment]" in content
+
+
 def test_unused_ignore_with_other_codes_keeps_others(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
     """When unused-ignore accompanies real codes, keep the real codes only."""
     mock_repo.write_file("src/foo.py", "x = foo()  # type: ignore[no-untyped-call]\n")
@@ -553,10 +563,24 @@ def test_apply_stops_after_max_iterations(
     patched_mypy_apply: PatchedMypyApply,
     fail_result: SubprocessResultFactory,
 ) -> None:
+    """MAX_ITERATIONS is the hard cap. In practice the loop stops earlier via no-progress detection."""
     mock_repo.write_file("src/foo.py", "x: int = 'hello'\n")
     patched_mypy_apply.mock_mypy.return_value = fail_result("src/foo.py:1: error: Persistent error  [misc]\n")
     patched_mypy_apply.boost.apply()
-    assert patched_mypy_apply.mock_mypy.call_count == _MAX_MYPY_ITERATIONS
+    assert patched_mypy_apply.mock_mypy.call_count <= _MAX_MYPY_ITERATIONS
+
+
+def test_apply_stops_on_no_progress(
+    mock_repo: RepositoryController,
+    patched_mypy_apply: PatchedMypyApply,
+    fail_result: SubprocessResultFactory,
+) -> None:
+    """Loop stops as soon as no file changes result from applying violations."""
+    mock_repo.write_file("src/foo.py", "x: int = 'hello'\n")
+    patched_mypy_apply.mock_mypy.return_value = fail_result("src/foo.py:1: error: Persistent error  [misc]\n")
+    patched_mypy_apply.boost.apply()
+    # Iteration 1: adds the ignore (file changes). Iteration 2: ignore already there, no change → stop.
+    assert patched_mypy_apply.mock_mypy.call_count == 2  # noqa: PLR2004
 
 
 def test_apply_stops_early_when_no_parseable_violations(
@@ -566,6 +590,26 @@ def test_apply_stops_early_when_no_parseable_violations(
     patched_mypy_apply.mock_mypy.return_value = fail_result("src/foo.py:1: error: Cannot import module\n")
     patched_mypy_apply.boost.apply()
     patched_mypy_apply.mock_mypy.assert_called_once()
+
+
+def test_apply_stops_when_conflicting_tools_make_no_file_changes(
+    mock_repo: RepositoryController,
+    patched_mypy_apply: PatchedMypyApply,
+    fail_result: SubprocessResultFactory,
+) -> None:
+    """When tools disagree (error vs unused-ignore for the same code), error wins and the ignore is kept.
+
+    Since no file changes result, the loop must stop instead of running to MAX_ITERATIONS.
+    """
+    mock_repo.write_file("src/foo.py", "x: int = 'hello'  # type: ignore[assignment]\n")
+    # Simulates dmypy saying error [assignment] and mypy saying unused-ignore [assignment].
+    conflicting_output = (
+        "src/foo.py:1: error: Incompatible types  [assignment]\n"
+        'src/foo.py:1: error: Unused "type: ignore[assignment]" comment  [unused-ignore]\n'
+    )
+    patched_mypy_apply.mock_mypy.return_value = fail_result(conflicting_output)
+    patched_mypy_apply.boost.apply()
+    assert patched_mypy_apply.mock_mypy.call_count < _MAX_MYPY_ITERATIONS
 
 
 def test_excludes_uncoded_blocking_error_file_in_pyproject(
