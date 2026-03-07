@@ -100,7 +100,12 @@ class UvBoost(Boost):
         if "uv" not in tool_section:
             tool_section["uv"] = table()
         uv_section: Any = tool_section["uv"]
-        uv_section["package"] = True
+        # Don't set package=true when setup.py exists: uv would try to build the project
+        # via setuptools, which conflicts with a minimal pyproject.toml we may have created.
+        # After migrate-to-uv runs, setup.py is removed, so this branch applies only to
+        # projects that bypass migration (e.g. setup.py-only without migration source).
+        if not (self.tools.repo_path / "setup.py").exists():
+            uv_section["package"] = True
         return pyproject_data
 
     def _extract_group_from_filename(self, filename: str) -> str | None:
@@ -185,13 +190,18 @@ class UvBoost(Boost):
         return result
 
     def _is_setup_cfg_bare(self) -> bool:
-        """Return True if setup.cfg is absent or has no [metadata]/[options] sections."""
+        """Return True if setup.cfg is absent or has no [options] section.
+
+        migrate-to-uv requires [options] (for install_requires etc.) to recognise setup.cfg
+        as a migration source. A setup.cfg with only [metadata] and no [options] is treated
+        as bare so that the best-effort augmentation path is used instead.
+        """
         setup_cfg_path = self.tools.repo_path / "setup.cfg"
         if not setup_cfg_path.exists():
             return True
         config = configparser.ConfigParser()
         config.read(setup_cfg_path)
-        return not any(s in config.sections() for s in ("metadata", "options"))
+        return "options" not in config.sections()
 
     def _parse_setup_py_str_kwargs(self) -> dict[str, str]:
         """AST-walk setup.py and return only string-literal kwargs from setup()."""
@@ -246,7 +256,7 @@ class UvBoost(Boost):
             return False
         return "project" in data
 
-    def _has_migration_source(self) -> bool:  # noqa: PLR0911
+    def _has_migration_source(self) -> bool:
         """Check if there are any migration sources supported by migrate-to-uv.
 
         migrate-to-uv supports: Poetry (pyproject.toml with [tool.poetry]),
@@ -268,9 +278,6 @@ class UvBoost(Boost):
         if self._has_poetry_config():
             return True
         if detected.setup_cfg and not self._is_setup_cfg_bare():
-            return True
-        # Best-effort: treat setup.py as a migration source when no pyproject.toml yet
-        if detected.setup_py and not detected.pyproject_toml:
             return True
 
         requirements_files = self._detect_requirements_files()
@@ -295,13 +302,7 @@ class UvBoost(Boost):
         # Detect and categorize requirements files
         requirements_files = self._detect_requirements_files()
 
-        # Best-effort: augment bare/missing setup.cfg from setup.py before migrating
-        detected = detect_dependency_files(self.tools.repo_path)
-        if detected.setup_py and self._is_setup_cfg_bare():
-            logger.info("Bare/missing setup.cfg with setup.py detected; attempting best-effort augmentation...")
-            self._augment_setup_cfg_from_setup_py()
-
-        # Run migrate-to-uv for main migration (handles setup.py, Pipfile, Poetry, etc.)
+        # Run migrate-to-uv for main migration (handles Pipfile, Poetry, setup.cfg with [options], etc.)
         logger.info("Detected migration source, using uvx migrate-to-uv...")
         self.uv.run_uvx("migrate-to-uv")
         logger.info("Migration completed successfully")
