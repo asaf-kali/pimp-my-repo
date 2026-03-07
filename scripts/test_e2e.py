@@ -9,6 +9,8 @@ from pathlib import Path
 import typer
 from rich.logging import RichHandler
 
+from pimp_my_repo.core.tools.repo import PMR_EMAIL
+
 _PMR_ROOT = Path(__file__).parent.parent
 _TMP_DIR = Path("/tmp/pmr")  # noqa: S108
 
@@ -118,7 +120,16 @@ def _prepare_repo(repo_url: str) -> Path:
     return repo_path
 
 
+def _configure_git_identity(repo_path: Path) -> None:
+    """Set a minimal git user identity so commits work in CI (where global config may be absent)."""
+    git = _require_exe("git")
+    logger.debug("Configuring git user identity for repo...")
+    _run([git, "config", "user.email", PMR_EMAIL], cwd=repo_path)
+    _run([git, "config", "user.name", "pmr"], cwd=repo_path)
+
+
 def _run_pmr(repo_path: Path) -> None:
+    _configure_git_identity(repo_path)
     logger.info("Running [bold]pmr[/bold] on [cyan]%s[/cyan]...", repo_path)
     args = [_require_exe("uv"), "run", "pmr", "-p", str(repo_path)]
     logger.info("[bold]$[/bold] %s", " ".join(args))

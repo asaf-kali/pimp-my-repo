@@ -12,15 +12,17 @@ jobs:
       fail-fast: false
       matrix:
         repo:
-          - https://github.com/simplejson/simplejson.git
-          - https://github.com/docopt/docopt.git
-          - https://github.com/pwaller/pyfiglet.git
           - https://github.com/django/django.git
           - https://github.com/bottlepy/bottle.git
           - https://github.com/psf/requests.git
-          - https://github.com/pallets/itsdangerous.git
-          - https://github.com/pandas-dev/pandas.git
-          - https://github.com/scikit-learn/scikit-learn.git
+          # Need to work on stability before enabling these:
+          # - https://github.com/simplejson/simplejson.git
+          # - https://github.com/docopt/docopt.git
+          # - https://github.com/pwaller/pyfiglet.git
+          # - https://github.com/pallets/itsdangerous.git
+          # Takes too long:
+          # - https://github.com/pandas-dev/pandas.git
+          # - https://github.com/scikit-learn/scikit-learn.git
 
     steps:
     - uses: actions/checkout@v4

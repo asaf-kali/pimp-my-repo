@@ -11,8 +11,9 @@ import logging
 from pimp_my_repo.core.tools.subprocess import run_command
 
 log = logging.getLogger(__name__)
+PMR_EMAIL = "pimp-my-repo@pypi.org"
 _DEFAULT_BRANCH_NAME = "feat/pmr"
-_DEFAULT_COMMIT_AUTHOR = "pmr <pimp-my-repo@pypi.org>"
+_DEFAULT_COMMIT_AUTHOR = f"pmr <{PMR_EMAIL}>"
 
 
 class RepositoryController:
