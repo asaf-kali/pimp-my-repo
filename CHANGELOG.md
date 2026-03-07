@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.2.10 (2026-03-07)
+
+### 🖼️
+
+- 🖼️ Separate publish from release ([#17](https://github.com/asaf-kali/pimp-my-repo/pull/17),
+  [`b93e38d`](https://github.com/asaf-kali/pimp-my-repo/commit/b93e38ddb18af19652432b36e21dd2305b595ae5))
+
+
 ## v0.2.9 (2026-03-07)
 
 ### 🖼️
