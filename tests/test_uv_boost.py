@@ -614,26 +614,28 @@ def test_has_migration_source_both_pipfile_and_poetry(mock_repo: RepositoryContr
 
 
 def test_has_migration_source_detects_setup_cfg(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    mock_repo.write_file("setup.cfg", "[metadata]\nname = myproject")
+    # migrate-to-uv requires [options] in setup.cfg; [metadata] alone is not enough
+    mock_repo.write_file("setup.cfg", "[metadata]\nname = myproject\n\n[options]\ninstall_requires =\n    requests")
     assert uv_boost._has_migration_source() is True  # noqa: SLF001
 
 
 def test_has_migration_source_detects_setup_py(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    """setup.py alone (no pyproject.toml) is now a valid migration source via best-effort augmentation."""
+    """setup.py alone (no setup.cfg [options]) is NOT a migration source; falls through to _ensure_pyproject_exists."""
     mock_repo.write_file("setup.py", "from setuptools import setup\nsetup(name='myproject')")
-    assert uv_boost._has_migration_source() is True  # noqa: SLF001
+    assert uv_boost._has_migration_source() is False  # noqa: SLF001
 
 
 def test_has_migration_source_setup_cfg_with_setup_py(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+    """setup.cfg with [metadata] only (no [options]) is bare — not a migration source even with setup.py."""
     mock_repo.write_file("setup.py", "from setuptools import setup")
     mock_repo.write_file("setup.cfg", "[metadata]\nname = myproject")
-    assert uv_boost._has_migration_source() is True  # noqa: SLF001
+    assert uv_boost._has_migration_source() is False  # noqa: SLF001
 
 
 def test_has_migration_source_ignores_bare_setup_cfg_without_setup_py(
     mock_repo: RepositoryController, uv_boost: UvBoost
 ) -> None:
-    """Bare setup.cfg (no metadata/options) without setup.py is not a migration source."""
+    """Bare setup.cfg (no [options]) without setup.py is not a migration source."""
     mock_repo.write_file("setup.cfg", "[wheel]\nuniversal = 1")
     assert uv_boost._has_migration_source() is False  # noqa: SLF001
 
@@ -641,10 +643,10 @@ def test_has_migration_source_ignores_bare_setup_cfg_without_setup_py(
 def test_has_migration_source_detects_bare_setup_cfg_with_setup_py(
     mock_repo: RepositoryController, uv_boost: UvBoost
 ) -> None:
-    """Bare setup.cfg + setup.py together count as a migration source."""
+    """Bare setup.cfg (no [options]) + setup.py is not a migration source."""
     mock_repo.write_file("setup.cfg", "[wheel]\nuniversal = 1")
     mock_repo.write_file("setup.py", "from setuptools import setup\nsetup(name='myproject')")
-    assert uv_boost._has_migration_source() is True  # noqa: SLF001
+    assert uv_boost._has_migration_source() is False  # noqa: SLF001
 
 
 # =============================================================================
@@ -662,8 +664,9 @@ def test_is_setup_cfg_bare_only_wheel_section(mock_repo: RepositoryController, u
 
 
 def test_is_setup_cfg_bare_with_metadata_section(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+    # [metadata] alone is not enough — migrate-to-uv requires [options]
     mock_repo.write_file("setup.cfg", "[metadata]\nname = myproject")
-    assert uv_boost._is_setup_cfg_bare() is False  # noqa: SLF001
+    assert uv_boost._is_setup_cfg_bare() is True  # noqa: SLF001
 
 
 def test_is_setup_cfg_bare_with_options_section(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
@@ -759,11 +762,7 @@ def test_augment_setup_cfg_does_nothing_without_string_kwargs(
 
 
 def test_apply_with_bare_setup_cfg_and_setup_py(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    """Full apply() on a repo with bare setup.cfg + setup.py produces pyproject.toml and uv.lock.
-
-    migrate-to-uv is mocked because a minimal temp repo lacks the full package structure
-    that the real tool needs. We verify augmentation ran and the project name was propagated.
-    """
+    """Full apply() on a repo with bare setup.cfg + setup.py skips migrate-to-uv and creates a minimal pyproject.toml."""  # noqa: E501
     mock_repo.write_file("setup.cfg", "[wheel]\nuniversal = 1")
     mock_repo.write_file(
         "setup.py",
@@ -777,26 +776,18 @@ def test_apply_with_bare_setup_cfg_and_setup_py(mock_repo: RepositoryController,
         ),
     )
 
-    def fake_migrate(*_args: str) -> None:
-        # Simulate migrate-to-uv writing a pyproject.toml from the augmented setup.cfg
-        (mock_repo.path / "pyproject.toml").write_text(
-            '[project]\nname = "myproject"\nversion = "1.0.0"\nrequires-python = ">=3.8"\n'
-        )
-
-    with patch.object(uv_boost.tools.uv, "run_uvx", side_effect=fake_migrate):
+    with patch.object(uv_boost.tools.uv, "run_uvx") as mock_migrate:
         uv_boost.apply()
+        # migrate-to-uv should NOT be called — bare setup.cfg + setup.py is not a migration source
+        mock_migrate.assert_not_called()
 
     assert (mock_repo.path / "pyproject.toml").exists()
     assert (mock_repo.path / "uv.lock").exists()
 
-    pyproject_content = (mock_repo.path / "pyproject.toml").read_text()
-    assert "myproject" in pyproject_content
-
-    # Verify setup.cfg was augmented with [metadata] before migration was called
+    # setup.cfg should be unmodified (no augmentation)
     cfg = configparser.ConfigParser()
     cfg.read(mock_repo.path / "setup.cfg")
-    assert "metadata" in cfg.sections()
-    assert cfg["metadata"]["name"] == "myproject"
+    assert "metadata" not in cfg.sections()
 
 
 # =============================================================================
