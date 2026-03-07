@@ -82,7 +82,8 @@ class MypyBoost(Boost):
             raise BoostSkippedError(msg) from exc
 
     def _run_mypy(self) -> subprocess.CompletedProcess[str]:
-        return self.uv.run("run", "mypy", ".", check=False)
+        self.uv.run("run", "dmypy", "restart", check=False)
+        return self.uv.run("run", "dmypy", "check", ".", check=False)
 
     def _ensure_mypy_config(self, data: TOMLDocument) -> TOMLDocument:
         if "tool" not in data:
