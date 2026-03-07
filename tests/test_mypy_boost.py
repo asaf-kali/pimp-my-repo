@@ -332,6 +332,24 @@ def test_removes_type_ignore_for_unused_ignore(mock_repo: RepositoryController, 
     assert "x = foo()" in content
 
 
+def test_removes_type_ignore_preserves_trailing_comma(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
+    """Trailing comma before # type: ignore is code syntax and must not be stripped."""
+    mock_repo.write_file("src/foo.py", '    "key": self.quote_name(col),  # type: ignore[no-untyped-call]\n')
+    mypy_boost._apply_type_ignores({_vl("src/foo.py", 1): {"unused-ignore"}})  # noqa: SLF001
+    content = (mock_repo.path / "src/foo.py").read_text()
+    assert "# type: ignore" not in content
+    assert "self.quote_name(col)," in content
+
+
+def test_remove_codes_preserves_trailing_comma(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
+    """Trailing comma before # type: ignore is preserved when specific codes are removed."""
+    mock_repo.write_file("src/foo.py", '    "key": self.quote_name(col),  # type: ignore[no-untyped-call]\n')
+    mypy_boost._apply_type_ignores({_vl("src/foo.py", 1): {"!no-untyped-call"}})  # noqa: SLF001
+    content = (mock_repo.path / "src/foo.py").read_text()
+    assert "# type: ignore" not in content
+    assert "self.quote_name(col)," in content
+
+
 def test_unused_ignore_with_other_codes_keeps_others(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
     """When unused-ignore accompanies real codes, keep the real codes only."""
     mock_repo.write_file("src/foo.py", "x = foo()  # type: ignore[no-untyped-call]\n")

@@ -418,8 +418,6 @@ def _remove_type_ignore(raw_line: str) -> str:
     line = raw_line.rstrip("\n").rstrip("\r")
     eol = raw_line[len(line) :]
     removed = _TYPE_IGNORE_RE.sub("", line).rstrip()
-    if removed.endswith(","):
-        removed = removed.rstrip(",").rstrip()
     return f"{removed}{eol}"
 
 
@@ -442,8 +440,6 @@ def _remove_type_ignore_codes(*, raw_line: str, codes: set[str]) -> str:
     line = raw_line.rstrip("\n").rstrip("\r")
     eol = raw_line[len(line) :]
     result = _TYPE_IGNORE_RE.sub(replace_match, line).rstrip()
-    if result.endswith(","):
-        result = result.rstrip(",").rstrip()
     return f"{result}{eol}"
 
 
