@@ -108,6 +108,9 @@ class BaseMypyBoost(Boost):
             tool_section["mypy"] = table()
         mypy_section: Any = tool_section["mypy"]
         mypy_section["strict"] = True
+        # Ensure single-line output: pretty=true wraps long error lines across multiple
+        # lines, which breaks our per-line regex parser. Override any existing setting.
+        mypy_section["pretty"] = False
         return data
 
     def _parse_violations(self, output: str) -> ViolationsByLocation:
