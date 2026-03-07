@@ -602,7 +602,7 @@ def test_apply_stops_when_conflicting_tools_make_no_file_changes(
     Since no file changes result, the loop must stop instead of running to MAX_ITERATIONS.
     """
     mock_repo.write_file("src/foo.py", "x: int = 'hello'  # type: ignore[assignment]\n")
-    # Simulates dmypy saying error [assignment] and mypy saying unused-ignore [assignment].
+    # Simulates dmypy reporting both error [assignment] and unused-ignore [assignment] for the same line.
     conflicting_output = (
         "src/foo.py:1: error: Incompatible types  [assignment]\n"
         'src/foo.py:1: error: Unused "type: ignore[assignment]" comment  [unused-ignore]\n'

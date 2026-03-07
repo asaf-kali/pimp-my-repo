@@ -92,10 +92,6 @@ class MypyBoost(Boost):
     def _run_mypy(self) -> subprocess.CompletedProcess[str]:
         return self.uv.run("run", "mypy", ".", check=False)
 
-    def _run_dmypy(self) -> subprocess.CompletedProcess[str]:
-        self.uv.run("run", "dmypy", "restart", check=False)
-        return self.uv.run("run", "dmypy", "check", ".", check=False)
-
     def _ensure_mypy_config(self, data: TOMLDocument) -> TOMLDocument:
         if "tool" not in data:
             data["tool"] = table()
@@ -179,16 +175,15 @@ class MypyBoost(Boost):
                 break
 
     def _process_mypy_iteration(self, iteration: int) -> bool:
-        """Run mypy and dmypy and apply ignores for one iteration. Returns True if should continue."""
+        """Run mypy and apply ignores for one iteration. Returns True if should continue."""
         logger.info(f"Running mypy (iteration {iteration}/{_MAX_MYPY_ITERATIONS})...")
-        mypy_result = self._run_mypy()
-        dmypy_result = self._run_dmypy()
+        result = self._run_mypy()
 
-        if mypy_result.returncode == 0 and dmypy_result.returncode == 0:
+        if result.returncode == 0:
             logger.info("mypy passed with no errors")
             return False
 
-        output = dmypy_result.stdout + dmypy_result.stderr + mypy_result.stdout + mypy_result.stderr
+        output = result.stdout + result.stderr
         violations = self._parse_violations(output)
         violations, newly_excluded_syntax = self._handle_syntax_violations(violations)
         newly_excluded_uncoded = self._exclude_blocking_uncoded_errors(output)
@@ -244,8 +239,14 @@ class MypyBoost(Boost):
         return True
 
     def _exclude_blocking_uncoded_errors(self, output: str) -> bool:
-        """Exclude files with no-code blocking errors. Returns True if new files were excluded."""
-        if "errors prevented further checking" not in output:
+        """Exclude files with no-code blocking errors. Returns True if new files were excluded.
+
+        "Found twice" errors are always blocking and are detected unconditionally.
+        Other uncoded errors are only acted on when mypy confirms they blocked checking,
+        since dmypy may omit the "errors prevented further checking" summary line.
+        """
+        has_blocking_error = "errors prevented further checking" in output or bool(_MYPY_FOUND_TWICE_RE.search(output))
+        if not has_blocking_error:
             return False
         files = self._parse_uncoded_error_files(output)
         if not files:

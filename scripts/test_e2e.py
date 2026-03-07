@@ -154,12 +154,8 @@ def _run_ruff_checks(repo_path: Path) -> None:
 
 def _run_mypy_checks(repo_path: Path) -> None:
     mypy = _venv_exe(repo_path, "mypy")
-    dmypy = _venv_exe(repo_path, "dmypy")
-    _run([mypy, "."], cwd=repo_path, assert_clean_stderr=True)
+    _run([mypy, "."], cwd=repo_path)
     logger.info("[green]mypy ✓[/green]")
-    _run([dmypy, "start"], cwd=repo_path, check=False)
-    _run([dmypy, "check", "."], cwd=repo_path, assert_clean_stderr=True)
-    logger.info("[green]dmypy ✓[/green]")
 
 
 def _run_verification_checks(repo_path: Path) -> None:

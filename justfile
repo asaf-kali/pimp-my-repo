@@ -70,7 +70,6 @@ check-ruff:
 	{{RUN}} ruff check
 
 check-mypy:
-	{{RUN}} dmypy start || true
 	{{RUN}} dmypy run .
 
 lint: format
