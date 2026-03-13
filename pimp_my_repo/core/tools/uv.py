@@ -40,6 +40,10 @@ class UvController:
             msg = f"uv is not available: {e}"
             raise UvNotFoundError(msg) from e
 
+    def sync_group(self, group: str) -> None:
+        """Sync only a specific dependency group without installing the project or other groups."""
+        self.run("sync", "--no-install-project", "--no-default-groups", "--group", group)
+
     def add_package(
         self,
         package: str,

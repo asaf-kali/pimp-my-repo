@@ -357,6 +357,7 @@ class BaseMypyBoost(Boost, abc.ABC):
 
     def _add_mypy(self) -> None:
         self.uv.add_package("mypy", group="lint")
+        self.uv.sync_group("lint")
 
 
 class MypyBoost(BaseMypyBoost):
@@ -366,7 +367,7 @@ class MypyBoost(BaseMypyBoost):
         return "✅ Silence mypy violations"
 
     def _run_type_checker(self) -> subprocess.CompletedProcess[str]:
-        return self.uv.run("run", "mypy", ".", check=False)
+        return self.uv.run("run", "--no-sync", "mypy", ".", check=False)
 
 
 class DmypyBoost(BaseMypyBoost):
