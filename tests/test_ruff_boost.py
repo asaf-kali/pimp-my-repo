@@ -227,11 +227,13 @@ def test_skips_unsuppressible_codes(ruff_boost: RuffBoost) -> None:
 
 
 def test_empty_output(ruff_boost: RuffBoost) -> None:
-    assert ruff_boost._parse_violations("") == {}  # noqa: SLF001
+    with pytest.raises(RuntimeError, match="non-JSON"):
+        ruff_boost._parse_violations("")  # noqa: SLF001
 
 
 def test_all_checks_passed_output(ruff_boost: RuffBoost) -> None:
-    assert ruff_boost._parse_violations("All checks passed!\n") == {}  # noqa: SLF001
+    with pytest.raises(RuntimeError, match="non-JSON"):
+        ruff_boost._parse_violations("All checks passed!\n")  # noqa: SLF001
 
 
 # =============================================================================
@@ -463,12 +465,13 @@ def test_apply_stops_after_max_iterations(
     assert patched_ruff_apply.mock_check.call_count == _MAX_RUFF_ITERATIONS
 
 
-def test_apply_stops_early_when_no_parseable_violations(
+def test_apply_fails_when_ruff_check_produces_non_json_output(
     patched_ruff_apply: PatchedRuffApply,
     fail_result: SubprocessResultFactory,
 ) -> None:
     patched_ruff_apply.mock_check.return_value = fail_result("some unparseable output\n")
-    patched_ruff_apply.boost.apply()
+    with pytest.raises(RuntimeError, match="non-JSON"):
+        patched_ruff_apply.boost.apply()
     patched_ruff_apply.mock_check.assert_called_once()
 
 

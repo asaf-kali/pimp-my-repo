@@ -417,7 +417,7 @@ def test_ensure_uv_config_adds_section_when_missing(mock_repo: RepositoryControl
 
 
 def test_ensure_uv_config_preserves_existing_section(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    pyproject_content = '[project]\nname = "test-project"\n\n[tool.uv]\npackage = true\ndev-dependencies = []\n'
+    pyproject_content = '[project]\nname = "test-project"\n\n[tool.uv]\ndev-dependencies = []\n'
     mock_repo.write_file("pyproject.toml", pyproject_content)
 
     pyproject_data = uv_boost.tools.pyproject.read()
@@ -426,7 +426,20 @@ def test_ensure_uv_config_preserves_existing_section(mock_repo: RepositoryContro
 
     pyproject_content_after = (mock_repo.path / "pyproject.toml").read_text()
     assert "[tool.uv]" in pyproject_content_after
-    assert "package = true" in pyproject_content_after
+    # mock_repo has no src/ or __init__.py → not an installable package
+    assert "package = false" in pyproject_content_after
+    assert "dev-dependencies" in pyproject_content_after  # existing keys preserved
+
+
+def test_ensure_uv_config_sets_package_true_for_src_layout(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+    mock_repo.write_file("pyproject.toml", '[project]\nname = "test-project"\n')
+    (mock_repo.path / "src").mkdir()
+
+    pyproject_data = uv_boost.tools.pyproject.read()
+    pyproject_data = uv_boost._ensure_uv_config(pyproject_data)  # noqa: SLF001
+    uv_boost.tools.pyproject.write(pyproject_data)
+
+    assert "package = true" in (mock_repo.path / "pyproject.toml").read_text()
 
 
 # =============================================================================

@@ -109,6 +109,8 @@ def _print_summary(results: list[BoostResult], console: Console) -> None:
         console.print(f"[green]✓ {applied} boost(s) applied[/green]")
     else:
         console.print("[yellow]No boosts applied[/yellow]")
+    if failed:
+        raise Exit(1)
 
 
 def main() -> None:

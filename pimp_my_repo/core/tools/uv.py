@@ -49,7 +49,7 @@ class UvController:
     ) -> None:
         """Add a package using uv add."""
         logger.info(f"Adding {package} dependency...")
-        cmd = ["add", "--no-install-project"]
+        cmd = ["add", "--no-sync"]
         if dev:
             cmd.append("--dev")
         elif group:
@@ -65,7 +65,7 @@ class UvController:
     ) -> None:
         """Add dependencies from a requirements file using uv add -r."""
         logger.info(f"Adding dependencies from {requirements_file.name}...")
-        cmd = ["add", "--no-install-project", "-r", str(requirements_file)]
+        cmd = ["add", "--no-sync", "-r", str(requirements_file)]
         if group:
             cmd.extend(["--group", group])
         self.run(*cmd)
