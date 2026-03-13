@@ -52,6 +52,7 @@ class RuffBoost(Boost):
         self._verify_pyproject_present()
 
         self.uv.add_package("ruff", group="lint")
+        self.uv.sync_group("lint")
 
         logger.info("Configuring [tool.ruff.lint] select = ['ALL'] in pyproject.toml...")
         pyproject_data = self.pyproject.read()
@@ -96,11 +97,11 @@ class RuffBoost(Boost):
 
     def _run_ruff_format(self) -> subprocess.CompletedProcess[str]:
         logger.debug("Running ruff format...")
-        return self.uv.run("run", "ruff", "format", ".", check=False)
+        return self.uv.run("run", "--no-sync", "ruff", "format", ".", check=False)
 
     def _run_ruff_check(self) -> subprocess.CompletedProcess[str]:
         logger.debug("Running ruff check...")
-        return self.uv.run("run", "ruff", "check", ".", "--output-format=json", check=False)
+        return self.uv.run("run", "--no-sync", "ruff", "check", ".", "--output-format=json", check=False)
 
     def _ensure_ruff_config(self, data: TOMLDocument) -> TOMLDocument:
         if "tool" not in data:
@@ -125,9 +126,9 @@ class RuffBoost(Boost):
         violations: ViolationsByLocation = {}
         try:
             raw_violations = json.loads(output)
-        except (json.JSONDecodeError, ValueError):  # fmt: off
-            logger.warning("Failed to parse ruff JSON output")
-            return violations
+        except (json.JSONDecodeError, ValueError) as e:  # fmt: off
+            msg = "ruff check produced non-JSON output — ruff may have failed to start"
+            raise RuntimeError(msg) from e
 
         for raw in raw_violations:
             code: str = raw.get("code", "")
