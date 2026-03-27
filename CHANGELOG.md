@@ -1,6 +1,57 @@
 # CHANGELOG
 
 
+## v0.2.11 (2026-03-27)
+
+### 🐛
+
+- 🐛 Fix multiple e2e failures ([#18](https://github.com/asaf-kali/pimp-my-repo/pull/18),
+  [`a9ec332`](https://github.com/asaf-kali/pimp-my-repo/commit/a9ec332e8d2834ddd1b81e4a817b8fe7b983ddff))
+
+* 🐛 Fix e2e failures: exit code, uv add, ruff silent pass, empty name, package detection
+
+- cli/main.py: exit with code 1 when any boost fails (was silently exiting 0) - core/tools/uv.py:
+  use --no-sync instead of --no-install-project in add_package / add_from_requirements_file to avoid
+  compiling runtime deps during dependency add - core/boosts/ruff.py: raise RuntimeError when ruff
+  check produces non-JSON output instead of silently stopping iterations as if all violations were
+  suppressed - core/booster.py: catch RuntimeError in _run_boost_class alongside CalledProcessError
+  - core/boosts/uv/uv.py: fix empty project name left by migrate-to-uv (name="" breaks uv run);
+  detect package structure to set package=false for script/data-science repos that have no src/ or
+  top-level __init__.py - scripts/test_e2e.py: use ruff format --check instead of ruff format in
+  verification - tests: update test expectations to match corrected behaviour
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+* 🐛 Fix ruff/mypy boosts failing in CI: sync lint group before running tools
+
+uv add --no-sync only updates pyproject.toml and the lockfile; it does not install anything.
+  Subsequent uv run calls then try to sync the full environment (including the project build), which
+  fails on projects without a clean build setup (no build-system, src/ layout without __init__.py,
+  etc.).
+
+Fix: explicitly sync only the lint dependency group before running ruff/mypy: uv sync
+  --no-install-project --no-default-groups --group lint
+
+Then run the tool with --no-sync so uv skips the redundant re-sync. Added UvController.sync_group()
+  for this purpose.
+
+* Add no-sync, rename method
+
+* 🐛 Fix sync_group failing on repos with unbuildable main deps
+
+Use --only-group instead of --no-default-groups --group when syncing a lint dependency group. The
+  old flags still resolved and built the project's main dependencies (e.g. pillow from source),
+  which fails when the host is missing system libs or only Python 3.14 wheels are available.
+  --only-group skips all project deps entirely, installing just the target group.
+
+Also fix 39 test errors caused by the previous rename of UvController.run → exec / run_uvx →
+  exec_uvx: update all patch.object calls in the test fixtures to use the current method names.
+
+---------
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+
 ## v0.2.10 (2026-03-07)
 
 ### 🖼️
