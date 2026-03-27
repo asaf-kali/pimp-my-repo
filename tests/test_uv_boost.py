@@ -180,7 +180,7 @@ def patched_uv_boost_installable_with_mocked_run(uv_boost: UvBoost) -> Generator
     with (
         patch.object(uv_boost, "_check_uv_installed", side_effect=lambda: check_calls.pop(0)),
         patch.object(uv_boost, "_install_uv", return_value=True),
-        patch.object(uv_boost.tools.uv, "run"),
+        patch.object(uv_boost.tools.uv, "exec"),
     ):
         yield uv_boost
 
@@ -191,7 +191,7 @@ def uv_boost_with_migration_error(mock_repo: RepositoryController, uv_boost: UvB
     mock_repo.write_file("poetry.lock", "# Poetry lock file")
     mock_repo.write_file("pyproject.toml", "[tool.poetry]\nname = 'test'")
     error = subprocess.CalledProcessError(1, "uvx", stderr="Migration failed")
-    with patch.object(uv_boost.tools.uv, "run_uvx", side_effect=error):
+    with patch.object(uv_boost.tools.uv, "exec_uvx", side_effect=error):
         yield uv_boost
 
 
@@ -208,7 +208,7 @@ def uv_boost_with_lock_error(mock_repo: RepositoryController, uv_boost: UvBoost)
         # Return success for version check
         return subprocess.CompletedProcess(["uv", *args], 0, "", "")
 
-    with patch.object(uv_boost.tools.uv, "run", side_effect=run_side_effect):
+    with patch.object(uv_boost.tools.uv, "exec", side_effect=run_side_effect):
         yield uv_boost
 
 
@@ -216,21 +216,21 @@ def uv_boost_with_lock_error(mock_repo: RepositoryController, uv_boost: UvBoost)
 def uv_boost_check_called_process_error(uv_boost: UvBoost) -> Generator[UvBoost]:
     """Yield a UvBoost where uv.run raises CalledProcessError for version check."""
     error = subprocess.CalledProcessError(1, "uv --version")
-    with patch.object(uv_boost.tools.uv, "run", side_effect=error):
+    with patch.object(uv_boost.tools.uv, "exec", side_effect=error):
         yield uv_boost
 
 
 @pytest.fixture
 def uv_boost_check_oserror(uv_boost: UvBoost) -> Generator[UvBoost]:
     """Yield a UvBoost where uv.run raises OSError for version check."""
-    with patch.object(uv_boost.tools.uv, "run", side_effect=OSError("System error")):
+    with patch.object(uv_boost.tools.uv, "exec", side_effect=OSError("System error")):
         yield uv_boost
 
 
 @pytest.fixture
 def uv_boost_check_file_not_found(uv_boost: UvBoost) -> Generator[UvBoost]:
     """Yield a UvBoost where uv.run raises FileNotFoundError for version check."""
-    with patch.object(uv_boost.tools.uv, "run", side_effect=FileNotFoundError("uv not found")):
+    with patch.object(uv_boost.tools.uv, "exec", side_effect=FileNotFoundError("uv not found")):
         yield uv_boost
 
 
@@ -789,7 +789,7 @@ def test_apply_with_bare_setup_cfg_and_setup_py(mock_repo: RepositoryController,
         ),
     )
 
-    with patch.object(uv_boost.tools.uv, "run_uvx") as mock_migrate:
+    with patch.object(uv_boost.tools.uv, "exec_uvx") as mock_migrate:
         uv_boost.apply()
         # migrate-to-uv should NOT be called — bare setup.cfg + setup.py is not a migration source
         mock_migrate.assert_not_called()

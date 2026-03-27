@@ -55,7 +55,7 @@ def patched_mypy_apply(
 ) -> Generator[PatchedMypyApply]:
     """Yield a MypyBoost with all subprocess calls pre-mocked to succeed."""
     with (
-        patch.object(mypy_boost_with_pyproject.tools.uv, "run", return_value=ok_result()) as mock_uv,
+        patch.object(mypy_boost_with_pyproject.tools.uv, "exec", return_value=ok_result()) as mock_uv,
         patch.object(mypy_boost_with_pyproject.tools.git, "commit") as mock_git,
         patch.object(mypy_boost_with_pyproject, "_run_type_checker", return_value=ok_result()) as mock_mypy,
     ):
@@ -85,7 +85,7 @@ def patched_mypy_apply_with_add_package(
 ) -> Generator[PatchedMypyApplyWithAddPackage]:
     """Yield a MypyBoost with all subprocess and add_package calls pre-mocked."""
     with (
-        patch.object(mypy_boost_with_pyproject.tools.uv, "run", return_value=ok_result()) as mock_uv,
+        patch.object(mypy_boost_with_pyproject.tools.uv, "exec", return_value=ok_result()) as mock_uv,
         patch.object(mypy_boost_with_pyproject.tools.git, "commit") as mock_git,
         patch.object(mypy_boost_with_pyproject, "_run_type_checker", return_value=ok_result()) as mock_mypy,
         patch.object(mypy_boost_with_pyproject.tools.uv, "add_package") as mock_add_package,
@@ -105,21 +105,21 @@ def mypy_boost_uv_failing(
     fail_result: SubprocessResultFactory,
 ) -> Generator[MypyBoost]:
     """Yield a MypyBoost where uv.run returns a non-zero result."""
-    with patch.object(mypy_boost_with_pyproject.tools.uv, "run", return_value=fail_result()):
+    with patch.object(mypy_boost_with_pyproject.tools.uv, "exec", return_value=fail_result()):
         yield mypy_boost_with_pyproject
 
 
 @pytest.fixture
 def mypy_boost_uv_file_not_found(mypy_boost_with_pyproject: MypyBoost) -> Generator[MypyBoost]:
     """Yield a MypyBoost where uv.run raises FileNotFoundError."""
-    with patch.object(mypy_boost_with_pyproject.tools.uv, "run", side_effect=FileNotFoundError):
+    with patch.object(mypy_boost_with_pyproject.tools.uv, "exec", side_effect=FileNotFoundError):
         yield mypy_boost_with_pyproject
 
 
 @pytest.fixture
 def mypy_boost_uv_oserror(mypy_boost_with_pyproject: MypyBoost) -> Generator[MypyBoost]:
     """Yield a MypyBoost where uv.run raises OSError."""
-    with patch.object(mypy_boost_with_pyproject.tools.uv, "run", side_effect=OSError):
+    with patch.object(mypy_boost_with_pyproject.tools.uv, "exec", side_effect=OSError):
         yield mypy_boost_with_pyproject
 
 
@@ -129,7 +129,7 @@ def mypy_boost_uv_ok(
     ok_result: SubprocessResultFactory,
 ) -> Generator[MypyBoost]:
     """Yield a MypyBoost (no pyproject) where uv.run returns ok."""
-    with patch.object(mypy_boost.tools.uv, "run", return_value=ok_result()):
+    with patch.object(mypy_boost.tools.uv, "exec", return_value=ok_result()):
         yield mypy_boost
 
 
