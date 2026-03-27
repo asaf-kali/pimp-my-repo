@@ -47,7 +47,7 @@ def patched_ruff_apply(
 ) -> Generator[PatchedRuffApply]:
     """Yield a RuffBoost with all subprocess calls pre-mocked to succeed."""
     with (
-        patch.object(ruff_boost_with_pyproject.tools.uv, "run", return_value=ok_result()) as mock_uv,
+        patch.object(ruff_boost_with_pyproject.tools.uv, "exec", return_value=ok_result()) as mock_uv,
         patch.object(ruff_boost_with_pyproject.tools.git, "commit") as mock_git,
         patch.object(ruff_boost_with_pyproject, "_run_ruff_format", return_value=ok_result()) as mock_fmt,
         patch.object(ruff_boost_with_pyproject, "_run_ruff_check", return_value=ok_result()) as mock_check,
@@ -80,7 +80,7 @@ def patched_ruff_apply_with_add_package(
 ) -> Generator[PatchedRuffApplyWithAddPackage]:
     """Yield a RuffBoost with all subprocess and add_package calls pre-mocked."""
     with (
-        patch.object(ruff_boost_with_pyproject.tools.uv, "run", return_value=ok_result()) as mock_uv,
+        patch.object(ruff_boost_with_pyproject.tools.uv, "exec", return_value=ok_result()) as mock_uv,
         patch.object(ruff_boost_with_pyproject.tools.git, "commit") as mock_git,
         patch.object(ruff_boost_with_pyproject, "_run_ruff_format", return_value=ok_result()) as mock_fmt,
         patch.object(ruff_boost_with_pyproject, "_run_ruff_check", return_value=ok_result()) as mock_check,
@@ -102,21 +102,21 @@ def ruff_boost_uv_failing(
     fail_result: SubprocessResultFactory,
 ) -> Generator[RuffBoost]:
     """Yield a RuffBoost where uv.run returns a non-zero result."""
-    with patch.object(ruff_boost_with_pyproject.tools.uv, "run", return_value=fail_result()):
+    with patch.object(ruff_boost_with_pyproject.tools.uv, "exec", return_value=fail_result()):
         yield ruff_boost_with_pyproject
 
 
 @pytest.fixture
 def ruff_boost_uv_file_not_found(ruff_boost_with_pyproject: RuffBoost) -> Generator[RuffBoost]:
     """Yield a RuffBoost where uv.run raises FileNotFoundError."""
-    with patch.object(ruff_boost_with_pyproject.tools.uv, "run", side_effect=FileNotFoundError):
+    with patch.object(ruff_boost_with_pyproject.tools.uv, "exec", side_effect=FileNotFoundError):
         yield ruff_boost_with_pyproject
 
 
 @pytest.fixture
 def ruff_boost_uv_oserror(ruff_boost_with_pyproject: RuffBoost) -> Generator[RuffBoost]:
     """Yield a RuffBoost where uv.run raises OSError."""
-    with patch.object(ruff_boost_with_pyproject.tools.uv, "run", side_effect=OSError):
+    with patch.object(ruff_boost_with_pyproject.tools.uv, "exec", side_effect=OSError):
         yield ruff_boost_with_pyproject
 
 
@@ -126,7 +126,7 @@ def ruff_boost_uv_ok(
     ok_result: SubprocessResultFactory,
 ) -> Generator[RuffBoost]:
     """Yield a RuffBoost (no pyproject) where uv.run returns ok."""
-    with patch.object(ruff_boost.tools.uv, "run", return_value=ok_result()):
+    with patch.object(ruff_boost.tools.uv, "exec", return_value=ok_result()):
         yield ruff_boost
 
 
@@ -227,11 +227,13 @@ def test_skips_unsuppressible_codes(ruff_boost: RuffBoost) -> None:
 
 
 def test_empty_output(ruff_boost: RuffBoost) -> None:
-    assert ruff_boost._parse_violations("") == {}  # noqa: SLF001
+    with pytest.raises(RuntimeError, match="non-JSON"):
+        ruff_boost._parse_violations("")  # noqa: SLF001
 
 
 def test_all_checks_passed_output(ruff_boost: RuffBoost) -> None:
-    assert ruff_boost._parse_violations("All checks passed!\n") == {}  # noqa: SLF001
+    with pytest.raises(RuntimeError, match="non-JSON"):
+        ruff_boost._parse_violations("All checks passed!\n")  # noqa: SLF001
 
 
 # =============================================================================
@@ -463,12 +465,13 @@ def test_apply_stops_after_max_iterations(
     assert patched_ruff_apply.mock_check.call_count == _MAX_RUFF_ITERATIONS
 
 
-def test_apply_stops_early_when_no_parseable_violations(
+def test_apply_fails_when_ruff_check_produces_non_json_output(
     patched_ruff_apply: PatchedRuffApply,
     fail_result: SubprocessResultFactory,
 ) -> None:
     patched_ruff_apply.mock_check.return_value = fail_result("some unparseable output\n")
-    patched_ruff_apply.boost.apply()
+    with pytest.raises(RuntimeError, match="non-JSON"):
+        patched_ruff_apply.boost.apply()
     patched_ruff_apply.mock_check.assert_called_once()
 
 

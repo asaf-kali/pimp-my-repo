@@ -109,7 +109,7 @@ class BaseMypyBoost(Boost, abc.ABC):
 
     def _verify_uv_present(self) -> None:
         try:
-            result = self.uv.run("--version", check=False)
+            result = self.uv.exec("--version", check=False)
             if result.returncode != 0:
                 msg = "uv is not available"
                 raise BoostSkippedError(msg)
@@ -357,6 +357,7 @@ class BaseMypyBoost(Boost, abc.ABC):
 
     def _add_mypy(self) -> None:
         self.uv.add_package("mypy", group="lint")
+        self.uv.sync_group("lint")
 
 
 class MypyBoost(BaseMypyBoost):
@@ -366,7 +367,7 @@ class MypyBoost(BaseMypyBoost):
         return "✅ Silence mypy violations"
 
     def _run_type_checker(self) -> subprocess.CompletedProcess[str]:
-        return self.uv.run("run", "mypy", ".", check=False)
+        return self.uv.exec("run", "--no-sync", "mypy", ".", check=False)
 
 
 class DmypyBoost(BaseMypyBoost):
@@ -381,10 +382,10 @@ class DmypyBoost(BaseMypyBoost):
         return "✅ Silence dmypy violations"
 
     def _run_type_checker(self) -> subprocess.CompletedProcess[str]:
-        self.uv.run("run", "dmypy", "kill", check=False)
+        self.uv.exec("run", "--no-sync", "dmypy", "kill", check=False)
         shutil.rmtree(self.repo_path / ".mypy_cache", ignore_errors=True)
         (self.repo_path / ".dmypy.json").unlink(missing_ok=True)
-        return self.uv.run("run", "dmypy", "run", ".", check=False)
+        return self.uv.exec("run", "--no-sync", "dmypy", "run", ".", check=False)
 
     def _configure_extras(self) -> None:
         self._add_dmypy_to_gitignore()

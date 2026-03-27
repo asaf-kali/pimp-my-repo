@@ -159,7 +159,7 @@ def _run_ruff_checks(repo_path: Path) -> None:
     ruff = _venv_exe(repo_path, "ruff")
     _run([ruff, "check", "."], cwd=repo_path, assert_clean_stderr=True)
     logger.info("[green]ruff check ✓[/green]")
-    _run([ruff, "format", "."], cwd=repo_path, assert_clean_stderr=True)
+    _run([ruff, "format", "--check", "."], cwd=repo_path, assert_clean_stderr=True)
     logger.info("[green]ruff format ✓[/green]")
 
 
