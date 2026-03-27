@@ -80,7 +80,7 @@ class RuffBoost(Boost):
 
     def _verify_uv_present(self) -> None:
         try:
-            result = self.uv.run("--version", check=False)
+            result = self.uv.exec("--version", check=False)
             if result.returncode != 0:
                 msg = "uv is not available"
                 raise BoostSkippedError(msg)
@@ -97,11 +97,11 @@ class RuffBoost(Boost):
 
     def _run_ruff_format(self) -> subprocess.CompletedProcess[str]:
         logger.debug("Running ruff format...")
-        return self.uv.run("run", "--no-sync", "ruff", "format", ".", check=False)
+        return self.uv.exec("run", "--no-sync", "ruff", "format", ".", check=False)
 
     def _run_ruff_check(self) -> subprocess.CompletedProcess[str]:
         logger.debug("Running ruff check...")
-        return self.uv.run("run", "--no-sync", "ruff", "check", ".", "--output-format=json", check=False)
+        return self.uv.exec("run", "--no-sync", "ruff", "check", ".", "--output-format=json", check=False)
 
     def _ensure_ruff_config(self, data: TOMLDocument) -> TOMLDocument:
         if "tool" not in data:

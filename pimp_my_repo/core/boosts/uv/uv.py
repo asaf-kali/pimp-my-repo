@@ -44,7 +44,7 @@ class UvBoost(Boost):
     def _check_uv_installed(self) -> bool:
         """Check if UV is installed."""
         try:
-            result = self.uv.run("--version", check=False)
+            result = self.uv.exec("--version", check=False)
         except subprocess.CalledProcessError:
             return False
         except OSError:
@@ -317,7 +317,7 @@ class UvBoost(Boost):
 
         # Run migrate-to-uv for main migration (handles Pipfile, Poetry, setup.cfg with [options], etc.)
         logger.info("Detected migration source, using uvx migrate-to-uv...")
-        self.uv.run_uvx("migrate-to-uv")
+        self.uv.exec_uvx("migrate-to-uv")
         logger.info("Migration completed successfully")
 
         # Add grouped requirements files after migration
@@ -363,7 +363,7 @@ class UvBoost(Boost):
 
     def _generate_uv_lock(self) -> None:
         logger.info("Generating uv.lock...")
-        self.uv.run("lock")
+        self.uv.exec("lock")
         logger.info("Successfully generated uv.lock")
 
     def apply(self) -> None:
