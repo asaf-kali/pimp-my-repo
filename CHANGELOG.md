@@ -1,6 +1,35 @@
 # CHANGELOG
 
 
+## v0.2.12 (2026-03-27)
+
+### 🌴
+
+- 🌴 Organize logs ([#19](https://github.com/asaf-kali/pimp-my-repo/pull/19),
+  [`8eb4ee4`](https://github.com/asaf-kali/pimp-my-repo/commit/8eb4ee451cfd2af792b1237b590784fe64745202))
+
+* Use loguru instead of internal logger
+
+* ✨ Auto-log to file; remove --verbose
+
+Always write a full log (level 0) to ~/.local/state/pmr/pmr-TIMESTAMP.log. The terminal dashboard
+  stays at INFO only, keeping output clean.
+
+- Add --no-log-file flag to disable file logging - Remove --verbose / -v (file covers that use case)
+  - Format: [timestamp] [level] message [module] [file:line] - Print log path to console after run
+  completes
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+* Add more verbose logs
+
+* Sort out console
+
+---------
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+
 ## v0.2.11 (2026-03-27)
 
 ### 🐛
