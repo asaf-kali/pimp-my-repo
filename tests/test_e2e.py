@@ -20,14 +20,14 @@ def test_e2e_boosts_applied_then_idempotent(mock_repo: RepositoryController) -> 
     console = Console(quiet=True)
 
     # --- Run 1: apply all boosts ---
-    results1 = run_boosts(mock_repo.path, console=console)
+    run_result1 = run_boosts(mock_repo.path, console=console, log_to_file=False)
 
     # No boost should fail
-    failed1 = [r for r in results1 if r.status == "failed"]
+    failed1 = [r for r in run_result1.results if r.status == "failed"]
     assert not failed1, f"Boosts failed on first run: {failed1}"
 
     # uv is the only implemented boost — it must be applied
-    by_name1 = {r.name: r.status for r in results1}
+    by_name1 = {r.name: r.status for r in run_result1.results}
     assert by_name1["uv"] == "applied"
 
     # Repo must be clean (all changes committed)
@@ -35,10 +35,10 @@ def test_e2e_boosts_applied_then_idempotent(mock_repo: RepositoryController) -> 
     commits_after_run1 = mock_repo.commit_count()
 
     # --- Run 2: no changes should be made ---
-    results2 = run_boosts(mock_repo.path, console=console)
+    run_result2 = run_boosts(mock_repo.path, console=console, log_to_file=False)
 
     # No boost should fail
-    failed2 = [r for r in results2 if r.status == "failed"]
+    failed2 = [r for r in run_result2.results if r.status == "failed"]
     assert not failed2, f"Boosts failed on second run: {failed2}"
 
     # No new commits must have been created

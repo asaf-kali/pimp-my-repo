@@ -42,6 +42,7 @@ class UvController:
 
     def sync_group(self, group: str) -> None:
         """Sync only a specific dependency group without installing the project or other groups."""
+        logger.debug(f"Syncing dependency group: {group}")
         self.exec("sync", "--only-group", group)
 
     def add_package(

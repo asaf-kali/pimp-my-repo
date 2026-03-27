@@ -169,6 +169,7 @@ class RuffBoost(Boost):
             else:
                 lines[idx] = _merge_noqa(raw_line=lines[idx], codes=codes)
 
+        logger.trace(f"Writing noqa comments to {filepath} in lines: {sorted(line_violations.keys())}")
         full_path.write_text("".join(lines), encoding="utf-8")
 
     def _suppress_violations_iteration(self) -> bool:
@@ -225,8 +226,10 @@ class RuffBoost(Boost):
         existing: set[str] = set(ruff_section.get("extend-exclude") or set())
         new_excludes = existing | files
         if new_excludes == existing:
+            logger.debug(f"Ruff extend-exclude unchanged (files already present): {files}")
             return
         ordered = sorted(new_excludes)
+        logger.debug(f"Updating ruff extend-exclude: added {files - existing}")
         ruff_section["extend-exclude"] = ordered
         self.pyproject.write(data)
 

@@ -20,27 +20,22 @@ app = typer.Typer(
 )
 
 _PATH_ARG = typer.Option(".", "--path", "-p", help="Path to the repository to pimp")
-_VERBOSE_ARG = typer.Option(
-    False,  # noqa: FBT003
-    "--verbose",
-    "-v",
-    help="Show debug logs (default shows info logs)",
-)
 _ONLY_ARG = typer.Option([], "--only", help="Run only these boost(s) (repeatable)")
 _SKIP_ARG = typer.Option([], "--skip", help="Skip these boost(s) (repeatable)")
 _LIST_ARG = typer.Option(False, "--list", help="List available boosts and exit")  # noqa: FBT003
+_NO_LOG_FILE_ARG = typer.Option(False, "--no-log-file", help="Disable writing logs to file")  # noqa: FBT003
 
 
 @app.command()
 def run(
     path: str = _PATH_ARG,
-    verbose: bool = _VERBOSE_ARG,  # noqa: FBT001
     only: list[str] = _ONLY_ARG,
     skip: list[str] = _SKIP_ARG,
     list_boosts: bool = _LIST_ARG,  # noqa: FBT001
+    no_log_file: bool = _NO_LOG_FILE_ARG,  # noqa: FBT001
 ) -> None:
     """Apply PMR boosts to a repository."""
-    console = Console()
+    console = Console(force_terminal=True)
 
     boost_classes = _resolve_boosts(only=only, skip=skip, list_boosts=list_boosts, console=console)
 
@@ -48,8 +43,12 @@ def run(
     console.print(f"[bold]Boosting repository at:[/bold] [cyan]{repo_path}[/cyan]")
     _validate_path(repo_path, console)
 
-    results = run_boosts(repo_path=repo_path, console=console, boost_classes=boost_classes, verbose=verbose)
-    _print_summary(results, console)
+    run_result = run_boosts(
+        repo_path=repo_path, console=console, boost_classes=boost_classes, log_to_file=not no_log_file
+    )
+    if run_result.log_path:
+        console.print(f"[dim]Full log:[/dim] [cyan]{run_result.log_path}[/cyan]")
+    _print_summary(run_result.results, console)
 
 
 def _resolve_boosts(
