@@ -198,6 +198,7 @@ class BaseMypyBoost(Boost, abc.ABC):
         new_content = "".join(lines)
         if new_content == original:
             return False
+        logger.trace(f"Writing type: ignore comments to {filepath} in lines: {sorted(line_violations.keys())}")
         full_path.write_text(new_content, encoding="utf-8")
         return True
 
@@ -252,6 +253,7 @@ class BaseMypyBoost(Boost, abc.ABC):
         syntax_files = {loc.file_path for loc, codes in violations.items() if "syntax" in codes}
         if not syntax_files:
             return SyntaxHandlingResult(violations=violations, newly_excluded=False)
+        logger.debug(f"Syntax violations in {len(syntax_files)} file(s): {syntax_files}")
         newly_excluded = self._exclude_mypy_files(syntax_files)
         if not newly_excluded:
             # File-level exclusion already present but mypy still reports the file.
@@ -259,6 +261,7 @@ class BaseMypyBoost(Boost, abc.ABC):
             # (e.g. when the file is imported during package discovery). Escalate to
             # excluding the parent directory.
             parent_dirs = {str(Path(f).parent) + "/" for f in syntax_files}
+            logger.debug(f"File-level exclusion ineffective; escalating to parent dirs: {parent_dirs}")
             newly_excluded = self._exclude_mypy_files(parent_dirs)
         remaining = {loc: codes for loc, codes in violations.items() if loc.file_path not in syntax_files}
         return SyntaxHandlingResult(violations=remaining, newly_excluded=newly_excluded)
@@ -313,7 +316,9 @@ class BaseMypyBoost(Boost, abc.ABC):
             return False
         files = self._parse_uncoded_error_files(output)
         if not files:
+            logger.debug("Blocking error detected but no uncoded error files identified")
             return False
+        logger.debug(f"Blocking uncoded errors in {len(files)} file(s): {files}")
         return self._exclude_mypy_files(files)
 
     def _parse_uncoded_error_files(self, output: str) -> set[str]:
@@ -342,7 +347,9 @@ class BaseMypyBoost(Boost, abc.ABC):
         data = self.pyproject.read()
         tool_section = data.get("tool")
         if not tool_section or "ruff" not in tool_section:
+            logger.debug("Ruff not configured; skipping ruff suppress pass")
             return
+        logger.debug("Running ruff suppress pass after mypy edits")
         RuffBoost(tools=self.tools).run_suppress_iterations()
 
     def _configure_mypy(self) -> None:
