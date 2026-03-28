@@ -13,11 +13,15 @@ from tomlkit import TOMLDocument, document, table
 from pimp_my_repo.core.boosts.base import Boost
 from pimp_my_repo.core.boosts.uv.detector import detect_dependency_files
 from pimp_my_repo.core.boosts.uv.models import ProjectRequirements
+from pimp_my_repo.core.boosts.uv.python_version import resolve_requires_python
 from pimp_my_repo.core.tools.subprocess import run_command
 from pimp_my_repo.core.tools.uv import UvNotFoundError
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+_MAX_PYTHON_MINOR: int = sys.version_info.minor
+_MIN_PYTHON_MINOR: int = 8
 
 _SETUP_PY_TO_SETUP_CFG: dict[str, str] = {
     "name": "name",
@@ -33,6 +37,20 @@ _SETUP_PY_TO_SETUP_CFG: dict[str, str] = {
 
 class UvBoost(Boost):
     """Boost for integrating UV dependency management."""
+
+    def apply(self) -> None:
+        """Create pyproject.toml if needed and migrate using uvx migrate-to-uv."""
+        if not self._uv_is_available():
+            msg = "uv is not installed and could not be installed automatically"
+            raise UvNotFoundError(msg)
+        self._run_migration_if_needed()
+        self._ensure_pyproject_exists()
+        self._ensure_uv_config_present()
+        self._lock_with_requires_python()
+
+    def commit_message(self) -> str:
+        """Generate commit message for UV boost."""
+        return "✨ Add UV dependency management"
 
     def _uv_is_available(self) -> bool:
         if self._check_uv_installed():
@@ -334,7 +352,6 @@ class UvBoost(Boost):
             project_table = table()
             project_table["name"] = project_name
             project_table["version"] = "0.1.0"
-            project_table["requires-python"] = ">=3.8"
             pyproject_data["project"] = project_table
             self.pyproject.write(pyproject_data)
             return
@@ -356,26 +373,81 @@ class UvBoost(Boost):
         project_section["name"] = project_name
         self.pyproject.write(pyproject_data)
 
+    def _write_requires_python(self, requires_python: str) -> None:
+        pyproject_data = self.pyproject.read()
+        project_section: Any = pyproject_data.get("project")
+        if not isinstance(project_section, dict):
+            project_section = table()
+            pyproject_data["project"] = project_section
+        project_section["requires-python"] = requires_python
+        self.pyproject.write(pyproject_data)
+
+    def _remove_requires_python(self) -> None:
+        pyproject_data = self.pyproject.read()
+        project_section: Any = pyproject_data.get("project")
+        if not isinstance(project_section, dict):
+            return
+        project_section.pop("requires-python", None)
+        self.pyproject.write(pyproject_data)
+
+    def _try_lock_and_sync(self) -> bool:
+        try:
+            self.uv.exec("lock")
+            self.uv.exec("sync", "--all-groups")
+        except subprocess.CalledProcessError:
+            return False
+        else:
+            return True
+
+    def _lock_with_requires_python(self) -> None:
+        """Set requires-python, run uv lock + uv sync --all-groups, searching for a compatible minor."""
+        pyproject_data = self.pyproject.read()
+        project_section: Any = pyproject_data.get("project")
+        if isinstance(project_section, dict) and project_section.get("requires-python"):
+            logger.debug("requires-python already set, generating lock as-is")
+            self._lock_and_sync()
+            return
+
+        initial = resolve_requires_python(repo_path=self.tools.repo_path)
+        if initial is None:
+            logger.debug("No Python version detected, locking without requires-python")
+            self._lock_and_sync()
+            return
+
+        match = re.match(r">=3\.(\d+)", initial)
+        if not match:
+            self._write_requires_python(initial)
+            self._lock_and_sync()
+            return
+
+        detected_minor = int(match.group(1))
+        requires_python = f">=3.{detected_minor},<3.{detected_minor + 1}"
+        logger.info(f"Setting requires-python = '{requires_python}'")
+        self._write_requires_python(requires_python)
+        if self._try_lock_and_sync():
+            return
+
+        logger.info(f"Lock+sync failed for '{requires_python}', searching from 3.{_MAX_PYTHON_MINOR} down...")
+        for minor in range(_MAX_PYTHON_MINOR, _MIN_PYTHON_MINOR - 1, -1):
+            if minor == detected_minor:
+                continue
+            requires_python = f">=3.{minor},<3.{minor + 1}"
+            logger.info(f"Trying requires-python = '{requires_python}'")
+            self._write_requires_python(requires_python)
+            if self._try_lock_and_sync():
+                return
+
+        logger.warning("No compatible requires-python found, removing constraint and locking")
+        self._remove_requires_python()
+        self._lock_and_sync()
+
     def _ensure_uv_config_present(self) -> None:
         pyproject_data = self.pyproject.read()
         pyproject_data = self._ensure_uv_config(pyproject_data)
         self.pyproject.write(pyproject_data)
 
-    def _generate_uv_lock(self) -> None:
-        logger.info("Generating uv.lock...")
+    def _lock_and_sync(self) -> None:
+        logger.info("Running uv lock + uv sync --all-groups...")
         self.uv.exec("lock")
-        logger.info("Successfully generated uv.lock")
-
-    def apply(self) -> None:
-        """Create pyproject.toml if needed and migrate using uvx migrate-to-uv."""
-        if not self._uv_is_available():
-            msg = "uv is not installed and could not be installed automatically"
-            raise UvNotFoundError(msg)
-        self._run_migration_if_needed()
-        self._ensure_pyproject_exists()
-        self._ensure_uv_config_present()
-        self._generate_uv_lock()
-
-    def commit_message(self) -> str:
-        """Generate commit message for UV boost."""
-        return "✨ Add UV dependency management"
+        self.uv.exec("sync", "--all-groups")
+        logger.info("uv lock and sync completed successfully")

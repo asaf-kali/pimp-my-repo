@@ -4,6 +4,7 @@ import configparser
 import re
 import subprocess
 from typing import TYPE_CHECKING
+from unittest import mock
 from unittest.mock import patch
 
 import pytest
@@ -934,3 +935,107 @@ def test_apply_is_idempotent(mock_repo: RepositoryController, uv_boost: UvBoost)
 
 def test_get_name_returns_correct_value() -> None:
     assert UvBoost.get_name() == "uv"
+
+
+# =============================================================================
+# _LOCK_WITH_REQUIRES_PYTHON TESTS
+# =============================================================================
+
+
+@pytest.fixture
+def mock_resolve_requires_python() -> Generator[mock.MagicMock]:
+    with patch("pimp_my_repo.core.boosts.uv.uv.resolve_requires_python", return_value=">=3.8") as m:
+        yield m
+
+
+@pytest.fixture
+def mock_try_lock_and_sync(uv_boost: UvBoost) -> Generator[mock.MagicMock]:
+    with mock.patch.object(uv_boost, "_try_lock_and_sync", return_value=True) as m:
+        yield m
+
+
+@pytest.fixture
+def mock_lock_and_sync(uv_boost: UvBoost) -> Generator[mock.MagicMock]:
+    with mock.patch.object(uv_boost, "_lock_and_sync") as m:
+        yield m
+
+
+def test_lock_skips_detection_if_requires_python_already_set(
+    mock_repo: RepositoryController,
+    uv_boost: UvBoost,
+    mock_lock_and_sync: mock.MagicMock,
+) -> None:
+    mock_repo.write_file("pyproject.toml", '[project]\nname = "x"\nrequires-python = ">=3.9"\n')
+    with patch("pimp_my_repo.core.boosts.uv.uv.resolve_requires_python") as mock_resolve:
+        uv_boost._lock_with_requires_python()  # noqa: SLF001
+        mock_resolve.assert_not_called()
+    mock_lock_and_sync.assert_called_once()
+
+
+def test_lock_skips_requires_python_when_no_version_detected(
+    mock_repo: RepositoryController,
+    uv_boost: UvBoost,
+    mock_lock_and_sync: mock.MagicMock,
+) -> None:
+    mock_repo.write_file("pyproject.toml", '[project]\nname = "x"\n')
+    with patch("pimp_my_repo.core.boosts.uv.uv.resolve_requires_python", return_value=None):
+        uv_boost._lock_with_requires_python()  # noqa: SLF001
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert "requires-python" not in content
+    mock_lock_and_sync.assert_called_once()
+
+
+def test_lock_sets_requires_python_on_first_success(
+    mock_repo: RepositoryController,
+    uv_boost: UvBoost,
+    mock_resolve_requires_python: mock.MagicMock,  # noqa: ARG001
+    mock_try_lock_and_sync: mock.MagicMock,
+) -> None:
+    mock_repo.write_file("pyproject.toml", '[project]\nname = "x"\n')
+    mock_try_lock_and_sync.return_value = True
+
+    uv_boost._lock_with_requires_python()  # noqa: SLF001
+
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert 'requires-python = ">=3.8,<3.9"' in content
+    mock_try_lock_and_sync.assert_called_once()
+
+
+def test_lock_searches_down_on_failure(
+    mock_repo: RepositoryController,
+    uv_boost: UvBoost,
+    mock_resolve_requires_python: mock.MagicMock,  # noqa: ARG001
+    mock_try_lock_and_sync: mock.MagicMock,
+) -> None:
+    mock_repo.write_file("pyproject.toml", '[project]\nname = "x"\n')
+    # Detected is 3.8 (from mock_resolve_requires_python), fails.
+    # Search from max down: first attempt succeeds.
+    mock_try_lock_and_sync.side_effect = [False, True]
+
+    with patch("pimp_my_repo.core.boosts.uv.uv._MAX_PYTHON_MINOR", 10):
+        uv_boost._lock_with_requires_python()  # noqa: SLF001
+
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    # After detected 3.8 fails, searches 3.10 (max) → succeeds
+    expected_attempts = 2
+    assert 'requires-python = ">=3.10,<3.11"' in content
+    assert mock_try_lock_and_sync.call_count == expected_attempts
+
+
+def test_lock_removes_requires_python_when_all_versions_fail(
+    mock_repo: RepositoryController,
+    uv_boost: UvBoost,
+    mock_lock_and_sync: mock.MagicMock,
+    mock_try_lock_and_sync: mock.MagicMock,
+) -> None:
+    mock_repo.write_file("pyproject.toml", '[project]\nname = "x"\n')
+    mock_try_lock_and_sync.return_value = False
+    with (
+        patch("pimp_my_repo.core.boosts.uv.uv.resolve_requires_python", return_value=">=3.8"),
+        patch("pimp_my_repo.core.boosts.uv.uv._MAX_PYTHON_MINOR", 9),
+    ):
+        uv_boost._lock_with_requires_python()  # noqa: SLF001
+
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert "requires-python" not in content
+    mock_lock_and_sync.assert_called_once()
