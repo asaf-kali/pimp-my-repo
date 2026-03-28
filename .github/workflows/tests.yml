@@ -2,6 +2,7 @@ name: Tests
 
 on:
   workflow_call:
+  workflow_dispatch:
 
 jobs:
   test-unit:
@@ -18,7 +19,7 @@ jobs:
         echo "Coverage: $COVERAGE%"
 
   test-e2e:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
