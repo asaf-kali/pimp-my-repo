@@ -24,6 +24,11 @@ _VERBOSE_ARG = typer.Option(
     "-v",
     help="Show debug logs",
 )
+_REV_OPT = typer.Option(
+    None,
+    "--rev",
+    help="Git revision (branch, tag, or commit) to checkout before running pmr",
+)
 
 
 class E2EError(Exception):
@@ -128,6 +133,11 @@ def _configure_git_identity(repo_path: Path) -> None:
     _run([git, "config", "user.name", "pmr"], cwd=repo_path)
 
 
+def _checkout_rev(*, repo_path: Path, rev: str) -> None:
+    logger.info("Checking out revision [cyan]%s[/cyan]...", rev)
+    _run([_require_exe("git"), "checkout", rev], cwd=repo_path)
+
+
 def _run_pmr(repo_path: Path) -> None:
     _configure_git_identity(repo_path)
     logger.info("Running [bold]pmr[/bold] on [cyan]%s[/cyan]...", repo_path)
@@ -179,11 +189,14 @@ def _run_verification_checks(repo_path: Path) -> None:
 def run(
     repo_url: str = _REPO_URL_ARG,
     verbose: bool = _VERBOSE_ARG,  # noqa: FBT001
+    rev: str | None = _REV_OPT,
 ) -> None:
     """Clone a repo, run pmr, and verify all checks pass."""
     _setup_logging(verbose=verbose)
     try:
         repo_path = _prepare_repo(repo_url)
+        if rev is not None:
+            _checkout_rev(repo_path=repo_path, rev=rev)
         _run_pmr(repo_path)
         _assert_git_clean(repo_path)
         _run_verification_checks(repo_path)
