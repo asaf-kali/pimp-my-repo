@@ -1,6 +1,49 @@
 # CHANGELOG
 
 
+## v0.3.0 (2026-03-28)
+
+### Other
+
+- 🔨 CI fixes ([#23](https://github.com/asaf-kali/pimp-my-repo/pull/23),
+  [`c325888`](https://github.com/asaf-kali/pimp-my-repo/commit/c3258884568fb0108711348a0f2b1e30ba745c18))
+
+* .gitignore fix
+
+* 🐛 Fix dashboard spamming CI logs
+
+force_terminal=True caused Rich's Live display to emit cursor-movement escape codes at 10 Hz even in
+  non-TTY environments (CI), reprinting the full dashboard as raw text on every refresh. Removing it
+  lets Rich auto-detect the environment and disable timed refresh in CI.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+🐛 Fix branch name not interpolated in log messages
+
+Loguru uses f-string / {} style formatting, not %s.
+
+* 🔧 Allow e2e tests to run on manual workflow dispatch
+
+🔧 Merge tests workflow into checks
+
+🔧 Split release/publish into delivery workflow
+
+---------
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+### ✨
+
+- ✨ Implement JustfileBoost ([#22](https://github.com/asaf-kali/pimp-my-repo/pull/22),
+  [`1525357`](https://github.com/asaf-kali/pimp-my-repo/commit/15253574003ccfe1ac718f018270a012d5762b33))
+
+Add justfile generation to target repos with install, format, lint, check-ruff, and check-mypy
+  recipes. Detects configured tools (ruff, mypy, pre-commit) and skips recipes already present in an
+  existing justfile. Attempts to install just via platform-appropriate package manager if not found.
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+
 ## v0.2.12 (2026-03-27)
 
 ### 🌴
