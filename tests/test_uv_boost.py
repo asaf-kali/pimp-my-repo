@@ -965,10 +965,37 @@ def test_lock_skips_detection_if_requires_python_already_set(
     uv_boost: UvBoost,
     mock_lock_and_sync: mock.MagicMock,
 ) -> None:
+    mock_repo.write_file("pyproject.toml", '[project]\nname = "x"\nrequires-python = ">=3.9,<3.10"\n')
+    with patch("pimp_my_repo.core.boosts.uv.uv.resolve_requires_python") as mock_resolve:
+        uv_boost._lock_with_requires_python()  # noqa: SLF001
+        mock_resolve.assert_not_called()
+    mock_lock_and_sync.assert_called_once()
+
+
+def test_lock_adds_upper_bound_to_bare_requires_python(
+    mock_repo: RepositoryController,
+    uv_boost: UvBoost,
+    mock_lock_and_sync: mock.MagicMock,
+) -> None:
     mock_repo.write_file("pyproject.toml", '[project]\nname = "x"\nrequires-python = ">=3.9"\n')
     with patch("pimp_my_repo.core.boosts.uv.uv.resolve_requires_python") as mock_resolve:
         uv_boost._lock_with_requires_python()  # noqa: SLF001
         mock_resolve.assert_not_called()
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert 'requires-python = ">=3.9,<3.10"' in content
+    mock_lock_and_sync.assert_called_once()
+
+
+def test_lock_leaves_existing_upper_bound_unchanged(
+    mock_repo: RepositoryController,
+    uv_boost: UvBoost,
+    mock_lock_and_sync: mock.MagicMock,
+) -> None:
+    mock_repo.write_file("pyproject.toml", '[project]\nname = "x"\nrequires-python = ">=3.9,<3.12"\n')
+    with patch("pimp_my_repo.core.boosts.uv.uv.resolve_requires_python"):
+        uv_boost._lock_with_requires_python()  # noqa: SLF001
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert 'requires-python = ">=3.9,<3.12"' in content
     mock_lock_and_sync.assert_called_once()
 
 

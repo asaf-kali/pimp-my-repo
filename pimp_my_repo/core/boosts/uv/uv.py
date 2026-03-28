@@ -401,12 +401,27 @@ class UvBoost(Boost):
         else:
             return True
 
+    def _ensure_upper_bound(self) -> None:
+        """If requires-python is a bare '>=x.y', add the upper bound '<x.(y+1)'."""
+        pyproject_data = self.pyproject.read()
+        project_section: Any = pyproject_data.get("project")
+        if not isinstance(project_section, dict):
+            return
+        current: str = project_section.get("requires-python", "")
+        match = re.fullmatch(r">=(\d+)\.(\d+)", current.strip())
+        if not match:
+            return
+        major, minor = int(match.group(1)), int(match.group(2))
+        pinned = f">={major}.{minor},<{major}.{minor + 1}"
+        logger.info(f"Adding upper bound to requires-python: '{current}' → '{pinned}'")
+        self._write_requires_python(pinned)
+
     def _lock_with_requires_python(self) -> None:
         """Set requires-python, run uv lock + uv sync --all-groups, searching for a compatible minor."""
         pyproject_data = self.pyproject.read()
         project_section: Any = pyproject_data.get("project")
         if isinstance(project_section, dict) and project_section.get("requires-python"):
-            logger.debug("requires-python already set, locking as-is")
+            self._ensure_upper_bound()
             self._lock_and_sync()
             return
 
