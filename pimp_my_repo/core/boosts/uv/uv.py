@@ -47,6 +47,8 @@ class UvBoost(Boost):
         self._ensure_pyproject_exists()
         self._ensure_uv_config_present()
         self._lock_with_requires_python()
+        logger.info("Syncing all groups into venv...")
+        self.uv.exec("sync", "--all-groups")
 
     def commit_message(self) -> str:
         """Generate commit message for UV boost."""

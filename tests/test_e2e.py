@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from rich.console import Console
 
 from pimp_my_repo.cli.runner import run_boosts
+from pimp_my_repo.core.tools.subprocess import run_command
 
 if TYPE_CHECKING:
     from pimp_my_repo.core.tools.repo import RepositoryController
@@ -49,3 +50,14 @@ def test_e2e_boosts_applied_then_idempotent(mock_repo: RepositoryController) -> 
 
     # Repo must still be clean
     assert mock_repo.is_clean()
+
+    # Venv must be fully synced after the boost
+    sync_check = run_command(
+        ["uv", "sync", "--all-groups", "--check"],
+        cwd=mock_repo.path,
+        check=False,
+    )
+    assert sync_check.returncode == 0, (
+        f"uv sync --all-groups --check failed — venv is not fully installed.\n"
+        f"stdout: {sync_check.stdout}\nstderr: {sync_check.stderr}"
+    )
