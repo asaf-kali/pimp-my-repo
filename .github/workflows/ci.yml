@@ -11,47 +11,7 @@ jobs:
     if: "!contains(github.event.head_commit.message, '[skip ci]')"
     uses: ./.github/workflows/checks.yml
 
-  release:
+  delivery:
     needs: [checks]
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    outputs:
-      released: ${{ steps.semrel.outputs.released }}
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        token: ${{ secrets.GITHUB_TOKEN }}
-    - uses: ./.github/actions/setup
-    - run: just install-all
-    - name: Run semantic release
-      id: semrel
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        just semrel
-        ls dist/*.whl 2>/dev/null && echo "released=true" >> $GITHUB_OUTPUT || echo "released=false" >> $GITHUB_OUTPUT
-    - name: Upload dist artifact
-      if: steps.semrel.outputs.released == 'true'
-      uses: actions/upload-artifact@v4
-      with:
-        name: dist
-        path: dist/
-
-  publish:
-    needs: release
-    if: needs.release.outputs.released == 'true'
-    runs-on: ubuntu-latest
-    environment: pypi
-    permissions:
-      id-token: write
-    steps:
-    - name: Download dist
-      uses: actions/download-artifact@v4
-      with:
-        name: dist
-        path: dist/
-    - name: Upload to PyPI
-      uses: pypa/gh-action-pypi-publish@release/v1
+    if: "github.ref == 'refs/heads/main'"
+    uses: ./.github/workflows/delivery.yml
