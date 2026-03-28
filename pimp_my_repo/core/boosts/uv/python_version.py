@@ -101,7 +101,7 @@ def _detect_from_uv_lock(*, repo_path: Path) -> PythonVersion | None:
     except OSError as e:
         logger.debug(f"Failed to read uv.lock: {e}")
         return None
-    match = re.search(r'^requires-python\s*=\s*">=(\d+)\.(\d+)"', content, re.MULTILINE)
+    match = re.search(r'^requires-python\s*=\s*">=(\d+)\.(\d+)', content, re.MULTILINE)
     if not match:
         logger.debug("No requires-python constraint found in uv.lock")
         return None

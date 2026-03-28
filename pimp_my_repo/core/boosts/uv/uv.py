@@ -20,7 +20,7 @@ from pimp_my_repo.core.tools.uv import UvNotFoundError
 if TYPE_CHECKING:
     from pathlib import Path
 
-_MAX_PYTHON_MINOR: int = sys.version_info.minor
+_MAX_PYTHON_MINOR: int = 14  # Upper bound for requires-python search; update as new Python releases land
 _MIN_PYTHON_MINOR: int = 8
 
 _SETUP_PY_TO_SETUP_CFG: dict[str, str] = {
@@ -47,8 +47,9 @@ class UvBoost(Boost):
         self._ensure_pyproject_exists()
         self._ensure_uv_config_present()
         self._lock_with_requires_python()
-        logger.info("Syncing all groups into venv...")
+        logger.info("Running final uv sync --all-groups...")
         self.uv.exec("sync", "--all-groups")
+        logger.info("Venv fully synced")
 
     def commit_message(self) -> str:
         """Generate commit message for UV boost."""
@@ -394,8 +395,7 @@ class UvBoost(Boost):
 
     def _try_lock_and_sync(self) -> bool:
         try:
-            self.uv.exec("lock")
-            self.uv.exec("sync", "--all-groups")
+            self._lock_and_sync()
         except subprocess.CalledProcessError:
             return False
         else:
@@ -406,7 +406,7 @@ class UvBoost(Boost):
         pyproject_data = self.pyproject.read()
         project_section: Any = pyproject_data.get("project")
         if isinstance(project_section, dict) and project_section.get("requires-python"):
-            logger.debug("requires-python already set, generating lock as-is")
+            logger.debug("requires-python already set, locking as-is")
             self._lock_and_sync()
             return
 
@@ -449,7 +449,8 @@ class UvBoost(Boost):
         self.pyproject.write(pyproject_data)
 
     def _lock_and_sync(self) -> None:
-        logger.info("Running uv lock + uv sync --all-groups...")
+        logger.debug("Running uv lock...")
         self.uv.exec("lock")
+        logger.debug("Running uv sync --all-groups...")
         self.uv.exec("sync", "--all-groups")
-        logger.info("uv lock and sync completed successfully")
+        logger.debug("uv lock and sync completed successfully")
