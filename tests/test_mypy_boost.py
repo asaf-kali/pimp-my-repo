@@ -473,6 +473,64 @@ def test_sets_strict_true_on_existing_mypy_section(mock_repo: RepositoryControll
 
 
 # =============================================================================
+# _RUN_TYPE_CHECKER
+# =============================================================================
+
+
+def test_clear_mypy_cache_removes_cache_dir_and_dmypy_json(
+    mock_repo: RepositoryController, mypy_boost: MypyBoost
+) -> None:
+    cache_dir = mock_repo.path / ".mypy_cache"
+    cache_dir.mkdir()
+    (cache_dir / "stale.json").write_text("{}")
+    dmypy_json = mock_repo.path / ".dmypy.json"
+    dmypy_json.write_text("{}")
+
+    mypy_boost._clear_mypy_cache()  # noqa: SLF001
+
+    assert not cache_dir.exists()
+    assert not dmypy_json.exists()
+
+
+def test_mypy_clears_cache_before_and_after_run(mypy_boost: MypyBoost, ok_result: SubprocessResultFactory) -> None:
+    call_order: list[str] = []
+
+    def record_exec(*_args: str, **_kwargs: object) -> object:
+        call_order.append("mypy")
+        return ok_result()
+
+    with (
+        patch.object(mypy_boost, "_clear_mypy_cache", side_effect=lambda: call_order.append("clear")),
+        patch.object(mypy_boost.tools.uv, "exec", side_effect=record_exec) as mock_exec,
+    ):
+        mypy_boost._run_type_checker()  # noqa: SLF001
+
+    assert call_order == ["clear", "mypy", "clear"], "cache must be cleared before and after mypy"
+    mock_exec.assert_called_once_with("run", "--no-sync", "mypy", ".", check=False)
+
+
+def test_dmypy_clears_cache_before_kill_and_after_run(
+    dmypy_boost: DmypyBoost, ok_result: SubprocessResultFactory
+) -> None:
+    """Cache must be cleared before dmypy kill and again after dmypy run."""
+    call_order: list[str] = []
+
+    def record_exec(*args: str, **_kwargs: object) -> object:
+        call_order.append("kill" if "kill" in args else "dmypy_run")
+        return ok_result()
+
+    with (
+        patch.object(dmypy_boost, "_clear_mypy_cache", side_effect=lambda: call_order.append("clear")),
+        patch.object(dmypy_boost.tools.uv, "exec", side_effect=record_exec),
+    ):
+        dmypy_boost._run_type_checker()  # noqa: SLF001
+
+    assert call_order == ["clear", "kill", "dmypy_run", "clear"], (
+        "order must be: clear cache → kill daemon → run → clear cache"
+    )
+
+
+# =============================================================================
 # ADD DMYPY TO GITIGNORE
 # =============================================================================
 
