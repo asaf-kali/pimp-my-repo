@@ -2,6 +2,7 @@ name: Checks
 
 on:
   workflow_call:
+  workflow_dispatch:
 
 jobs:
   check-ruff:
@@ -19,3 +20,40 @@ jobs:
     - uses: ./.github/actions/setup
     - run: just install-all
     - run: just check-mypy
+
+  test-unit:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: ./.github/actions/setup
+    - run: just install-test
+    - run: just cover-xml
+    - name: Extract coverage percentage
+      run: |
+        COVERAGE=$(just cover-percentage)
+        echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
+        echo "Coverage: $COVERAGE%"
+
+  test-e2e:
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        repo:
+          - https://github.com/django/django.git
+          - https://github.com/bottlepy/bottle.git
+          - https://github.com/psf/requests.git
+          - https://github.com/simplejson/simplejson.git
+          - https://github.com/docopt/docopt.git
+          - https://github.com/pwaller/pyfiglet.git
+          - https://github.com/pallets/itsdangerous.git
+          # Takes too long:
+          # - https://github.com/pandas-dev/pandas.git
+          # - https://github.com/scikit-learn/scikit-learn.git
+    steps:
+    - uses: actions/checkout@v4
+    - uses: ./.github/actions/setup
+    - run: just install-run
+    - name: Run E2E test - ${{ matrix.repo }}
+      run: just test-e2e ${{ matrix.repo }}
