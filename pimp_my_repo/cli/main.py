@@ -35,7 +35,7 @@ def run(
     no_log_file: bool = _NO_LOG_FILE_ARG,  # noqa: FBT001
 ) -> None:
     """Apply PMR boosts to a repository."""
-    console = Console(force_terminal=True)
+    console = Console()
 
     boost_classes = _resolve_boosts(only=only, skip=skip, list_boosts=list_boosts, console=console)
 

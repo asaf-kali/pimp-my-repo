@@ -28,9 +28,9 @@ class RepositoryController:
         if not self.is_clean():
             msg = "Git working directory is not clean. Please commit or stash your changes."
             raise ValueError(msg)
-        logger.info("Switching to branch: [%s]", branch_name)
+        logger.info(f"Switching to branch: [{branch_name}]")
         self.switch_branch(branch_name)
-        logger.info("On branch: [%s]", branch_name)
+        logger.info(f"On branch: [{branch_name}]")
 
     def execute(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         """Run a git command in the repository directory."""
