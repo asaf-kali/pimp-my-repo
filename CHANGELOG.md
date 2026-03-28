@@ -1,6 +1,32 @@
 # CHANGELOG
 
 
+## v0.3.1 (2026-03-28)
+
+### Other
+
+- ⬆️ Bump GitHub Actions to Node.js 24 compatible versions
+  ([#24](https://github.com/asaf-kali/pimp-my-repo/pull/24),
+  [`cc59bb8`](https://github.com/asaf-kali/pimp-my-repo/commit/cc59bb8329e611f3d74bb6da80a837b602cfec37))
+
+- actions/checkout: v4 → v6 - actions/setup-python: v5 → v6 - astral-sh/setup-uv: v4 → v7 -
+  extractions/setup-just: v2 → v3
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+### 🐛
+
+- 🐛 Move publish job to ci.yml to fix PyPI trusted publishing
+  ([#25](https://github.com/asaf-kali/pimp-my-repo/pull/25),
+  [`e52f7c6`](https://github.com/asaf-kali/pimp-my-repo/commit/e52f7c6667cb07addaf5668988dd2f588af7e31b))
+
+PyPI trusted publishing does not support reusable workflows — the publish step must live directly in
+  the calling workflow. Move publish from delivery.yml to ci.yml and expose 'released' as a workflow
+  output.
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+
 ## v0.3.0 (2026-03-28)
 
 ### Other
