@@ -1,6 +1,59 @@
 # CHANGELOG
 
 
+## v0.3.2 (2026-03-28)
+
+### 🐛
+
+- 🐛 Auto-detect requires-python in UV boost, multiple bug fixes
+  ([#20](https://github.com/asaf-kali/pimp-my-repo/pull/20),
+  [`d2d9e43`](https://github.com/asaf-kali/pimp-my-repo/commit/d2d9e4371c8e6142d9166b5bf5c9da6b31407fd6))
+
+* ✨ Auto-detect requires-python in UV boost
+
+Detection order: venv → uv.lock → vermin → (unset) Bumps minor version on uv lock conflict; removes
+  constraint if all fail. Adds vermin >= 1.5 as a project dependency.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+* 🐛 Ensure venv is fully synced at end of UV boost
+
+Add explicit `uv sync --all-groups` at the end of `apply()` to guarantee the venv is fully installed
+  regardless of what happened in the retry loop. Add e2e validation using `uv sync --all-groups
+  --check`.
+
+* 🐛 Clear mypy cache before and after each type-check run
+
+Extract _clear_mypy_cache() on BaseMypyBoost (clears .mypy_cache + .dmypy.json). Call it before and
+  after every type-checker invocation so stale cache never affects results. For dmypy, clearing
+  happens before kill (not after). Bump "no progress" log from info to warning. Add unit tests
+  verifying cache-clear order for both MypyBoost and DmypyBoost.
+
+* E2E script: support --rev flag
+
+* 🐛 Fix sync_group wiping venv by using --group instead of --only-group
+
+uv sync --only-group removes all packages not in that group. Switching to --group installs the group
+  additively, preserving existing deps.
+
+* 🧪 Fix e2e venv sync validation
+
+- Flat layout (no src/) → package=false, no project-install noise in --check - Add requirements.txt
+  with real dep (iniconfig) so sync_group bugs are detectable - Extract _assert_venv_fully_synced()
+  helper, run it after both boost runs - Add loguru logging around sync check for better debugging
+
+* 🔧 Address PR review issues
+
+* ✨ Add upper bound to pre-existing bare requires-python
+
+If pyproject.toml already has requires-python = ">=x.y" (no upper bound), normalize it to
+  ">=x.y,<x.(y+1)" before locking, consistent with how newly detected versions are written.
+
+---------
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+
 ## v0.3.1 (2026-03-28)
 
 ### Other
