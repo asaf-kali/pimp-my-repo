@@ -5,6 +5,16 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "E2E: cavity-design",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "scripts/test_e2e.py",
+            "console": "integratedTerminal",
+            "args": [
+                "https://github.com/mkali-weizmann/cavity-design"
+            ]
+        },
+        {
             "name": "PMR: debug django",
             "type": "debugpy",
             "request": "launch",

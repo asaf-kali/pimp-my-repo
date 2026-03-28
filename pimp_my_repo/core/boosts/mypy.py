@@ -244,7 +244,7 @@ class BaseMypyBoost(Boost, abc.ABC):
                 self._run_ruff()
 
         if not made_progress:
-            logger.info("No progress made (violations exist but files unchanged); stable state reached, stopping")
+            logger.warning("No progress made (violations exist but files unchanged); stable state reached, stopping")
             return False
         return True
 
@@ -366,6 +366,11 @@ class BaseMypyBoost(Boost, abc.ABC):
         self.uv.add_package("mypy", group="lint")
         self.uv.sync_group("lint")
 
+    def _clear_mypy_cache(self) -> None:
+        """Clear mypy cache to ensure changes take effect immediately."""
+        shutil.rmtree(self.repo_path / ".mypy_cache", ignore_errors=True)
+        (self.repo_path / ".dmypy.json").unlink(missing_ok=True)
+
 
 class MypyBoost(BaseMypyBoost):
     """Boost that silences mypy violations using plain mypy (authoritative, slower)."""
@@ -374,7 +379,10 @@ class MypyBoost(BaseMypyBoost):
         return "✅ Silence mypy violations"
 
     def _run_type_checker(self) -> subprocess.CompletedProcess[str]:
-        return self.uv.exec("run", "--no-sync", "mypy", ".", check=False)
+        self._clear_mypy_cache()
+        result = self.uv.exec("run", "--no-sync", "mypy", ".", check=False)
+        self._clear_mypy_cache()
+        return result
 
 
 class DmypyBoost(BaseMypyBoost):
@@ -389,10 +397,11 @@ class DmypyBoost(BaseMypyBoost):
         return "✅ Silence dmypy violations"
 
     def _run_type_checker(self) -> subprocess.CompletedProcess[str]:
+        self._clear_mypy_cache()
         self.uv.exec("run", "--no-sync", "dmypy", "kill", check=False)
-        shutil.rmtree(self.repo_path / ".mypy_cache", ignore_errors=True)
-        (self.repo_path / ".dmypy.json").unlink(missing_ok=True)
-        return self.uv.exec("run", "--no-sync", "dmypy", "run", ".", check=False)
+        result = self.uv.exec("run", "--no-sync", "dmypy", "run", ".", check=False)
+        self._clear_mypy_cache()
+        return result
 
     def _configure_extras(self) -> None:
         self._add_dmypy_to_gitignore()
