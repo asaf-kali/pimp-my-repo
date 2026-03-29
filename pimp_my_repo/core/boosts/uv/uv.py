@@ -338,13 +338,19 @@ class UvBoost(Boost):
 
         # Run migrate-to-uv for main migration (handles Pipfile, Poetry, setup.cfg with [options], etc.)
         logger.info("Detected migration source, using uvx migrate-to-uv...")
-        self.uv.exec_uvx("migrate-to-uv")
+        # --skip-lock: let _lock_with_requires_python() handle locking with proper version detection.
+        # Without this, migrate-to-uv runs `uv lock` internally using the current Python (e.g. 3.14),
+        # which fails for old packages that have no pre-built wheel and can't be built with modern setuptools.
+        self.uv.exec_uvx("migrate-to-uv", "--skip-lock")
         logger.info("Migration completed successfully")
 
-        # Add grouped requirements files after migration
+        # Add grouped requirements files after migration.
+        # migrate-to-uv may already handle some (e.g. requirements-dev.txt → [dependency-groups])
+        # and delete those files, so only add files that still exist.
         for group, files in requirements_files.groups.items():
             for file_path in files:
-                self.uv.add_from_requirements_file(file_path, group=group)
+                if file_path.exists():
+                    self.uv.add_from_requirements_file(file_path, group=group)
 
     def _ensure_pyproject_exists(self) -> None:
         pyproject_path = self.tools.repo_path / "pyproject.toml"
