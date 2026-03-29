@@ -89,9 +89,9 @@ major_tags = [
     "🎉",
 ]
 minor_tags = [
-    "✨",
     "🔥",
     "🐲",
+    "🎆",
 ]
 patch_tags = [
     "📝",
@@ -103,6 +103,7 @@ patch_tags = [
     "📌",
     "🌴",
     "🖼️",
+    "✨",
 ]
 
 # Test
