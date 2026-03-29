@@ -66,3 +66,10 @@ jobs:
     - run: just install-run
     - name: Run E2E test - ${{ matrix.repo }}
       run: just test-e2e ${{ matrix.repo }} --rev ${{ matrix.rev }}
+    - name: Upload PMR logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: pmr-logs-${{ strategy.job-index }}
+        path: ~/.local/state/pmr/*.log
+        if-no-files-found: ignore
