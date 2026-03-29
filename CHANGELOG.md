@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v0.3.3 (2026-03-29)
+
+### ✨
+
+- ✨ Add cavity-design repo to e2e tests with --rev pinning
+  ([#26](https://github.com/asaf-kali/pimp-my-repo/pull/26),
+  [`14cf000`](https://github.com/asaf-kali/pimp-my-repo/commit/14cf000df14ae5e8afe36cdfa25b9cda286e4f42))
+
+* ✨ Add cavity-design repo to e2e tests with --rev pinning
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+* 🔒 Pin all e2e matrix repos to specific commits
+
+* Semrel emoji change
+
+---------
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+
 ## v0.3.2 (2026-03-28)
 
 ### 🐛
