@@ -40,20 +40,29 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        repo:
-          - https://github.com/django/django.git
-          - https://github.com/bottlepy/bottle.git
-          - https://github.com/psf/requests.git
-          - https://github.com/simplejson/simplejson.git
-          - https://github.com/docopt/docopt.git
-          - https://github.com/pwaller/pyfiglet.git
-          - https://github.com/pallets/itsdangerous.git
+        include:
+          - repo: https://github.com/django/django.git
+            rev: edd899786851f6285abbc3c272f4f5ec0e48a74c
+          - repo: https://github.com/bottlepy/bottle.git
+            rev: 2a743a302a71460bfe4c0b8b7cb99a306b0328c6
+          - repo: https://github.com/psf/requests.git
+            rev: bc04dfd6dad4cb02cd92f5daa81eb562d280a761
+          - repo: https://github.com/simplejson/simplejson.git
+            rev: f7122a4f60659431b39acbf0b7ad96775642ee02
+          - repo: https://github.com/docopt/docopt.git
+            rev: 8fea867d4220f1095dae9d6264ec5aa4031fb712
+          - repo: https://github.com/pwaller/pyfiglet.git
+            rev: e7590f2b80a403db9605750df8a51198759757ee
+          - repo: https://github.com/pallets/itsdangerous.git
+            rev: 672971d66a2ef9f85151e53283113f33d642dabd
+          - repo: https://github.com/mkali-weizmann/cavity-design.git
+            rev: ea21f1c759e473dd5e9c843230d2429501637026
           # Takes too long:
-          # - https://github.com/pandas-dev/pandas.git
-          # - https://github.com/scikit-learn/scikit-learn.git
+          # - repo: https://github.com/pandas-dev/pandas.git
+          # - repo: https://github.com/scikit-learn/scikit-learn.git
     steps:
     - uses: actions/checkout@v6
     - uses: ./.github/actions/setup
     - run: just install-run
     - name: Run E2E test - ${{ matrix.repo }}
-      run: just test-e2e ${{ matrix.repo }}
+      run: just test-e2e ${{ matrix.repo }} --rev ${{ matrix.rev }}
