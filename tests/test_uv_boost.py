@@ -886,16 +886,11 @@ def test_apply_adds_grouped_requirements_files(mock_repo: RepositoryController, 
     with patch.object(uv_boost.tools.uv, "add_from_requirements_file") as mock_add:
         uv_boost.apply()
 
-        # Should be called twice: once for dev, once for test
-        expected_calls = 2
-        assert mock_add.call_count == expected_calls
+        # migrate-to-uv already migrates requirements-dev.txt into [dependency-groups] dev and
+        # deletes the file, so PMR must not try to add it again. Only test-requirements.txt
+        # (an unrecognised pattern for migrate-to-uv) should be added by PMR.
+        assert mock_add.call_count == 1
 
-        # Check that dev group file was added
-        dev_calls = [call for call in mock_add.call_args_list if call.kwargs.get("group") == "dev"]
-        assert len(dev_calls) == 1
-        assert dev_calls[0].args[0].name == "requirements-dev.txt"
-
-        # Check that test group file was added
         test_calls = [call for call in mock_add.call_args_list if call.kwargs.get("group") == "test"]
         assert len(test_calls) == 1
         assert test_calls[0].args[0].name == "test-requirements.txt"

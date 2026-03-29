@@ -66,6 +66,7 @@ def _run_boosts_with_dashboard(
             format="[{time:YYYY-MM-DD HH:mm:ss.SSS}] [{level:<4.4}] {message} [{name}] [{file}:{line}]",
             colorize=False,
         )
+        console.print(f"[dim]Full log:[/dim] [cyan]{log_path}[/cyan]")
 
     gen = execute_boosts(repo_path=repo_path, boost_classes=boost_classes)
     results: list[BoostResult] = []

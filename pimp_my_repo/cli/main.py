@@ -46,8 +46,6 @@ def run(
     run_result = run_boosts(
         repo_path=repo_path, console=console, boost_classes=boost_classes, log_to_file=not no_log_file
     )
-    if run_result.log_path:
-        console.print(f"[dim]Full log:[/dim] [cyan]{run_result.log_path}[/cyan]")
     _print_summary(run_result.results, console)
 
 
