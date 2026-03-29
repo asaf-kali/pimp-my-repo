@@ -1,6 +1,32 @@
 # CHANGELOG
 
 
+## v0.3.4 (2026-03-29)
+
+### 🐛
+
+- 🐛 Pass --skip-lock to migrate-to-uv, fix duplicate requirements file handling
+  ([#27](https://github.com/asaf-kali/pimp-my-repo/pull/27),
+  [`283696b`](https://github.com/asaf-kali/pimp-my-repo/commit/283696bfe111919810b378b8bc86a24c5b324651))
+
+* 🐛 Pass --skip-lock to migrate-to-uv; add coursist to e2e tests
+
+migrate-to-uv was running `uv lock` internally before requires-python was set, defaulting to the
+  current Python (3.14). Old packages with no pre-built wheel (e.g. django-allauth==0.42.0) couldn't
+  be built from source with modern setuptools, causing the UV boost to fail. --skip-lock delegates
+  locking entirely to _lock_with_requires_python(), which detects the right Python version first.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+* Add support-repo Claude skill
+
+* Change full log print to before run
+
+---------
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+
 ## v0.3.3 (2026-03-29)
 
 ### ✨
