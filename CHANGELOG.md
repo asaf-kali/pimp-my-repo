@@ -1,6 +1,54 @@
 # CHANGELOG
 
 
+## v0.3.5 (2026-03-30)
+
+### Other
+
+- 🔧 Include CI e2e logs in artifcats ([#28](https://github.com/asaf-kali/pimp-my-repo/pull/28),
+  [`a136d09`](https://github.com/asaf-kali/pimp-my-repo/commit/a136d09ac839a22d984ee70ee4f531916c2863a7))
+
+### ✨
+
+- ✨ Support native build backends (e.g. pandas/mesonpy)
+  ([#29](https://github.com/asaf-kali/pimp-my-repo/pull/29),
+  [`67b02e2`](https://github.com/asaf-kali/pimp-my-repo/commit/67b02e2516fcc3fab86f5a9cdeffa81a78900d33))
+
+* ✨ Support native build backends (e.g. pandas/mesonpy)
+
+For projects using non-pure-Python build backends (mesonpy, scikit-build-core, maturin), uv cannot
+  build the project without the native toolchain. This PR fixes PMR to handle these projects by:
+
+- Detecting native build backends via `[build-system] build-backend` - Setting `[tool.uv] package =
+  false` to skip local-package installation - Removing `optional-dependencies` (avoids circular
+  transitive deps, e.g. fastparquet → pandas) - Replacing dynamic `version` with a static
+  placeholder `0.0.0` (avoids metadata build) - Always log command stderr/stdout at DEBUG level on
+  failure (previously silent) - Add pandas to CI e2e test matrix
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+* 🔧 Return CommandResult dataclass from run_command, control logging per caller
+
+- Add CommandResult dataclass (cmd, returncode, stdout, stderr) with output property and
+  log_output() method - run_command gains log_on_error (default True); when False, only logs exit
+  code - UvController.exec/exec_uvx pass log_on_error through - Ruff
+  _run_ruff_check/_run_ruff_format use log_on_error=False (output is huge) - Mypy _run_type_checker
+  uses log_on_error=False (output is huge) - On ruff JSON parse failure, log output at TRACE (not
+  warning)
+
+* 🔧 Pass CommandResult to _handle_failure/_log_failure, add type hints
+
+* 🔧 Remove get_output(), log both streams, use stdout for python --version
+
+- Remove CommandResult.get_output() — the "stderr or stdout" logic silently discards one stream;
+  callers now access .stdout/.stderr directly - log_output() logs stdout and stderr as separate
+  labelled lines - python_version: use result.stdout directly (python --version → stdout in py3)
+
+---------
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+
 ## v0.3.4 (2026-03-29)
 
 ### 🐛
