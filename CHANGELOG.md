@@ -1,6 +1,34 @@
 # CHANGELOG
 
 
+## v0.3.6 (2026-03-30)
+
+### ✨
+
+- ✨ Add scikit-learn e2e support; minor fixes; fix RUF100 oscillation
+  ([#30](https://github.com/asaf-kali/pimp-my-repo/pull/30),
+  [`cce6723`](https://github.com/asaf-kali/pimp-my-repo/commit/cce6723a55ab12eba76b97d377af60a128b7a4f6))
+
+* 🔧 Address review: deduplicate native backend check, fix level casing, add comment
+
+- _ensure_uv_config_present: compute _has_native_build_backend() once, pass is_native flag to
+  _ensure_uv_config and _is_installable_package to avoid reading pyproject.toml twice per boost run
+  - log_output call site in ruff: use "TRACE" (uppercase) to match logger.log() convention - Add
+  inline comment explaining version = "0.0.0" is a uv lockfile placeholder
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+* ✅ Add scikit-learn to e2e tests; fix RUF100 oscillation on file-level noqa
+
+Add RUF100 to _UNSUPPRESSIBLE_CODES and to the ruff ignore list. File-level `# ruff: noqa: CODE`
+  directives cause RUF100 violations that inline `# noqa: RUF100` cannot suppress (the directive
+  remains unused), creating an oscillation loop across iterations.
+
+---------
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+
 ## v0.3.5 (2026-03-30)
 
 ### Other
