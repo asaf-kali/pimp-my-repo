@@ -128,7 +128,7 @@ class RuffBoost(Boost):
         try:
             return self._parse_violations(result.stdout)
         except RuntimeError:
-            result.log_output(level="trace")
+            result.log_output(level="TRACE")
             raise
 
     def _parse_violations(self, output: str) -> ViolationsByLocation:
