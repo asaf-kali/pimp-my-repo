@@ -15,7 +15,6 @@ def run_command(
     *,
     cwd: Path | None = None,
     check: bool = True,
-    log_on_error: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     """Run a command capturing stdout and stderr.
 
@@ -23,8 +22,6 @@ def run_command(
         cmd: Command and arguments to run.
         cwd: Working directory for the command. Defaults to the current directory.
         check: If True and the command exits non-zero, raise CalledProcessError.
-        log_on_error: If True, log stderr/stdout before raising on non-zero exit.
-        env_vars: Environment variables to set for the command. Defaults to None.
 
     """
     env_vars = os.environ.copy()
@@ -40,10 +37,11 @@ def run_command(
         env=env_vars,
     )
     if result.returncode != 0:
-        logger.trace(f"exit={result.returncode}")
+        output = (result.stderr or result.stdout).strip()
+        if output:
+            logger.debug(f"exit={result.returncode}: {output}")
+        else:
+            logger.debug(f"exit={result.returncode}")
         if check:
-            if log_on_error:
-                output = (result.stderr or result.stdout).strip()
-                logger.debug(f"Command {cmd!r} failed: {output}")
             raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
     return result

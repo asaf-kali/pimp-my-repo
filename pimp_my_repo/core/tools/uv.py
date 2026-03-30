@@ -28,7 +28,7 @@ class UvController:
 
     def exec_uvx(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         """Run a uvx command in the repository directory."""
-        return run_command(["uvx", *args], cwd=self.repo_path, check=check, log_on_error=True)
+        return run_command(["uvx", *args], cwd=self.repo_path, check=check)
 
     def verify_present(self) -> None:
         try:

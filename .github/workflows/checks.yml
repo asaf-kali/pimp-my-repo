@@ -57,8 +57,9 @@ jobs:
             rev: 672971d66a2ef9f85151e53283113f33d642dabd
           - repo: https://github.com/mkali-weizmann/cavity-design.git
             rev: ea21f1c759e473dd5e9c843230d2429501637026
+          - repo: https://github.com/pandas-dev/pandas.git
+            rev: 9279635617e71d156a8fddb40d6011850360057b
           # Takes too long:
-          # - repo: https://github.com/pandas-dev/pandas.git
           # - repo: https://github.com/scikit-learn/scikit-learn.git
     steps:
     - uses: actions/checkout@v6
