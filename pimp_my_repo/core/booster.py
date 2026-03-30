@@ -37,7 +37,7 @@ def _run_boost(
     Captures the git HEAD before calling apply().  On any non-skip failure,
     resets hard back to that ref so the repo is left in a clean state.
     """
-    logger.debug(f"Starting boost: {boost_name}")
+    logger.debug(f"Starting boost '{boost_name}'")
     try:
         with _git_revert_context(repo_controller) as sha_before_apply:
             boost.apply()
@@ -45,14 +45,14 @@ def _run_boost(
             commits_made_during_apply = sha_before_apply != sha_after_apply
             committed = repo_controller.commit(boost.commit_message())
     except BoostSkippedError as e:
-        logger.debug(f"Boost {boost_name} skipped: {e.reason}")
+        logger.debug(f"Boost '{boost_name}' skipped: {e.reason}")
         return BoostResult(name=boost_name, status="skipped", message=e.reason)
 
     if commits_made_during_apply or committed:
-        logger.debug(f"Boost {boost_name} applied successfully")
+        logger.debug(f"Boost '{boost_name}' applied successfully")
         return BoostResult(name=boost_name, status="applied", message="Success")
 
-    logger.debug(f"Boost {boost_name} made no changes")
+    logger.debug(f"Boost '{boost_name}' made no changes")
     return BoostResult(name=boost_name, status="skipped", message="No changes to commit")
 
 
@@ -66,8 +66,8 @@ def _run_boost_class(
         boost = boost_class(boost_tools)
         return _run_boost(boost=boost, boost_name=boost_name, repo_controller=repo_controller)
     except (subprocess.CalledProcessError, OSError, RuntimeError) as e:
-        logger.error(f"Error applying {boost_name} boost: {e}")
-        logger.debug(f"Error applying {boost_name} boost", exc_info=True)
+        logger.error(f"Error applying '{boost_name}' boost: {e}")
+        logger.debug(f"Error applying '{boost_name}' boost", exc_info=True)
         return BoostResult(name=boost_name, status="failed", message=str(e))
 
 

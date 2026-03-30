@@ -23,7 +23,7 @@ class RepositoryController:
 
     def init_pmr(self, branch_name: str = _DEFAULT_BRANCH_NAME) -> None:
         """Set up git manager and prepare the pmr branch."""
-        logger.info("Checking git status...")
+        logger.info(f"Checking git status on [{self.path}]...")
         if not self.is_clean():
             msg = "Git working directory is not clean. Please commit or stash your changes."
             raise ValueError(msg)

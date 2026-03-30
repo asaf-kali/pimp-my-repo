@@ -50,7 +50,7 @@ def run_command(
     env_vars = os.environ.copy()
     env_vars.pop("VIRTUAL_ENV", None)  # Ensure subprocess doesn't inherit virtualenv
     env_vars.pop("VIRTUAL_ENV_PROMPT", None)
-    logger.debug(f"$ {' '.join(cmd)}" + (f"  [cwd={cwd}]" if cwd else ""))
+    logger.debug(f"Running {cmd}")
     raw = subprocess.run(  # noqa: S603
         cmd,
         cwd=cwd,
