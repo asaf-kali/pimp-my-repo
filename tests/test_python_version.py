@@ -131,6 +131,7 @@ def test_detect_venv_finds_dotenv_dir(
     result_mock = mock.MagicMock()
     result_mock.stdout = "Python 3.11.5"
     result_mock.stderr = ""
+    result_mock.get_output.return_value = "Python 3.11.5"
     mock_run_command.return_value = result_mock
 
     result = resolve_requires_python(repo_path=tmp_path)

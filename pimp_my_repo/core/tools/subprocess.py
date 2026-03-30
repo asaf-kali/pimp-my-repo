@@ -20,14 +20,13 @@ class CommandResult:
     stdout: str
     stderr: str
 
-    @property
-    def output(self) -> str:
+    def get_output(self) -> str:
         """Return stderr if non-empty, else stdout, stripped."""
         return (self.stderr or self.stdout).strip()
 
     def log_output(self, *, level: str = "debug") -> None:
         """Log the command output at the given level (if non-empty)."""
-        text = self.output
+        text = self.get_output()
         if not text:
             return
         log_fn = getattr(logger, level)
@@ -65,13 +64,23 @@ def run_command(
     )
     result = CommandResult(cmd=cmd, returncode=raw.returncode, stdout=raw.stdout, stderr=raw.stderr)
     if result.returncode != 0:
-        if log_on_error:
-            if result.output:
-                logger.debug(f"exit={result.returncode}: {result.output}")
-            else:
-                logger.debug(f"exit={result.returncode}")
-        else:
-            logger.debug(f"exit={result.returncode}")
-        if check:
-            raise subprocess.CalledProcessError(result.returncode, cmd, raw.stdout, raw.stderr)
+        _handle_failure(result, check=check, log_on_error=log_on_error)
     return result
+
+
+def _handle_failure(result: CommandResult, *, check: bool, log_on_error: bool) -> None:
+    _log_failure(result, log_on_error=log_on_error)
+    if check:
+        raise subprocess.CalledProcessError(result.returncode, result.cmd, result.stdout, result.stderr)
+
+
+def _log_failure(result: CommandResult, *, log_on_error: bool) -> None:
+    logger.debug(f"exit={result.returncode}")
+    if not log_on_error:
+        return
+    std_out = result.stdout.strip()
+    std_err = result.stderr.strip()
+    if std_out:
+        logger.trace(f"stdout: {std_out}")
+    if std_err:
+        logger.trace(f"stderr: {std_err}")
