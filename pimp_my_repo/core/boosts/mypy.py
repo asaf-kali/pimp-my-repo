@@ -15,7 +15,7 @@ from pimp_my_repo.core.boosts.ruff import RuffBoost
 from pimp_my_repo.core.tools.pyproject import PyProjectNotFoundError
 
 if TYPE_CHECKING:
-    import subprocess
+    from pimp_my_repo.core.tools.subprocess import CommandResult
 
 _MAX_MYPY_ITERATIONS = 10
 
@@ -97,7 +97,7 @@ class BaseMypyBoost(Boost, abc.ABC):
         self._apply_ignores()
 
     @abstractmethod
-    def _run_type_checker(self) -> subprocess.CompletedProcess[str]:
+    def _run_type_checker(self) -> CommandResult:
         """Run the type checker and return its result."""
 
     def _configure_extras(self) -> None:
@@ -378,9 +378,9 @@ class MypyBoost(BaseMypyBoost):
     def commit_message(self) -> str:
         return "✅ Silence mypy violations"
 
-    def _run_type_checker(self) -> subprocess.CompletedProcess[str]:
+    def _run_type_checker(self) -> CommandResult:
         self._clear_mypy_cache()
-        result = self.uv.exec("run", "--no-sync", "mypy", ".", check=False)
+        result = self.uv.exec("run", "--no-sync", "mypy", ".", check=False, log_on_error=False)
         self._clear_mypy_cache()
         return result
 
@@ -396,10 +396,10 @@ class DmypyBoost(BaseMypyBoost):
     def commit_message(self) -> str:
         return "✅ Silence dmypy violations"
 
-    def _run_type_checker(self) -> subprocess.CompletedProcess[str]:
+    def _run_type_checker(self) -> CommandResult:
         self._clear_mypy_cache()
-        self.uv.exec("run", "--no-sync", "dmypy", "kill", check=False)
-        result = self.uv.exec("run", "--no-sync", "dmypy", "run", ".", check=False)
+        self.uv.exec("run", "--no-sync", "dmypy", "kill", check=False, log_on_error=False)
+        result = self.uv.exec("run", "--no-sync", "dmypy", "run", ".", check=False, log_on_error=False)
         self._clear_mypy_cache()
         return result
 

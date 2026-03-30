@@ -15,6 +15,7 @@ from pimp_my_repo.core.boosts.uv.detector import (
     detect_existing_configs,
 )
 from pimp_my_repo.core.boosts.uv.uv import UvBoost
+from pimp_my_repo.core.tools.subprocess import CommandResult
 from pimp_my_repo.core.tools.uv import UvNotFoundError
 
 if TYPE_CHECKING:
@@ -202,12 +203,12 @@ def uv_boost_with_lock_error(mock_repo: RepositoryController, uv_boost: UvBoost)
     mock_repo.write_file("pyproject.toml", "[project]\nname = 'test'\nversion = '0.1.0'")
     error = subprocess.CalledProcessError(1, "uv lock", stderr="Lock failed")
 
-    def run_side_effect(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:  # noqa: ARG001
+    def run_side_effect(*args: str, check: bool = True) -> CommandResult:  # noqa: ARG001
         # Only raise error for "lock" command, not for "--version" check
         if args and args[0] == "lock":
             raise error
         # Return success for version check
-        return subprocess.CompletedProcess(["uv", *args], 0, "", "")
+        return CommandResult(cmd=["uv", *args], returncode=0, stdout="", stderr="")
 
     with patch.object(uv_boost.tools.uv, "exec", side_effect=run_side_effect):
         yield uv_boost

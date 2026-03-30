@@ -80,7 +80,7 @@ def _check_python_exe(*, python_exe: Path, repo_path: Path) -> PythonVersion | N
     except OSError as e:
         logger.trace(f"Failed to run {python_exe}: {e}")
         return None
-    output = (result.stdout or result.stderr or "").strip()
+    output = result.stdout.strip()
     match = re.match(r"Python (\d+)\.(\d+)", output)
     if not match:
         logger.trace(f"Unexpected output from {python_exe}: {output!r}")

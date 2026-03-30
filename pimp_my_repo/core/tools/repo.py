@@ -3,12 +3,11 @@
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    import subprocess
     from pathlib import Path
 
 from loguru import logger
 
-from pimp_my_repo.core.tools.subprocess import run_command
+from pimp_my_repo.core.tools.subprocess import CommandResult, run_command
 
 PMR_EMAIL = "pimp-my-repo@pypi.org"
 _DEFAULT_BRANCH_NAME = "feat/pmr"
@@ -32,7 +31,7 @@ class RepositoryController:
         self.switch_branch(branch_name)
         logger.info(f"On branch: [{branch_name}]")
 
-    def execute(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    def execute(self, *args: str, check: bool = True) -> CommandResult:
         """Run a git command in the repository directory."""
         return run_command(["git", *args], cwd=self.path, check=check)
 
@@ -77,7 +76,7 @@ class RepositoryController:
         self.execute(*commit_args)
         return True
 
-    def status(self, *, porcelain: bool = False) -> subprocess.CompletedProcess[str]:
+    def status(self, *, porcelain: bool = False) -> CommandResult:
         """Get git status."""
         args = ["status"]
         if porcelain:
