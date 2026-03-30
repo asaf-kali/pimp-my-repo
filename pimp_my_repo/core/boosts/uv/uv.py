@@ -123,7 +123,7 @@ class UvBoost(Boost):
         logger.info("Successfully installed UV via official installer")
         return True
 
-    def _ensure_uv_config(self, pyproject_data: TOMLDocument) -> TOMLDocument:
+    def _ensure_uv_config(self, pyproject_data: TOMLDocument, *, is_native: bool) -> TOMLDocument:
         """Ensure [tool.uv] section exists."""
         if "tool" not in pyproject_data:
             pyproject_data["tool"] = table()
@@ -136,10 +136,10 @@ class UvBoost(Boost):
         # After migrate-to-uv runs, setup.py is removed, so this branch applies only to
         # projects that bypass migration (e.g. setup.py-only without migration source).
         if not (self.tools.repo_path / "setup.py").exists():
-            uv_section["package"] = self._is_installable_package()
+            uv_section["package"] = self._is_installable_package(is_native=is_native)
         return pyproject_data
 
-    def _is_installable_package(self) -> bool:
+    def _is_installable_package(self, *, is_native: bool) -> bool:
         """Return True if the project has a real Python package structure.
 
         A project is a package if it has a ``src/`` directory or at least one
@@ -150,7 +150,7 @@ class UvBoost(Boost):
         Projects using native build backends (meson, scikit-build-core, maturin)
         are also excluded: uv cannot build them without the native toolchain.
         """
-        if self._has_native_build_backend():
+        if is_native:
             logger.debug("Native build backend detected; marking as package = false")
             return False
         repo = self.tools.repo_path
@@ -519,13 +519,15 @@ class UvBoost(Boost):
             else:
                 del project_section["dynamic"]
             if not project_section.get("version"):
+                # uv requires a static version to resolve the lockfile without running the build backend
                 project_section["version"] = "0.0.0"
         return pyproject_data
 
     def _ensure_uv_config_present(self) -> None:
+        is_native = self._has_native_build_backend()
         pyproject_data = self.pyproject.read()
-        pyproject_data = self._ensure_uv_config(pyproject_data)
-        if self._has_native_build_backend():
+        pyproject_data = self._ensure_uv_config(pyproject_data, is_native=is_native)
+        if is_native:
             pyproject_data = self._strip_native_backend_metadata(pyproject_data)
         self.pyproject.write(pyproject_data)
 

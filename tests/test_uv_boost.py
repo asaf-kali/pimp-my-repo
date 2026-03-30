@@ -411,7 +411,7 @@ def test_ensure_uv_config_adds_section_when_missing(mock_repo: RepositoryControl
     mock_repo.write_file("pyproject.toml", '[project]\nname = "test-project"\n')
 
     pyproject_data = uv_boost.tools.pyproject.read()
-    pyproject_data = uv_boost._ensure_uv_config(pyproject_data)  # noqa: SLF001
+    pyproject_data = uv_boost._ensure_uv_config(pyproject_data, is_native=False)  # noqa: SLF001
     uv_boost.tools.pyproject.write(pyproject_data)
 
     pyproject_content_after = (mock_repo.path / "pyproject.toml").read_text()
@@ -423,7 +423,7 @@ def test_ensure_uv_config_preserves_existing_section(mock_repo: RepositoryContro
     mock_repo.write_file("pyproject.toml", pyproject_content)
 
     pyproject_data = uv_boost.tools.pyproject.read()
-    pyproject_data = uv_boost._ensure_uv_config(pyproject_data)  # noqa: SLF001
+    pyproject_data = uv_boost._ensure_uv_config(pyproject_data, is_native=False)  # noqa: SLF001
     uv_boost.tools.pyproject.write(pyproject_data)
 
     pyproject_content_after = (mock_repo.path / "pyproject.toml").read_text()
@@ -438,7 +438,7 @@ def test_ensure_uv_config_sets_package_true_for_src_layout(mock_repo: Repository
     (mock_repo.path / "src").mkdir()
 
     pyproject_data = uv_boost.tools.pyproject.read()
-    pyproject_data = uv_boost._ensure_uv_config(pyproject_data)  # noqa: SLF001
+    pyproject_data = uv_boost._ensure_uv_config(pyproject_data, is_native=False)  # noqa: SLF001
     uv_boost.tools.pyproject.write(pyproject_data)
 
     assert "package = true" in (mock_repo.path / "pyproject.toml").read_text()
@@ -553,7 +553,7 @@ def test_write_pyproject_preserves_comments(mock_repo: RepositoryController, uv_
     mock_repo.write_file("pyproject.toml", pyproject_content)
 
     pyproject_data = uv_boost.tools.pyproject.read()
-    pyproject_data = uv_boost._ensure_uv_config(pyproject_data)  # noqa: SLF001
+    pyproject_data = uv_boost._ensure_uv_config(pyproject_data, is_native=False)  # noqa: SLF001
     uv_boost.tools.pyproject.write(pyproject_data)
 
     content_after = (mock_repo.path / "pyproject.toml").read_text()
@@ -568,7 +568,7 @@ def test_ensure_uv_config_with_existing_tool_section(mock_repo: RepositoryContro
     mock_repo.write_file("pyproject.toml", pyproject_content)
 
     pyproject_data = uv_boost.tools.pyproject.read()
-    pyproject_data = uv_boost._ensure_uv_config(pyproject_data)  # noqa: SLF001
+    pyproject_data = uv_boost._ensure_uv_config(pyproject_data, is_native=False)  # noqa: SLF001
     uv_boost.tools.pyproject.write(pyproject_data)
 
     content = (mock_repo.path / "pyproject.toml").read_text()
