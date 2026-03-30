@@ -506,7 +506,7 @@ def test_mypy_clears_cache_before_and_after_run(mypy_boost: MypyBoost, ok_result
         mypy_boost._run_type_checker()  # noqa: SLF001
 
     assert call_order == ["clear", "mypy", "clear"], "cache must be cleared before and after mypy"
-    mock_exec.assert_called_once_with("run", "--no-sync", "mypy", ".", check=False)
+    mock_exec.assert_called_once_with("run", "--no-sync", "mypy", ".", check=False, log_on_error=False)
 
 
 def test_dmypy_clears_cache_before_kill_and_after_run(

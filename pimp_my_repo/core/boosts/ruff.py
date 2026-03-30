@@ -12,7 +12,7 @@ from pimp_my_repo.core.boosts.base import Boost, BoostSkippedError
 from pimp_my_repo.core.tools.pyproject import PyProjectNotFoundError
 
 if TYPE_CHECKING:
-    import subprocess
+    from pimp_my_repo.core.tools.subprocess import CommandResult
 
 _MAX_RUFF_ITERATIONS = 10
 
@@ -95,13 +95,15 @@ class RuffBoost(Boost):
             msg = "No pyproject.toml found"
             raise BoostSkippedError(msg) from exc
 
-    def _run_ruff_format(self) -> subprocess.CompletedProcess[str]:
+    def _run_ruff_format(self) -> CommandResult:
         logger.debug("Running ruff format...")
-        return self.uv.exec("run", "--no-sync", "ruff", "format", ".", check=False)
+        return self.uv.exec("run", "--no-sync", "ruff", "format", ".", check=False, log_on_error=False)
 
-    def _run_ruff_check(self) -> subprocess.CompletedProcess[str]:
+    def _run_ruff_check(self) -> CommandResult:
         logger.debug("Running ruff check...")
-        return self.uv.exec("run", "--no-sync", "ruff", "check", ".", "--output-format=json", check=False)
+        return self.uv.exec(
+            "run", "--no-sync", "ruff", "check", ".", "--output-format=json", check=False, log_on_error=False
+        )
 
     def _ensure_ruff_config(self, data: TOMLDocument) -> TOMLDocument:
         if "tool" not in data:
@@ -120,6 +122,14 @@ class RuffBoost(Boost):
         # D203, D212: incompatible with D211/D213 (ruff picks one but warns; be explicit).
         lint_section["ignore"] = ["ERA001", "COM812", "ISC001", "D203", "D212"]
         return data
+
+    def _parse_ruff_output(self, result: CommandResult) -> ViolationsByLocation:
+        """Parse a ruff check result, logging output at TRACE level on JSON parse failure."""
+        try:
+            return self._parse_violations(result.stdout)
+        except RuntimeError:
+            result.log_output(level="trace")
+            raise
 
     def _parse_violations(self, output: str) -> ViolationsByLocation:
         """Parse ruff JSON output into {ViolationLocation: {rule_codes}}, using noqa_row."""
@@ -181,7 +191,7 @@ class RuffBoost(Boost):
             return False
 
         excluded = self._exclude_syntax_error_files(result.stdout)
-        violations = self._parse_violations(result.stdout)
+        violations = self._parse_ruff_output(result)
         if not violations and not excluded:
             logger.info("No parseable violations found; stopping")
             return False
