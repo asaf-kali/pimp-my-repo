@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.3.7 (2026-03-30)
+
+### 📝
+
+- 📝 Minor logging fixes ([#31](https://github.com/asaf-kali/pimp-my-repo/pull/31),
+  [`855edc4`](https://github.com/asaf-kali/pimp-my-repo/commit/855edc48e1df2c5739e54c11f878bf2ed7c49041))
+
+
 ## v0.3.6 (2026-03-30)
 
 ### ✨
