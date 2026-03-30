@@ -226,6 +226,33 @@ def test_skips_unsuppressible_codes(ruff_boost: RuffBoost) -> None:
     assert result == {ViolationLocation("src/foo.py", 5): {"E501"}}
 
 
+def test_ruf100_is_unsuppressible(ruff_boost: RuffBoost) -> None:
+    """RUF100 on file-level `# ruff: noqa:` lines causes oscillation if suppressed inline.
+
+    Adding `# noqa: RUF100` to `# ruff: noqa: E501` doesn't actually suppress RUF100
+    because the file-level directive remains unused — ruff keeps reporting it each iteration.
+    RUF100 must be treated as unsuppressible (added to ignore list instead).
+    """
+    output = json.dumps(
+        [
+            {"filename": "src/foo.py", "code": "RUF100", "noqa_row": 1},
+            {"filename": "src/foo.py", "code": "E501", "noqa_row": 2},
+        ]
+    )
+    result = ruff_boost._parse_violations(output)  # noqa: SLF001
+    assert result == {ViolationLocation("src/foo.py", 2): {"E501"}}
+
+
+def test_ruff_config_ignores_ruf100(mock_repo: RepositoryController, ruff_boost: RuffBoost) -> None:
+    """RUF100 must be in the ignore list to prevent oscillation on file-level noqa directives."""
+    mock_repo.write_file("pyproject.toml", "[project]\nname = 'test'\n")
+    data = ruff_boost.tools.pyproject.read()
+    data = ruff_boost._ensure_ruff_config(data)  # noqa: SLF001
+    ruff_boost.tools.pyproject.write(data)
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert "RUF100" in content
+
+
 def test_empty_output(ruff_boost: RuffBoost) -> None:
     with pytest.raises(RuntimeError, match="non-JSON"):
         ruff_boost._parse_violations("")  # noqa: SLF001

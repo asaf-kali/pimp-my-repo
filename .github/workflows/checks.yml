@@ -59,8 +59,8 @@ jobs:
             rev: ea21f1c759e473dd5e9c843230d2429501637026
           - repo: https://github.com/pandas-dev/pandas.git
             rev: 9279635617e71d156a8fddb40d6011850360057b
-          # Takes too long:
-          # - repo: https://github.com/scikit-learn/scikit-learn.git
+          - repo: https://github.com/scikit-learn/scikit-learn.git
+            rev: cc4843adf8bcbbe8a6d70ae0b4f490e11c010fa5
     steps:
     - uses: actions/checkout@v6
     - uses: ./.github/actions/setup

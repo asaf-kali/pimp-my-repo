@@ -18,8 +18,11 @@ _MAX_RUFF_ITERATIONS = 10
 
 # Rules that must never be suppressed via noqa:
 # - ERA001: treats the noqa comment itself as commented-out code → oscillation loop.
-#   Instead, ERA001 is added to ruff's ignore list in the config.
-_UNSUPPRESSIBLE_CODES: frozenset[str] = frozenset({"ERA001"})
+# - RUF100: "unused noqa directive" — fired on file-level `# ruff: noqa: CODE` lines.
+#   Adding `# noqa: RUF100` to such lines doesn't suppress RUF100 (the file-level
+#   directive is still unused), causing an infinite oscillation loop.
+#   Both codes are added to ruff's ignore list in the config instead.
+_UNSUPPRESSIBLE_CODES: frozenset[str] = frozenset({"ERA001", "RUF100"})
 
 
 class ViolationLocation(NamedTuple):
@@ -118,9 +121,11 @@ class RuffBoost(Boost):
         lint_section: Any = ruff_section["lint"]
         lint_section["select"] = ["ALL"]
         # ERA001: adding `# no-qa: ERA001` itself gets flagged as commented-out code.
+        # RUF100: "unused noqa" fires on pre-existing `# ruff: noqa:` file-level directives;
+        #   inline `# noqa: RUF100` doesn't suppress it → oscillation loop.
         # COM812, ISC001: conflict with ruff formatter, causing format/check oscillation.
         # D203, D212: incompatible with D211/D213 (ruff picks one but warns; be explicit).
-        lint_section["ignore"] = ["ERA001", "COM812", "ISC001", "D203", "D212"]
+        lint_section["ignore"] = ["ERA001", "RUF100", "COM812", "ISC001", "D203", "D212"]
         return data
 
     def _parse_ruff_output(self, result: CommandResult) -> ViolationsByLocation:
