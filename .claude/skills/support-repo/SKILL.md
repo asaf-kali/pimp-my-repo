@@ -28,13 +28,13 @@ target repo itself.
 git ls-remote <repo> HEAD | awk '{print $1}'
 ```
 
-Save this as `<sha>`. All subsequent commands use `--rev <sha>` so the test is
+Save this as `<sha>`. All subsequent commands pin to this SHA so the test is
 reproducible. If the user already provided a SHA, use that.
 
 ### Step 1 — Run local e2e test
 
 ```bash
-just test-e2e <repo> --rev <sha>
+just test-e2e <repo> <sha>
 ```
 
 Capture full output. Proceed based on result:
@@ -42,7 +42,7 @@ Capture full output. Proceed based on result:
 - **Passes** → go to [Step 3 (Add to CI)](#step-3--add-to-ci)
 - **Fails** → go to [Step 2 (Fix loop)](#step-2--fix-loop)
 
-### Step 2 — Fix loop (max 5 iterations)
+### Step 2 — Fix loop (max 10 iterations)
 
 #### 2a. Diagnose
 
@@ -57,10 +57,29 @@ Read the failure output carefully. Common failure categories and where to look:
 
 Read the relevant source files before editing. Understand the code flow, not just the error message.
 
-#### 2b. Fix
+#### 2b. Create a minimal fixture
 
-Apply the minimal fix to PMR code (anything under this repo: source, tests, config).
-After any code change, run:
+Now that you understand the failure, distill it into the smallest possible repo
+skeleton that reproduces the same problem. Place it in `tests/fixtures/<name>/`
+(use a short descriptive name, e.g. `native-build-backend` or `syntax-error-file`).
+
+The fixture should contain only what is needed to trigger the failure — a
+`pyproject.toml`, a few `.py` files, maybe a `requirements.txt`. Strip
+everything else.
+
+Register it in `tests/test_e2e_local.py` by appending the name to `_FIXTURES`.
+
+#### 2c. Fix PMR code and validate with the fixture
+
+Apply the minimal fix to PMR source code. Use the fixture as the fast feedback
+loop — it runs in seconds without cloning anything:
+
+```bash
+just test-e2e-local <name>
+```
+
+This runs only the one fixture you're working on (via `test_local_fixture_manual`).
+Once it passes, confirm the full suite still holds:
 
 ```bash
 just lint && just test
@@ -68,15 +87,21 @@ just lint && just test
 
 Fix any lint/test failures before proceeding.
 
-#### 2c. Retry
+#### 2d. Confirm on the real repo
+
+Only once `just test` passes, re-run against the original repo to confirm the
+fix holds end-to-end:
 
 ```bash
-just test-e2e <repo> --rev <sha>
+just test-e2e <repo> <sha>
 ```
 
 - **Passes** → go to Step 3
-- **Fails again** → increment iteration counter, return to 2a
-- **5 iterations exhausted without passing** → stop, report what was attempted and what still fails, ask the user how to proceed
+- **Fails again** → increment iteration counter, return to 2a. Refine the
+  fixture if the new failure reveals a different structure, or add a second
+  fixture if there are multiple distinct issues.
+- **10 iterations exhausted without passing** → stop, report what was attempted
+  and what still fails, ask the user how to proceed
 
 ### Step 3 — Add to CI
 
@@ -90,10 +115,14 @@ Edit `.github/workflows/checks.yml`. Find the `test-e2e` job matrix (it uses
 
 Keep entries in their current order (append at the end).
 
-Then commit, push, and trigger CI:
+Then commit, push, and trigger CI. Include fixture files only if Step 2 was
+needed (i.e. a fixture was created):
 
 ```bash
+# Always staged:
 git add .github/workflows/checks.yml
+# Only if a fixture was created in Step 2:
+git add tests/fixtures/ tests/test_e2e_local.py
 git commit -m "✅ Add <repo-name> to e2e tests"
 git push
 gh workflow run checks.yml --ref $(git branch --show-current)
@@ -118,12 +147,19 @@ gh run view <run-id> --json status,conclusion
   ```bash
   gh run view <run-id> --log-failed
   ```
-  Diagnose, fix PMR code (counts toward the 5-iteration limit shared with local fixes), push again (no new CI trigger needed — the push re-runs the checks automatically if a PR is open, otherwise re-trigger manually), return to Step 4
+  Diagnose, fix PMR code (counts toward the 10-iteration limit shared with local
+  fixes), push again (the push re-runs checks automatically if a PR is open,
+  otherwise re-trigger manually with `gh workflow run`), return to Step 4
 
 ## Important constraints
 
 - **Never modify the target repo.** All fixes go into this PMR repo only.
-- **Always use `--rev`** so tests are pinned to a known SHA.
+- **Always pin to a SHA** so tests are reproducible.
+- **Create a fixture first** — don't iterate on the full remote repo until the
+  fixture-based test passes. Use `just test-e2e-local <name>` as the fast inner
+  loop; `just test-e2e <repo> <sha>` is the final confirmation only.
 - **Run `just lint && just test` after every code change** before retrying e2e.
-- **5 total fix iterations** (local + CI combined). If not converging, surface the remaining failure and ask the user.
-- When diagnosing, read the actual source code — don't guess from memory or assume a previous fix applies.
+- **10 total fix iterations** (local + CI combined). If not converging, surface
+  the remaining failure and ask the user.
+- When diagnosing, read the actual source code — don't guess from memory or
+  assume a previous fix applies.
