@@ -64,9 +64,9 @@ jobs:
     steps:
     - uses: actions/checkout@v6
     - uses: ./.github/actions/setup
-    - run: just install-run
+    - run: just install-test
     - name: Run E2E test - ${{ matrix.repo }}
-      run: just test-e2e ${{ matrix.repo }} --rev ${{ matrix.rev }}
+      run: just test-e2e ${{ matrix.repo }} ${{ matrix.rev }}
     - name: Upload PMR logs
       if: always()
       uses: actions/upload-artifact@v4

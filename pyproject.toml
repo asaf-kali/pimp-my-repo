@@ -114,6 +114,8 @@ testpaths = [ "tests" ]
 addopts = "-s --disable-pytest-warnings -v"
 markers = [
     "smoke: marks tests as fast smoke tests covering core functionality",
+    "e2e_local: marks tests as local fixture-based e2e tests (fast, no network)",
+    "e2e_remote: marks tests as remote repo e2e tests (slow, requires network)",
 ]
 
 [tool.coverage.run]
@@ -141,6 +143,7 @@ ignore = [
 ]
 exclude = [
     "local/",
+    "tests/fixtures/",
 ]
 
 [tool.ruff.lint.flake8-type-checking]
@@ -152,4 +155,5 @@ runtime-evaluated-base-classes = [
 strict = true
 exclude = [
     "local/",
+    "tests/fixtures/",
 ]
