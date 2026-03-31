@@ -10,6 +10,7 @@ _FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 _FIXTURES = [
     "minimal-package",
+    "setup-cfg-package",
 ]
 
 

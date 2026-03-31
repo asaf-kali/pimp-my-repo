@@ -126,6 +126,9 @@ source = [ "." ]
 
 [tool.ruff]
 line-length = 120
+extend-exclude = [
+    "tests/fixtures/",
+]
 
 [tool.ruff.lint]
 select = [ "ALL" ]

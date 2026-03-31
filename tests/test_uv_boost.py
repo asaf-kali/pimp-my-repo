@@ -628,10 +628,10 @@ def test_has_migration_source_both_pipfile_and_poetry(mock_repo: RepositoryContr
     assert uv_boost._has_migration_source() is True  # noqa: SLF001
 
 
-def test_has_migration_source_detects_setup_cfg(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    # migrate-to-uv requires [options] in setup.cfg; [metadata] alone is not enough
+def test_has_migration_source_does_not_detect_setup_cfg(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+    # setup.cfg is handled by _migrate_from_setup_cfg(), not by migrate-to-uv
     mock_repo.write_file("setup.cfg", "[metadata]\nname = myproject\n\n[options]\ninstall_requires =\n    requests")
-    assert uv_boost._has_migration_source() is True  # noqa: SLF001
+    assert uv_boost._has_migration_source() is False  # noqa: SLF001
 
 
 def test_has_migration_source_detects_setup_py(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:

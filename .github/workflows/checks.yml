@@ -61,6 +61,8 @@ jobs:
             rev: 9279635617e71d156a8fddb40d6011850360057b
           - repo: https://github.com/scikit-learn/scikit-learn.git
             rev: cc4843adf8bcbbe8a6d70ae0b4f490e11c010fa5
+          - repo: https://github.com/httpie/httpie.git
+            rev: 5b604c37c6c67e18e7c3e9aee6c88a8c22b98345
     steps:
     - uses: actions/checkout@v6
     - uses: ./.github/actions/setup

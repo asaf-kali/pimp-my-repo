@@ -322,8 +322,8 @@ class UvBoost(Boost):
         """Check if there are any migration sources supported by migrate-to-uv.
 
         migrate-to-uv supports: Poetry (pyproject.toml with [tool.poetry]),
-        Pipfile, and setup.cfg with [metadata]/[options]. A bare setup.cfg (no
-        metadata) or a bare setup.py triggers best-effort augmentation instead.
+        Pipfile, and pip requirements files. setup.cfg is NOT supported by
+        migrate-to-uv — it is handled separately by ``_migrate_from_setup_cfg``.
 
         Projects that already have a [project] table (PEP 621) need no migration.
         """
@@ -338,8 +338,6 @@ class UvBoost(Boost):
         if detected.pipfile or detected.pipfile_lock:
             return True
         if self._has_poetry_config():
-            return True
-        if detected.setup_cfg and not self._is_setup_cfg_bare():
             return True
 
         requirements_files = self._detect_requirements_files()
@@ -358,13 +356,20 @@ class UvBoost(Boost):
 
     def _run_migration_if_needed(self) -> None:
         """Run migration and add grouped requirements files."""
+        detected = detect_dependency_files(self.tools.repo_path)
+
+        # setup.cfg is not supported by migrate-to-uv; migrate it manually first.
+        if detected.setup_cfg and not self._is_setup_cfg_bare():
+            self._migrate_from_setup_cfg()
+            return
+
         if not self._has_migration_source():
             return
 
         # Detect and categorize requirements files
         requirements_files = self._detect_requirements_files()
 
-        # Run migrate-to-uv for main migration (handles Pipfile, Poetry, setup.cfg with [options], etc.)
+        # Run migrate-to-uv for main migration (handles Pipfile, Poetry, requirements.txt, etc.)
         logger.info("Detected migration source, using uvx migrate-to-uv...")
         # --skip-lock: let _lock_with_requires_python() handle locking with proper version detection.
         # Without this, migrate-to-uv runs `uv lock` internally using the current Python (e.g. 3.14),
@@ -456,29 +461,33 @@ class UvBoost(Boost):
         project_section: Any = pyproject_data.get("project")
         if isinstance(project_section, dict) and project_section.get("requires-python"):
             self._ensure_upper_bound()
-            self._lock_and_sync()
-            return
+            if self._try_lock_and_sync():
+                return
+            # Lock failed with pre-existing requires-python (e.g. Python version unavailable);
+            # fall through to the search loop below with no skip.
+            logger.info(f"Lock failed with pre-existing requires-python, searching from 3.{_MAX_PYTHON_MINOR} down...")
+            detected_minor = None
+        else:
+            initial = resolve_requires_python(repo_path=self.tools.repo_path)
+            if initial is None:
+                logger.debug("No Python version detected, locking without requires-python")
+                self._lock_and_sync()
+                return
 
-        initial = resolve_requires_python(repo_path=self.tools.repo_path)
-        if initial is None:
-            logger.debug("No Python version detected, locking without requires-python")
-            self._lock_and_sync()
-            return
+            match = re.match(r">=3\.(\d+)", initial)
+            if not match:
+                self._write_requires_python(initial)
+                self._lock_and_sync()
+                return
 
-        match = re.match(r">=3\.(\d+)", initial)
-        if not match:
-            self._write_requires_python(initial)
-            self._lock_and_sync()
-            return
+            detected_minor = int(match.group(1))
+            requires_python = f">=3.{detected_minor},<3.{detected_minor + 1}"
+            logger.info(f"Setting requires-python = '{requires_python}'")
+            self._write_requires_python(requires_python)
+            if self._try_lock_and_sync():
+                return
+            logger.info(f"Lock+sync failed for '{requires_python}', searching from 3.{_MAX_PYTHON_MINOR} down...")
 
-        detected_minor = int(match.group(1))
-        requires_python = f">=3.{detected_minor},<3.{detected_minor + 1}"
-        logger.info(f"Setting requires-python = '{requires_python}'")
-        self._write_requires_python(requires_python)
-        if self._try_lock_and_sync():
-            return
-
-        logger.info(f"Lock+sync failed for '{requires_python}', searching from 3.{_MAX_PYTHON_MINOR} down...")
         for minor in range(_MAX_PYTHON_MINOR, _MIN_PYTHON_MINOR - 1, -1):
             if minor == detected_minor:
                 continue
@@ -531,9 +540,115 @@ class UvBoost(Boost):
             pyproject_data = self._strip_native_backend_metadata(pyproject_data)
         self.pyproject.write(pyproject_data)
 
+    def _migrate_from_setup_cfg(self) -> None:
+        """Migrate a setup.cfg + setup.py project to pyproject.toml (PEP 621).
+
+        migrate-to-uv does not support setup.cfg, so we handle it manually:
+        read [metadata] / [options] / [options.entry_points], write pyproject.toml,
+        then remove setup.cfg and setup.py so uv can take over cleanly.
+        """
+        setup_cfg_path = self.tools.repo_path / "setup.cfg"
+        setup_py_path = self.tools.repo_path / "setup.py"
+
+        config = configparser.ConfigParser()
+        config.read(setup_cfg_path)
+
+        pyproject_data = document()
+        pyproject_data["project"] = self._build_project_table(config)
+        self._apply_setup_cfg_scripts(config, pyproject_data)
+
+        build_system_tbl: Any = table()
+        build_system_tbl["requires"] = ["hatchling"]
+        build_system_tbl["build-backend"] = "hatchling.build"
+        pyproject_data["build-system"] = build_system_tbl
+
+        self.pyproject.write(pyproject_data)
+        logger.info("Migrated setup.cfg → pyproject.toml")
+
+        setup_cfg_path.unlink()
+        if setup_py_path.exists():
+            setup_py_path.unlink()
+        logger.info("Removed setup.cfg and setup.py after migration")
+
+    def _build_project_table(self, config: configparser.ConfigParser) -> Any:  # noqa: ANN401
+        """Build the [project] tomlkit table from setup.cfg sections."""
+        project_tbl: Any = table()
+
+        name = config.get("metadata", "name", fallback=None) or self._infer_project_name()
+        project_tbl["name"] = name.strip()
+
+        version = config.get("metadata", "version", fallback=None)
+        # setuptools `attr:` / `file:` syntax is not valid PEP 621 — replace with a static placeholder.
+        if version and version.strip().startswith(("attr:", "file:")):
+            logger.info(f"Replacing dynamic version '{version.strip()}' with static placeholder '0.1.0'")
+            version = "0.1.0"
+        project_tbl["version"] = version.strip() if version else "0.1.0"
+
+        python_requires = config.get("options", "python_requires", fallback=None)
+        if python_requires:
+            project_tbl["requires-python"] = python_requires.strip()
+
+        deps = _parse_cfg_list(config.get("options", "install_requires", fallback=""))
+        if deps:
+            project_tbl["dependencies"] = deps
+
+        extras = _parse_cfg_extras(config)
+        if extras:
+            project_tbl["optional-dependencies"] = extras
+
+        return project_tbl
+
+    def _apply_setup_cfg_scripts(self, config: configparser.ConfigParser, pyproject_data: TOMLDocument) -> None:
+        """Add [project.scripts] to pyproject_data from setup.cfg console_scripts."""
+        console_scripts_str = config.get("options.entry_points", "console_scripts", fallback="")
+        scripts = _parse_cfg_scripts(console_scripts_str)
+        if not scripts:
+            return
+        scripts_tbl: Any = table()
+        for script_name, target in scripts.items():
+            scripts_tbl[script_name] = target
+        project_section: Any = pyproject_data["project"]
+        project_section["scripts"] = scripts_tbl
+
     def _lock_and_sync(self) -> None:
         logger.debug("Running uv lock...")
         self.uv.exec("lock")
         logger.debug("Running uv sync --all-groups...")
         self.uv.exec("sync", "--all-groups")
         logger.debug("uv lock and sync completed successfully")
+
+
+def _parse_cfg_extras(config: configparser.ConfigParser) -> dict[str, list[str]]:
+    """Parse [options.extras_require] into a name→deps dict."""
+    if not config.has_section("options.extras_require"):
+        return {}
+    extras: dict[str, list[str]] = {}
+    for extra_name, extra_val in config.items("options.extras_require"):
+        parsed = _parse_cfg_list(extra_val)
+        if parsed:
+            extras[extra_name] = parsed
+    return extras
+
+
+def _parse_cfg_list(value: str) -> list[str]:
+    """Parse a multiline requirements list from a setup.cfg value."""
+    result = []
+    for raw in value.splitlines():
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        dep = stripped[: stripped.index(" #")].strip() if " #" in stripped else stripped
+        result.append(dep)
+    return result
+
+
+def _parse_cfg_scripts(value: str) -> dict[str, str]:
+    """Parse console_scripts entry points string into a name→target dict."""
+    result = {}
+    for raw in value.splitlines():
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        name, target = stripped.split("=", 1)
+        result[name.strip()] = target.strip()
+    return result
