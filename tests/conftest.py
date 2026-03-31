@@ -15,6 +15,36 @@ if TYPE_CHECKING:
     from collections.abc import Generator
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption("--e2e-url", default=None, help="Git URL for remote e2e test")
+    parser.addoption("--e2e-rev", default=None, help="Git revision for remote e2e test")
+    parser.addoption("--fixture-name", default=None, help="Fixture name for manual local e2e test")
+
+
+@pytest.fixture
+def e2e_url(request: pytest.FixtureRequest) -> str:
+    url = request.config.getoption("--e2e-url")
+    if url is None:
+        pytest.skip("--e2e-url not provided")
+    return str(url)
+
+
+@pytest.fixture
+def e2e_rev(request: pytest.FixtureRequest) -> str:
+    rev = request.config.getoption("--e2e-rev")
+    if rev is None:
+        pytest.skip("--e2e-rev not provided")
+    return str(rev)
+
+
+@pytest.fixture
+def fixture_name_arg(request: pytest.FixtureRequest) -> str:
+    name = request.config.getoption("--fixture-name")
+    if name is None:
+        pytest.skip("--fixture-name not provided")
+    return str(name)
+
+
 @pytest.fixture
 def mock_repo() -> Generator[RepositoryController]:
     """Create a temporary directory with an initialized git repository."""

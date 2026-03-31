@@ -40,8 +40,11 @@ test *args:
 test-fast:
     just test -s -q -m "smoke"
 
-test-e2e url *args:
-    uv run scripts/test_e2e.py {{ url }} {{ args }}
+test-e2e-local name *args:
+    just test -m "e2e_local" --fixture-name={{ name }} {{ args }}
+
+test-e2e url rev *args:
+    just test -m "e2e_remote" --e2e-url={{ url }} --e2e-rev={{ rev }} {{ args }}
 
 cover-base:
     {{ RUN }} coverage run -m {{ PYTHON_TEST_COMMAND }}
