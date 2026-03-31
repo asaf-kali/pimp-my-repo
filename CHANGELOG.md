@@ -1,6 +1,25 @@
 # CHANGELOG
 
 
+## v0.3.8 (2026-03-31)
+
+### 🛠️
+
+- 🛠️ Add fixture-based local e2e tests; unify e2e infrastructure
+  ([#33](https://github.com/asaf-kali/pimp-my-repo/pull/33),
+  [`0a653c0`](https://github.com/asaf-kali/pimp-my-repo/commit/0a653c07fd2d65d5d6cfc7bc059a2f49d4f14ab7))
+
+- Add tests/fixtures/ with minimal-package as the first fixture - Add tests/e2e_utils.py with shared
+  setup/run/verify helpers - Add tests/test_e2e_fixtures.py: fast local fixture tests, run on every
+  PR - Add tests/test_e2e_remote.py: replaces scripts/test_e2e.py, driven by --e2e-url / --e2e-rev
+  pytest CLI options - Add pytest_addoption + e2e_url/e2e_rev fixtures to conftest.py - Exclude
+  tests/fixtures/ from ruff and mypy - Update justfile: test-e2e-local (new), test-e2e url rev ->
+  pytest - Update CI: add test-e2e-local job (every PR); test-e2e matrix calls just test-e2e -
+  Remove scripts/test_e2e.py (superseded)
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+
 ## v0.3.7 (2026-03-30)
 
 ### 📝
