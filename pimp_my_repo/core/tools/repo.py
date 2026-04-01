@@ -52,7 +52,7 @@ class RepositoryController:
     def add_and_commit(self, relative_path: str, content: str, message: str, **commit_kwargs: Any) -> None:  # noqa: ANN401
         """Write a file, stage it, and commit."""
         self.write_file(relative_path=relative_path, content=content)
-        self.execute("add", relative_path)
+        self.add(relative_path)
         self.commit(message, **commit_kwargs)
 
     def commit(self, message: str, *, no_verify: bool = True, author: str = _DEFAULT_COMMIT_AUTHOR) -> bool:
@@ -67,7 +67,7 @@ class RepositoryController:
             True if a commit was created, False if there was nothing to commit.
 
         """
-        self.execute("add", "-A")
+        self.add()
         if self.is_clean():
             return False
         commit_args = ["commit", "--author", author, "-m", message]
@@ -86,7 +86,7 @@ class RepositoryController:
     def reset_tracking(self) -> None:
         """Untrack all files then re-add, so gitignored files leave the index."""
         self.execute("rm", "-r", "--cached", ".")
-        self.execute("add", "-A")
+        self.add()
 
     def is_clean(self, *, log_output: bool = True) -> bool:
         """Check if git working directory is clean."""
@@ -108,19 +108,11 @@ class RepositoryController:
 
     def get_origin_url(self) -> str:
         """Get the git origin URL."""
-        result = self.execute("remote", "get-url", "origin", check=True)
-        if not result.stdout.strip():
-            msg = "Git origin URL is empty"
-            raise ValueError(msg)
-        return result.stdout.strip()
+        return self._get_stripped_output("remote", "get-url", "origin", error_msg="Git origin URL is empty")
 
     def get_current_commit_sha(self) -> str:
         """Get the current commit SHA."""
-        result = self.execute("rev-parse", "HEAD", check=True)
-        if not result.stdout.strip():
-            msg = "Git commit SHA is empty"
-            raise ValueError(msg)
-        return result.stdout.strip()
+        return self._get_stripped_output("rev-parse", "HEAD", error_msg="Git commit SHA is empty")
 
     def reset_hard(self, sha: str) -> None:
         """Reset the working tree and index to the given commit SHA."""
@@ -130,3 +122,11 @@ class RepositoryController:
         """Return the number of commits on HEAD."""
         result = self.execute("rev-list", "--count", "HEAD")
         return int(result.stdout.strip())
+
+    def _get_stripped_output(self, *args: str, error_msg: str) -> str:
+        """Run a git command and return its stripped stdout, raising if empty."""
+        result = self.execute(*args, check=True)
+        stripped_output = result.stdout.strip()
+        if not stripped_output:
+            raise ValueError(error_msg)
+        return stripped_output
