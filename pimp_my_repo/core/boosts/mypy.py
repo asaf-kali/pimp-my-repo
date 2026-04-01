@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from pimp_my_repo.core.tools.subprocess import CommandResult
 
 _MAX_MYPY_ITERATIONS = 10
+_MYPY_PACKAGE = "mypy<1.20"  # upper-bound: mypy 1.20 hangs on large codebases; bump after validating new minor
 
 # Supports both "path:line: error:" and "path:line:column: error:" (--show-column-numbers).
 # No $ anchor: allows trailing text after [code] that appears when pretty=true wraps
@@ -363,7 +364,7 @@ class BaseMypyBoost(Boost, abc.ABC):
         logger.info("Committed mypy configuration")
 
     def _add_mypy(self) -> None:
-        self.uv.add_package("mypy", group="lint")
+        self.uv.add_package(_MYPY_PACKAGE, group="lint")
         self.uv.sync_group("lint")
 
     def _clear_mypy_cache(self) -> None:
