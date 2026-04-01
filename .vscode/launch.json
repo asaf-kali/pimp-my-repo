@@ -5,13 +5,13 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "E2E: cavity-design",
+            "name": "PMR tests",
             "type": "debugpy",
             "request": "launch",
-            "program": "scripts/test_e2e.py",
+            "module": "pytest",
             "console": "integratedTerminal",
             "args": [
-                "https://github.com/mkali-weizmann/cavity-design"
+                "."
             ]
         },
         {
