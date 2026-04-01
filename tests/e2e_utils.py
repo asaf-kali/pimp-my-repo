@@ -17,6 +17,7 @@ _TMP_BASE = Path("/tmp/pmr")  # noqa: S108
 
 def setup_local_fixture(fixture_name: str, *, fixtures_dir: Path) -> Path:
     """Copy fixture files to /tmp/pmr/<name>/ and initialise as a git repo."""
+    logger.info(f"Setting up local fixture '{fixture_name}' from '{fixtures_dir}'")
     src = fixtures_dir / fixture_name
     dest = _TMP_BASE / fixture_name
     if dest.exists():
@@ -28,8 +29,9 @@ def setup_local_fixture(fixture_name: str, *, fixtures_dir: Path) -> Path:
     return dest
 
 
-def setup_remote_repo(*, url: str, rev: str) -> Path:
+def setup_remote_repo(*, url: str, rev: str | None) -> Path:
     """Clone or reset a remote repo to /tmp/pmr/<name>/ and checkout rev."""
+    logger.info(f"Setting up remote repo from '{url}' at rev '{rev or 'HEAD'}'")
     name = url.rstrip("/").split("/")[-1].removesuffix(".git")
     dest = _TMP_BASE / name
     if dest.exists():
@@ -38,7 +40,8 @@ def setup_remote_repo(*, url: str, rev: str) -> Path:
         dest.parent.mkdir(parents=True, exist_ok=True)
         _git(dest.parent, "clone", url, str(dest))
         _configure_git_identity(dest)
-    _git(dest, "checkout", rev)
+    if rev is not None:
+        _git(dest, "checkout", rev)
     return dest
 
 
