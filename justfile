@@ -43,7 +43,7 @@ test-fast:
 test-e2e-local name *args:
     just test -m "e2e_local" --fixture-name={{ name }} {{ args }}
 
-test-e2e url rev *args:
+test-e2e url rev="HEAD" *args:
     just test -m "e2e_remote" --e2e-url={{ url }} --e2e-rev={{ rev }} {{ args }}
 
 cover-base:

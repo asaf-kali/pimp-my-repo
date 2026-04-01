@@ -30,11 +30,9 @@ def e2e_url(request: pytest.FixtureRequest) -> str:
 
 
 @pytest.fixture
-def e2e_rev(request: pytest.FixtureRequest) -> str:
+def e2e_rev(request: pytest.FixtureRequest) -> str | None:
     rev = request.config.getoption("--e2e-rev")
-    if rev is None:
-        pytest.skip("--e2e-rev not provided")
-    return str(rev)
+    return rev or None
 
 
 @pytest.fixture

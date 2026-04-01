@@ -4,6 +4,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from loguru import logger
+
 from pimp_my_repo.core.tools.repo import PMR_EMAIL
 
 _PMR_ROOT = Path(__file__).parent.parent
@@ -15,6 +17,7 @@ _TMP_BASE = Path("/tmp/pmr")  # noqa: S108
 
 def setup_local_fixture(fixture_name: str, *, fixtures_dir: Path) -> Path:
     """Copy fixture files to /tmp/pmr/<name>/ and initialise as a git repo."""
+    logger.info(f"Setting up local fixture '{fixture_name}' from '{fixtures_dir}'")
     src = fixtures_dir / fixture_name
     dest = _TMP_BASE / fixture_name
     if dest.exists():
@@ -26,17 +29,21 @@ def setup_local_fixture(fixture_name: str, *, fixtures_dir: Path) -> Path:
     return dest
 
 
-def setup_remote_repo(*, url: str, rev: str) -> Path:
+def setup_remote_repo(*, url: str, rev: str | None) -> Path:
     """Clone or reset a remote repo to /tmp/pmr/<name>/ and checkout rev."""
+    logger.info(f"Setting up remote repo from '{url}' at rev '{rev or 'HEAD'}'")
     name = url.rstrip("/").split("/")[-1].removesuffix(".git")
     dest = _TMP_BASE / name
     if dest.exists():
         _reset_remote_repo(dest)
     else:
+        logger.debug(f"Cloning remote repo from {url} to {dest}")
         dest.parent.mkdir(parents=True, exist_ok=True)
         _git(dest.parent, "clone", url, str(dest))
         _configure_git_identity(dest)
-    _git(dest, "checkout", rev)
+    if rev is not None:
+        logger.debug(f"Checking out rev {rev} in {dest}")
+        _git(dest, "checkout", rev)
     return dest
 
 
@@ -45,6 +52,8 @@ def setup_remote_repo(*, url: str, rev: str) -> Path:
 
 def run_e2e_test(repo_path: Path) -> None:
     run_pmr(repo_path)
+    logger.info("===================")
+    logger.info("PMR run complete, verifying results...")
     assert_git_clean(repo_path)
     assert_ruff_passes(repo_path)
     assert_mypy_passes(repo_path)
@@ -59,13 +68,9 @@ def run_pmr(repo_path: Path) -> None:
     result = subprocess.run(  # noqa: S603
         [uv, "run", "pmr", "-p", str(repo_path)],
         cwd=_PMR_ROOT,
-        capture_output=True,
-        text=True,
         check=False,
     )
-    assert result.returncode == 0, (
-        f"pmr failed (exit {result.returncode})\nstdout: {result.stdout}\nstderr: {result.stderr}"
-    )
+    assert result.returncode == 0, f"pmr failed (exit {result.returncode})"
 
 
 # ── Verification ──────────────────────────────────────────────────────────────
@@ -105,6 +110,7 @@ def _git_commit_all(repo_path: Path, *, message: str) -> None:
 
 
 def _reset_remote_repo(repo_path: Path) -> None:
+    logger.debug(f"Resetting existing repo at {repo_path} for reuse")
     git = _require_exe("git")
     _git(repo_path, "reset", "--hard", "HEAD")
     for branch in ("main", "master"):
