@@ -1,6 +1,50 @@
 # CHANGELOG
 
 
+## v0.3.9 (2026-04-01)
+
+### Other
+
+- ✅ Add httpie to e2e tests; support setup.cfg migration
+  ([`343f31b`](https://github.com/asaf-kali/pimp-my-repo/commit/343f31b0065271d50ed87598a0e4cfa138ff34f4))
+
+- Migrate setup.cfg + setup.py projects to pyproject.toml manually (migrate-to-uv v0.11.0 does not
+  support setup.cfg) - Handle attr:/file: dynamic version references with a static placeholder - Add
+  hatchling build-system to migrated pyproject.toml - Fall back to version search when lock fails
+  with pre-existing requires-python - Add setup-cfg-package fixture to cover this migration path -
+  Exclude tests/fixtures/ from top-level ruff discovery (fixes INP001)
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+- 🧠 Update support-repo skill: fixture-first workflow, just test-e2e-local
+  ([#34](https://github.com/asaf-kali/pimp-my-repo/pull/34),
+  [`21d66b6`](https://github.com/asaf-kali/pimp-my-repo/commit/21d66b6a4010ab4ae66466c2a3179ebb4db324cd))
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+### 🐛
+
+- 🐛 Upper bound linters ([#37](https://github.com/asaf-kali/pimp-my-repo/pull/37),
+  [`c0d3339`](https://github.com/asaf-kali/pimp-my-repo/commit/c0d3339ac3aea72a1b1efba9177161c6a8df6891))
+
+* User shorter SHA for e2e tests
+
+* Upgrade dependencies
+
+* ✨ Make rev optional in just test-e2e
+
+When rev is omitted, skip the git checkout and use the repo's default branch HEAD. Test logging
+  fixes.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+* 📌 Pin ruff<0.16 and mypy<1.20 in boosts
+
+---------
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+
 ## v0.3.8 (2026-03-31)
 
 ### 🛠️
