@@ -68,13 +68,14 @@ def _run_boosts_with_dashboard(
         )
         console.print(f"[dim]Full log:[/dim] [cyan]{log_path}[/cyan]")
 
-    gen = execute_boosts(repo_path=repo_path, boost_classes=boost_classes)
     results: list[BoostResult] = []
 
     with Live(dashboard, console=console, refresh_per_second=10):
-        for bc in boost_classes:
-            dashboard.set_running(bc.get_name())
-            result = next(gen)
+        for result in execute_boosts(
+            repo_path=repo_path,
+            boost_classes=boost_classes,
+            on_boost_start=dashboard.set_running,
+        ):
             dashboard.set_result(result)
             results.append(result)
 

@@ -4,15 +4,20 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
+from pimp_my_repo import __version__
 from pimp_my_repo.core.boosts.base import Boost, BoostSkippedError
 from pimp_my_repo.core.result import BoostResult
 from pimp_my_repo.core.tools.boost_tools import BoostTools
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Iterator
+    from collections.abc import Callable, Generator, Iterator
     from pathlib import Path
 
     from pimp_my_repo.core.tools.repo import RepositoryController
+
+
+type BoostName = str
+type BoostStartCallback = Callable[[BoostName], None]
 
 
 @contextlib.contextmanager
@@ -74,9 +79,15 @@ def _run_boost_class(
 def execute_boosts(
     repo_path: Path,
     boost_classes: list[type[Boost]],
+    on_boost_start: BoostStartCallback | None = None,
 ) -> Iterator[BoostResult]:
     """Execute all boosts and yield results as they complete."""
+    logger.info(f"Running PMR [v{__version__}] boosts on repository: [{repo_path}]")
     boost_tools = BoostTools.create(repo_path=repo_path)
     boost_tools.git.init_pmr()
+    logger.info(f"Found {len(boost_classes)} boosts to run: {[bc.get_name() for bc in boost_classes]}")
     for bc in boost_classes:
+        if on_boost_start:
+            on_boost_start(bc.get_name())
         yield _run_boost_class(boost_class=bc, boost_tools=boost_tools, repo_controller=boost_tools.git)
+    logger.info("Finished running PMR boosts")

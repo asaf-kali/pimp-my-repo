@@ -88,9 +88,11 @@ class RepositoryController:
         self.execute("rm", "-r", "--cached", ".")
         self.execute("add", "-A")
 
-    def is_clean(self) -> bool:
+    def is_clean(self, *, log_output: bool = True) -> bool:
         """Check if git working directory is clean."""
         result = self.execute("status", "--porcelain", check=False)
+        if log_output:
+            result.log_output()
         return result.returncode == 0 and not result.stdout.strip()
 
     def switch_branch(self, branch_name: str) -> None:
