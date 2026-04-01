@@ -4,6 +4,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from loguru import logger
+
 from pimp_my_repo.core.tools.repo import PMR_EMAIL
 
 _PMR_ROOT = Path(__file__).parent.parent
@@ -45,6 +47,8 @@ def setup_remote_repo(*, url: str, rev: str) -> Path:
 
 def run_e2e_test(repo_path: Path) -> None:
     run_pmr(repo_path)
+    logger.info("===================")
+    logger.info("PMR run complete, verifying results...")
     assert_git_clean(repo_path)
     assert_ruff_passes(repo_path)
     assert_mypy_passes(repo_path)
@@ -59,13 +63,9 @@ def run_pmr(repo_path: Path) -> None:
     result = subprocess.run(  # noqa: S603
         [uv, "run", "pmr", "-p", str(repo_path)],
         cwd=_PMR_ROOT,
-        capture_output=True,
-        text=True,
         check=False,
     )
-    assert result.returncode == 0, (
-        f"pmr failed (exit {result.returncode})\nstdout: {result.stdout}\nstderr: {result.stderr}"
-    )
+    assert result.returncode == 0, f"pmr failed (exit {result.returncode})"
 
 
 # ── Verification ──────────────────────────────────────────────────────────────

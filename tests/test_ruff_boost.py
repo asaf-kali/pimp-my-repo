@@ -420,7 +420,7 @@ def test_ruff_config_preserves_existing_content(mock_repo: RepositoryController,
 @pytest.mark.smoke
 def test_apply_calls_uv_add_ruff(patched_ruff_apply_with_add_package: PatchedRuffApplyWithAddPackage) -> None:
     patched_ruff_apply_with_add_package.boost.apply()
-    patched_ruff_apply_with_add_package.mock_add_package.assert_called_once_with("ruff", group="lint")
+    patched_ruff_apply_with_add_package.mock_add_package.assert_called_once_with("ruff<0.16", group="lint")
 
 
 def test_apply_writes_ruff_config_to_pyproject(

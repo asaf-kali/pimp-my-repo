@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from pimp_my_repo.core.tools.subprocess import CommandResult
 
 _MAX_MYPY_ITERATIONS = 10
+_MYPY_PACKAGE = "mypy<1.21"  # upper-bound: output format is parsed; bump after validating new minor
 
 # Supports both "path:line: error:" and "path:line:column: error:" (--show-column-numbers).
 # No $ anchor: allows trailing text after [code] that appears when pretty=true wraps
@@ -43,7 +44,7 @@ _MYPY_ANY_ERROR_RE = re.compile(r"^(?P<path>.+?)(?::\d+(?::\d+)?)?: error: ")
 _MYPY_FOUND_TWICE_RE = re.compile(r"Source file found twice under different module names")
 # Directories with hyphens (e.g. "fonts-standard") are invalid Python package names.
 # Mypy outputs these as fatal errors with no file/line context.
-_MYPY_INVALID_PKG_NAME_RE = re.compile(r"^(\S+) is not a valid Python package name$", re.MULTILINE)
+_MYPY_INVALID_PKG_NAME_RE = re.compile(r"^(\S+)(?:\s+\S+)* is not a valid Python package name$", re.MULTILINE)
 
 
 def _normalize_mypy_output(output: str) -> str:
@@ -363,7 +364,7 @@ class BaseMypyBoost(Boost, abc.ABC):
         logger.info("Committed mypy configuration")
 
     def _add_mypy(self) -> None:
-        self.uv.add_package("mypy", group="lint")
+        self.uv.add_package(_MYPY_PACKAGE, group="lint")
         self.uv.sync_group("lint")
 
     def _clear_mypy_cache(self) -> None:
