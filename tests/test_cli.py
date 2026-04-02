@@ -1,13 +1,22 @@
 import sys
 from typing import TYPE_CHECKING
+from unittest.mock import patch
 
 import pytest
+from typer.testing import CliRunner
 
-from pimp_my_repo.cli.main import main
+from pimp_my_repo.cli.main import app, main
+from pimp_my_repo.cli.runner import BoostRunResult
+from pimp_my_repo.core.result import BoostResult
 from pimp_my_repo.core.tools.subprocess import run_command
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
+    from pathlib import Path
+
     from pimp_my_repo.core.tools.repo import RepositoryController
+
+_cli_runner = CliRunner()
 
 ALL_BOOST_NAMES = ["gitignore", "uv", "ruff", "mypy", "precommit", "justfile"]
 ALL_OPT_IN_NAMES = ["dmypy"]
@@ -98,3 +107,62 @@ def test_unknown_boost_name_errors(mock_repo: RepositoryController) -> None:
     assert result.returncode == 1
     assert "nonexistent" in result.stdout
     assert "Valid boosts" in result.stdout
+
+
+# =============================================================================
+# PATH VALIDATION (via CliRunner for coverage)
+# =============================================================================
+
+
+def test_validate_path_nonexistent_exits_1() -> None:
+    result = _cli_runner.invoke(app, ["--path", "/nonexistent/path/that/does/not/exist"])
+    assert result.exit_code == 1
+    assert "Path does not exist" in result.output
+
+
+def test_validate_path_not_a_directory(tmp_path: Path) -> None:
+    file_path = tmp_path / "somefile.txt"
+    file_path.write_text("hello")
+    result = _cli_runner.invoke(app, ["--path", str(file_path)])
+    assert result.exit_code == 1
+    assert "Path is not a directory" in result.output
+
+
+# =============================================================================
+# SUMMARY PRINTING (via CliRunner with mocked run_boosts)
+# =============================================================================
+
+
+@pytest.fixture
+def patched_run_boosts_no_applied(mock_repo: RepositoryController) -> Generator[RepositoryController]:
+    run_result = BoostRunResult(
+        results=[BoostResult(name="ruff", status="skipped", message="skipped")],
+        log_path=None,
+    )
+    with patch("pimp_my_repo.cli.main.run_boosts", return_value=run_result):
+        yield mock_repo
+
+
+@pytest.fixture
+def patched_run_boosts_with_failure(mock_repo: RepositoryController) -> Generator[RepositoryController]:
+    run_result = BoostRunResult(
+        results=[BoostResult(name="ruff", status="failed", message="error")],
+        log_path=None,
+    )
+    with patch("pimp_my_repo.cli.main.run_boosts", return_value=run_result):
+        yield mock_repo
+
+
+def test_print_summary_no_boosts_applied(
+    patched_run_boosts_no_applied: RepositoryController,
+) -> None:
+    result = _cli_runner.invoke(app, ["--path", str(patched_run_boosts_no_applied.path)])
+    assert "No boosts applied" in result.output
+
+
+def test_print_summary_failed_boost_exits_1(
+    patched_run_boosts_with_failure: RepositoryController,
+) -> None:
+    result = _cli_runner.invoke(app, ["--path", str(patched_run_boosts_with_failure.path)])
+    assert result.exit_code == 1
+    assert "failed" in result.output

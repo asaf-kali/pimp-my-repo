@@ -3,11 +3,14 @@
 import configparser
 import re
 import subprocess
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 from unittest import mock
 from unittest.mock import patch
 
 import pytest
+from tomlkit import document as toml_document
+from tomlkit import table as toml_table
 
 from pimp_my_repo.core.boosts.uv.detector import (
     detect_all,
@@ -150,6 +153,40 @@ def uv_boost(boost_tools: BoostTools) -> UvBoost:
     return UvBoost(boost_tools)
 
 
+@dataclass
+class PatchedUvApply:
+    """Pre-patched UvBoost with all subprocess mocks wired for apply()."""
+
+    boost: UvBoost
+    mock_exec: mock.MagicMock
+    mock_exec_uvx: mock.MagicMock
+    mock_add_from_requirements: mock.MagicMock
+
+
+@pytest.fixture
+def patched_uv_apply(mock_repo: RepositoryController, uv_boost: UvBoost) -> Generator[PatchedUvApply]:
+    """Yield a UvBoost with all subprocess calls pre-mocked (no real uv execution)."""
+
+    def create_lock_file(*args: str, **_kwargs: object) -> mock.MagicMock:
+        if args and args[0] == "lock":
+            (mock_repo.path / "uv.lock").touch()
+        return mock.MagicMock(returncode=0, stdout="", stderr="")
+
+    with (
+        patch.object(uv_boost, "_check_uv_installed", return_value=True),
+        patch.object(uv_boost.tools.uv, "exec", side_effect=create_lock_file) as mock_exec,
+        patch.object(uv_boost.tools.uv, "exec_uvx") as mock_exec_uvx,
+        patch.object(uv_boost.tools.uv, "add_from_requirements_file") as mock_add,
+        patch("pimp_my_repo.core.boosts.uv.uv.resolve_requires_python", return_value=None),
+    ):
+        yield PatchedUvApply(
+            boost=uv_boost,
+            mock_exec=mock_exec,
+            mock_exec_uvx=mock_exec_uvx,
+            mock_add_from_requirements=mock_add,
+        )
+
+
 @pytest.fixture
 def patched_uv_boost_installed(uv_boost: UvBoost) -> Generator[UvBoost]:
     with patch.object(uv_boost, "_check_uv_installed", return_value=True):
@@ -183,6 +220,7 @@ def patched_uv_boost_installable_with_mocked_run(uv_boost: UvBoost) -> Generator
         patch.object(uv_boost, "_check_uv_installed", side_effect=lambda: check_calls.pop(0)),
         patch.object(uv_boost, "_install_uv", return_value=True),
         patch.object(uv_boost.tools.uv, "exec"),
+        patch("pimp_my_repo.core.boosts.uv.uv.resolve_requires_python", return_value=None),
     ):
         yield uv_boost
 
@@ -204,13 +242,14 @@ def uv_boost_with_lock_error(mock_repo: RepositoryController, uv_boost: UvBoost)
     error = subprocess.CalledProcessError(1, "uv lock", stderr="Lock failed")
 
     def run_side_effect(*args: str, check: bool = True) -> CommandResult:  # noqa: ARG001
-        # Only raise error for "lock" command, not for "--version" check
         if args and args[0] == "lock":
             raise error
-        # Return success for version check
         return CommandResult(cmd=["uv", *args], returncode=0, stdout="", stderr="")
 
-    with patch.object(uv_boost.tools.uv, "exec", side_effect=run_side_effect):
+    with (
+        patch.object(uv_boost.tools.uv, "exec", side_effect=run_side_effect),
+        patch("pimp_my_repo.core.boosts.uv.uv.resolve_requires_python", return_value=None),
+    ):
         yield uv_boost
 
 
@@ -332,68 +371,60 @@ def test_has_migration_source_ignores_docs_requirements(mock_repo: RepositoryCon
 # =============================================================================
 
 
-def test_apply_with_poetry_migration(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+def test_apply_with_poetry_migration(mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply) -> None:
     mock_repo.write_file("poetry.lock", "# Poetry lock file")
-    pyproject_content = (
+    mock_repo.write_file(
+        "pyproject.toml",
         '[tool.poetry]\nname = "test-project"\nversion = "0.1.0"\n\n'
-        '[tool.poetry.dependencies]\npython = "^3.8"\nrequests = "^2.28.0"\n'
+        '[tool.poetry.dependencies]\npython = "^3.8"\nrequests = "^2.28.0"\n',
     )
-    mock_repo.write_file("pyproject.toml", pyproject_content)
-
-    uv_boost.apply()
-
+    patched_uv_apply.boost.apply()
     assert (mock_repo.path / "pyproject.toml").exists()
     assert (mock_repo.path / "uv.lock").exists()
+    patched_uv_apply.mock_exec_uvx.assert_called_once_with("migrate-to-uv", "--skip-lock")
 
 
-def test_apply_with_requirements_txt(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+def test_apply_with_requirements_txt(mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply) -> None:
     mock_repo.write_file("requirements.txt", "requests>=2.0.0\npytest>=7.0.0")
-
-    uv_boost.apply()
-
+    patched_uv_apply.boost.apply()
     assert (mock_repo.path / "pyproject.toml").exists()
     assert (mock_repo.path / "uv.lock").exists()
+    patched_uv_apply.mock_exec_uvx.assert_called_once_with("migrate-to-uv", "--skip-lock")
 
 
-def test_apply_creates_minimal_pyproject_when_no_source(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    uv_boost.apply()
-
+def test_apply_creates_minimal_pyproject_when_no_source(
+    mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply
+) -> None:
+    patched_uv_apply.boost.apply()
     pyproject_path = mock_repo.path / "pyproject.toml"
     assert pyproject_path.exists()
     assert (mock_repo.path / "uv.lock").exists()
-
-    pyproject_content = pyproject_path.read_text()
-    assert "[project]" in pyproject_content
-    assert "[tool.uv]" in pyproject_content
-
-
-def test_apply_ensures_uv_config(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    pyproject_content = '[project]\nname = "test-project"\nversion = "0.1.0"\n'
-    mock_repo.write_file("pyproject.toml", pyproject_content)
-
-    uv_boost.apply()
-
-    pyproject_content_after = (mock_repo.path / "pyproject.toml").read_text()
-    assert "[tool.uv]" in pyproject_content_after
+    content = pyproject_path.read_text()
+    assert "[project]" in content
+    assert "[tool.uv]" in content
 
 
-def test_apply_preserves_existing_pyproject(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    pyproject_content = (
+def test_apply_ensures_uv_config(mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply) -> None:
+    mock_repo.write_file("pyproject.toml", '[project]\nname = "test-project"\nversion = "0.1.0"\n')
+    patched_uv_apply.boost.apply()
+    assert "[tool.uv]" in (mock_repo.path / "pyproject.toml").read_text()
+
+
+def test_apply_preserves_existing_pyproject(mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply) -> None:
+    mock_repo.write_file(
+        "pyproject.toml",
         '[project]\nname = "test-project"\nversion = "0.1.0"\n'
-        'description = "A test project"\n\n[tool.ruff]\nline-length = 120\n'
+        'description = "A test project"\n\n[tool.ruff]\nline-length = 120\n',
     )
-    mock_repo.write_file("pyproject.toml", pyproject_content)
-
-    uv_boost.apply()
-
-    pyproject_content_after = (mock_repo.path / "pyproject.toml").read_text()
-    assert 'description = "A test project"' in pyproject_content_after
-    assert "[tool.ruff]" in pyproject_content_after
-    assert "[tool.uv]" in pyproject_content_after
+    patched_uv_apply.boost.apply()
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert 'description = "A test project"' in content
+    assert "[tool.ruff]" in content
+    assert "[tool.uv]" in content
 
 
-def test_apply_creates_uv_lock(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    uv_boost.apply()
+def test_apply_creates_uv_lock(mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply) -> None:
+    patched_uv_apply.boost.apply()
     assert (mock_repo.path / "uv.lock").exists()
 
 
@@ -776,7 +807,9 @@ def test_augment_setup_cfg_does_nothing_without_string_kwargs(
 # =============================================================================
 
 
-def test_apply_with_bare_setup_cfg_and_setup_py(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+def test_apply_with_bare_setup_cfg_and_setup_py(
+    mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply
+) -> None:
     """Full apply() on a repo with bare setup.cfg + setup.py skips migrate-to-uv and creates a minimal pyproject.toml."""  # noqa: E501
     mock_repo.write_file("setup.cfg", "[wheel]\nuniversal = 1")
     mock_repo.write_file(
@@ -791,10 +824,9 @@ def test_apply_with_bare_setup_cfg_and_setup_py(mock_repo: RepositoryController,
         ),
     )
 
-    with patch.object(uv_boost.tools.uv, "exec_uvx") as mock_migrate:
-        uv_boost.apply()
-        # migrate-to-uv should NOT be called — bare setup.cfg + setup.py is not a migration source
-        mock_migrate.assert_not_called()
+    patched_uv_apply.boost.apply()
+    # migrate-to-uv should NOT be called — bare setup.cfg + setup.py is not a migration source
+    patched_uv_apply.mock_exec_uvx.assert_not_called()
 
     assert (mock_repo.path / "pyproject.toml").exists()
     assert (mock_repo.path / "uv.lock").exists()
@@ -868,42 +900,42 @@ def test_detect_requirements_files_no_main(mock_repo: RepositoryController, uv_b
     assert "dev" in result.groups
 
 
-def test_apply_with_pipfile_migration(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    pipfile_content = '[packages]\nrequests = ">=2.0.0"\n\n[dev-packages]\npytest = ">=7.0.0"\n'
-    mock_repo.write_file("Pipfile", pipfile_content)
-
-    uv_boost.apply()
-
+def test_apply_with_pipfile_migration(mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply) -> None:
+    mock_repo.write_file("Pipfile", '[packages]\nrequests = ">=2.0.0"\n\n[dev-packages]\npytest = ">=7.0.0"\n')
+    patched_uv_apply.boost.apply()
     assert (mock_repo.path / "pyproject.toml").exists()
     assert (mock_repo.path / "uv.lock").exists()
+    patched_uv_apply.mock_exec_uvx.assert_called_once_with("migrate-to-uv", "--skip-lock")
 
 
-def test_apply_adds_grouped_requirements_files(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    """Test that grouped requirements files are added after migration."""
+def test_apply_adds_grouped_requirements_files(
+    mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply
+) -> None:
+    """PMR adds grouped requirements files that migrate-to-uv did not consume."""
     mock_repo.write_file("requirements.txt", "requests>=2.0.0")
     mock_repo.write_file("requirements-dev.txt", "pytest>=7.0.0")
     mock_repo.write_file("test-requirements.txt", "pytest-cov>=4.0.0")
 
-    with patch.object(uv_boost.tools.uv, "add_from_requirements_file") as mock_add:
-        uv_boost.apply()
+    def simulate_migrate_to_uv(*_args: str, **_kwargs: object) -> None:
+        # simulate migrate-to-uv consuming requirements-dev.txt (recognised pattern)
+        (mock_repo.path / "requirements-dev.txt").unlink()
 
-        # migrate-to-uv already migrates requirements-dev.txt into [dependency-groups] dev and
-        # deletes the file, so PMR must not try to add it again. Only test-requirements.txt
-        # (an unrecognised pattern for migrate-to-uv) should be added by PMR.
-        assert mock_add.call_count == 1
+    patched_uv_apply.mock_exec_uvx.side_effect = simulate_migrate_to_uv
+    patched_uv_apply.boost.apply()
 
-        test_calls = [call for call in mock_add.call_args_list if call.kwargs.get("group") == "test"]
-        assert len(test_calls) == 1
-        assert test_calls[0].args[0].name == "test-requirements.txt"
+    # Only test-requirements.txt (unrecognised by migrate-to-uv) should be added by PMR
+    assert patched_uv_apply.mock_add_from_requirements.call_count == 1
+    call = patched_uv_apply.mock_add_from_requirements.call_args_list[0]
+    assert call.kwargs.get("group") == "test"
+    assert call.args[0].name == "test-requirements.txt"
 
 
-def test_apply_infers_project_name_from_directory(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    uv_boost.apply()
-
+def test_apply_infers_project_name_from_directory(
+    mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply
+) -> None:
+    patched_uv_apply.boost.apply()
     content = (mock_repo.path / "pyproject.toml").read_text()
     assert "[project]" in content
-    assert "name = " in content
-
     name_match = re.search(r'name = "([^"]+)"', content)
     assert name_match, "Could not find project name in pyproject.toml"
     project_name = name_match.group(1)
@@ -916,13 +948,13 @@ def test_apply_infers_project_name_from_directory(mock_repo: RepositoryControlle
 # =============================================================================
 
 
-def test_apply_is_idempotent(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+def test_apply_is_idempotent(mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply) -> None:
     mock_repo.write_file("pyproject.toml", '[project]\nname = "test-project"\nversion = "0.1.0"\n')
 
-    uv_boost.apply()
+    patched_uv_apply.boost.apply()
     first_content = (mock_repo.path / "pyproject.toml").read_text()
 
-    uv_boost.apply()
+    patched_uv_apply.boost.apply()
     second_content = (mock_repo.path / "pyproject.toml").read_text()
 
     assert "[tool.uv]" in first_content
@@ -1062,3 +1094,255 @@ def test_lock_removes_requires_python_when_all_versions_fail(
     content = (mock_repo.path / "pyproject.toml").read_text()
     assert "requires-python" not in content
     mock_lock_and_sync.assert_called_once()
+
+
+# =============================================================================
+# _STRIP_NATIVE_BACKEND_METADATA
+# =============================================================================
+
+
+def test_strip_native_backend_metadata_no_project_section(
+    mock_repo: RepositoryController,
+    uv_boost: UvBoost,
+) -> None:
+    mock_repo.write_file("pyproject.toml", '[build-system]\nrequires = ["mesonpy"]\n')
+    data = uv_boost.tools.pyproject.read()
+    result = uv_boost._strip_native_backend_metadata(data)  # noqa: SLF001
+    assert result is data  # unchanged
+
+
+def test_strip_native_backend_metadata_removes_optional_deps(
+    mock_repo: RepositoryController,
+    uv_boost: UvBoost,
+) -> None:
+    mock_repo.write_file(
+        "pyproject.toml",
+        '[project]\nname = "x"\n[project.optional-dependencies]\nextra = ["requests"]\n',
+    )
+    data = uv_boost.tools.pyproject.read()
+    result = uv_boost._strip_native_backend_metadata(data)  # noqa: SLF001
+    project: Any = result["project"]
+    assert "optional-dependencies" not in project
+
+
+def test_strip_native_backend_metadata_replaces_dynamic_version(
+    mock_repo: RepositoryController,
+    uv_boost: UvBoost,
+) -> None:
+    mock_repo.write_file("pyproject.toml", '[project]\nname = "x"\ndynamic = ["version"]\n')
+    data = uv_boost.tools.pyproject.read()
+    result = uv_boost._strip_native_backend_metadata(data)  # noqa: SLF001
+    project: Any = result["project"]
+    assert "dynamic" not in project
+    assert project["version"] == "0.0.0"
+
+
+def test_strip_native_backend_metadata_preserves_other_dynamic_fields(
+    mock_repo: RepositoryController,
+    uv_boost: UvBoost,
+) -> None:
+    mock_repo.write_file("pyproject.toml", '[project]\nname = "x"\ndynamic = ["version", "description"]\n')
+    data = uv_boost.tools.pyproject.read()
+    result = uv_boost._strip_native_backend_metadata(data)  # noqa: SLF001
+    project: Any = result["project"]
+    assert "description" in project["dynamic"]
+    assert "version" not in project["dynamic"]
+
+
+def test_strip_native_backend_metadata_skips_when_version_already_set(
+    mock_repo: RepositoryController,
+    uv_boost: UvBoost,
+) -> None:
+    mock_repo.write_file("pyproject.toml", '[project]\nname = "x"\nversion = "1.2.3"\ndynamic = ["version"]\n')
+    data = uv_boost.tools.pyproject.read()
+    result = uv_boost._strip_native_backend_metadata(data)  # noqa: SLF001
+    project: Any = result["project"]
+    assert project["version"] == "1.2.3"
+
+
+# =============================================================================
+# _HAS_NATIVE_BUILD_BACKEND
+# =============================================================================
+
+
+def test_has_native_build_backend_oserror(uv_boost: UvBoost) -> None:
+    with patch.object(uv_boost.tools.pyproject, "read", side_effect=OSError):
+        assert uv_boost._has_native_build_backend() is False  # noqa: SLF001
+
+
+def test_has_native_build_backend_value_error(uv_boost: UvBoost) -> None:
+    with patch.object(uv_boost.tools.pyproject, "read", side_effect=ValueError):
+        assert uv_boost._has_native_build_backend() is False  # noqa: SLF001
+
+
+# =============================================================================
+# _FIX_EMPTY_PROJECT_NAME / _WRITE / _REMOVE_REQUIRES_PYTHON / _ENSURE_UPPER_BOUND
+# =============================================================================
+
+
+def test_fix_empty_project_name_skips_when_no_project_section(
+    mock_repo: RepositoryController,
+    uv_boost: UvBoost,
+) -> None:
+    mock_repo.write_file("pyproject.toml", "[tool.uv]\npackage = false\n")
+    uv_boost._fix_empty_project_name()  # noqa: SLF001
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert "name" not in content
+
+
+def test_write_requires_python_creates_project_section(
+    mock_repo: RepositoryController,
+    uv_boost: UvBoost,
+) -> None:
+    mock_repo.write_file("pyproject.toml", "[tool.uv]\npackage = false\n")
+    uv_boost._write_requires_python(">=3.9")  # noqa: SLF001
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert 'requires-python = ">=3.9"' in content
+
+
+def test_remove_requires_python_skips_when_no_project_section(
+    mock_repo: RepositoryController,
+    uv_boost: UvBoost,
+) -> None:
+    mock_repo.write_file("pyproject.toml", "[tool.uv]\npackage = false\n")
+    uv_boost._remove_requires_python()  # noqa: SLF001
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert "requires-python" not in content
+
+
+def test_ensure_upper_bound_skips_when_no_project_section(
+    mock_repo: RepositoryController,
+    uv_boost: UvBoost,
+) -> None:
+    mock_repo.write_file("pyproject.toml", "[tool.uv]\npackage = false\n")
+    uv_boost._ensure_upper_bound()  # noqa: SLF001  # should not raise
+
+
+# =============================================================================
+# _BUILD_PROJECT_TABLE AND _APPLY_SETUP_CFG_SCRIPTS
+# =============================================================================
+
+
+def test_build_project_table_with_attr_version(uv_boost: UvBoost) -> None:
+    cfg = configparser.ConfigParser()
+    cfg["metadata"] = {"name": "mylib", "version": "attr: mylib.__version__"}
+    result = uv_boost._build_project_table(cfg)  # noqa: SLF001
+    assert result["version"] == "0.1.0"
+    assert result["name"] == "mylib"
+
+
+def test_build_project_table_with_python_requires_and_deps(uv_boost: UvBoost) -> None:
+    cfg = configparser.ConfigParser()
+    cfg["metadata"] = {"name": "mylib", "version": "1.0.0"}
+    cfg["options"] = {"python_requires": ">=3.8", "install_requires": "requests>=2.0\nclick>=8.0"}
+    result = uv_boost._build_project_table(cfg)  # noqa: SLF001
+    assert result["requires-python"] == ">=3.8"
+    assert "requests>=2.0" in result["dependencies"]
+    assert "click>=8.0" in result["dependencies"]
+
+
+def test_build_project_table_with_extras_require(uv_boost: UvBoost) -> None:
+    cfg = configparser.ConfigParser()
+    cfg["metadata"] = {"name": "mylib", "version": "1.0.0"}
+    cfg["options.extras_require"] = {"dev": "pytest>=7.0\n# comment\n", "docs": "sphinx>=5.0"}
+    result = uv_boost._build_project_table(cfg)  # noqa: SLF001
+    assert "optional-dependencies" in result
+    assert "pytest>=7.0" in result["optional-dependencies"]["dev"]
+    assert "sphinx>=5.0" in result["optional-dependencies"]["docs"]
+
+
+def test_apply_setup_cfg_scripts_adds_scripts(uv_boost: UvBoost) -> None:
+    cfg = configparser.ConfigParser()
+    cfg["options.entry_points"] = {"console_scripts": "myapp = mypackage.cli:main\n"}
+    pyproject_data = toml_document()
+    project_tbl: Any = toml_table()
+    pyproject_data["project"] = project_tbl
+    uv_boost._apply_setup_cfg_scripts(cfg, pyproject_data)  # noqa: SLF001
+    result_project: Any = pyproject_data["project"]
+    assert result_project["scripts"]["myapp"] == "mypackage.cli:main"
+
+
+def test_apply_setup_cfg_scripts_skips_when_no_scripts(uv_boost: UvBoost) -> None:
+    cfg = configparser.ConfigParser()
+    pyproject_data = toml_document()
+    uv_boost._apply_setup_cfg_scripts(cfg, pyproject_data)  # noqa: SLF001
+    assert "project" not in pyproject_data
+
+
+# =============================================================================
+# _MIGRATE_FROM_SETUP_CFG
+# =============================================================================
+
+
+def test_migrate_from_setup_cfg_creates_pyproject(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+    mock_repo.write_file(
+        "setup.cfg",
+        "[metadata]\nname = mylib\nversion = 1.0.0\n\n"
+        "[options]\npython_requires = >=3.8\ninstall_requires =\n    requests>=2.0\n",
+    )
+    mock_repo.write_file("setup.py", "from setuptools import setup\nsetup()\n")
+
+    uv_boost._migrate_from_setup_cfg()  # noqa: SLF001
+
+    assert (mock_repo.path / "pyproject.toml").exists()
+    assert not (mock_repo.path / "setup.cfg").exists()
+    assert not (mock_repo.path / "setup.py").exists()
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert "mylib" in content
+    assert "requests>=2.0" in content
+    assert "hatchling" in content
+
+
+def test_migrate_from_setup_cfg_no_setup_py(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+    mock_repo.write_file("setup.cfg", "[metadata]\nname = mylib\nversion = 1.0.0\n")
+    uv_boost._migrate_from_setup_cfg()  # noqa: SLF001
+    assert not (mock_repo.path / "setup.cfg").exists()
+
+
+# =============================================================================
+# _TRY_PIP_INSTALL / _TRY_SCRIPT_INSTALL
+# =============================================================================
+
+
+@pytest.fixture
+def uv_boost_pip_oserror(uv_boost: UvBoost) -> Generator[UvBoost]:
+    with patch("pimp_my_repo.core.boosts.uv.uv.run_command", side_effect=OSError("no pip")):
+        yield uv_boost
+
+
+@pytest.fixture
+def uv_boost_pip_nonzero(uv_boost: UvBoost) -> Generator[UvBoost]:
+    result = mock.MagicMock()
+    result.returncode = 1
+    with patch("pimp_my_repo.core.boosts.uv.uv.run_command", return_value=result):
+        yield uv_boost
+
+
+def test_try_pip_install_oserror_returns_false(uv_boost_pip_oserror: UvBoost) -> None:
+    assert uv_boost_pip_oserror._try_pip_install() is False  # noqa: SLF001
+
+
+def test_try_pip_install_nonzero_returns_false(uv_boost_pip_nonzero: UvBoost) -> None:
+    assert uv_boost_pip_nonzero._try_pip_install() is False  # noqa: SLF001
+
+
+@pytest.fixture
+def uv_boost_script_oserror(uv_boost: UvBoost) -> Generator[UvBoost]:
+    with patch("pimp_my_repo.core.boosts.uv.uv.run_command", side_effect=OSError("no curl")):
+        yield uv_boost
+
+
+@pytest.fixture
+def uv_boost_script_nonzero(uv_boost: UvBoost) -> Generator[UvBoost]:
+    result = mock.MagicMock()
+    result.returncode = 1
+    with patch("pimp_my_repo.core.boosts.uv.uv.run_command", return_value=result):
+        yield uv_boost
+
+
+def test_try_script_install_oserror_returns_false(uv_boost_script_oserror: UvBoost) -> None:
+    assert uv_boost_script_oserror._try_script_install() is False  # noqa: SLF001
+
+
+def test_try_script_install_nonzero_returns_false(uv_boost_script_nonzero: UvBoost) -> None:
+    assert uv_boost_script_nonzero._try_script_install() is False  # noqa: SLF001
