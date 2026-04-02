@@ -14,7 +14,10 @@ if TYPE_CHECKING:
 
 _CONFIG_FILE = ".pre-commit-config.yaml"
 
-_STANDARD_HOOKS = """\
+_PMR_MARKER = "# pimp-my-repo:pre-commit"
+
+_STANDARD_HOOKS = f"""\
+{_PMR_MARKER}
 # See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks
 repos:

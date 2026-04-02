@@ -93,7 +93,10 @@ def assert_mypy_passes(repo_path: Path) -> None:
 
 
 def assert_pre_commit_passes(repo_path: Path) -> None:
-    assert (repo_path / ".pre-commit-config.yaml").exists(), ".pre-commit-config.yaml not found after pmr"
+    config_path = repo_path / ".pre-commit-config.yaml"
+    assert config_path.exists(), ".pre-commit-config.yaml not found after pmr"
+    if "pimp-my-repo:pre-commit" not in config_path.read_text():
+        return  # Pre-existing config not managed by pmr — skip hook execution
     _run_checked([str(_venv_exe(repo_path, "pre-commit")), "run", "--all-files"], cwd=repo_path)
 
 
