@@ -20,8 +20,8 @@ _DEFAULT_BOOSTS: list[type[Boost]] = [
     UvBoost,
     RuffBoost,
     MypyBoost,
-    PreCommitBoost,
     JustfileBoost,
+    PreCommitBoost,
 ]
 
 # Boosts that must be explicitly requested via --only.

@@ -57,6 +57,7 @@ def run_e2e_test(repo_path: Path) -> None:
     assert_git_clean(repo_path)
     assert_ruff_passes(repo_path)
     assert_mypy_passes(repo_path)
+    assert_pre_commit_passes(repo_path)
 
 
 # ── PMR runner ────────────────────────────────────────────────────────────────
@@ -89,6 +90,14 @@ def assert_ruff_passes(repo_path: Path) -> None:
 
 def assert_mypy_passes(repo_path: Path) -> None:
     _run_checked([str(_venv_exe(repo_path, "mypy")), "."], cwd=repo_path)
+
+
+def assert_pre_commit_passes(repo_path: Path) -> None:
+    config_path = repo_path / ".pre-commit-config.yaml"
+    assert config_path.exists(), ".pre-commit-config.yaml not found after pmr"
+    if "pimp-my-repo:pre-commit" not in config_path.read_text():
+        return  # Pre-existing config not managed by pmr — skip hook execution
+    _run_checked([str(_venv_exe(repo_path, "pre-commit")), "run", "--all-files"], cwd=repo_path)
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
