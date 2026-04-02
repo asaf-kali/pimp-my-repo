@@ -35,9 +35,10 @@ jobs:
         slug: asaf-kali/pimp-my-repo
     - name: Upload test results to Codecov
       if: ${{ !cancelled() }}
-      uses: codecov/test-results-action@v1
+      uses: codecov/codecov-action@v5
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
+        report_type: test_results
 
   test-e2e:
     if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
