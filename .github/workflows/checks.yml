@@ -28,6 +28,11 @@ jobs:
     - uses: ./.github/actions/setup
     - run: just install-test
     - run: just cover-xml
+    - name: Upload coverage reports to Codecov
+      uses: codecov/codecov-action@v5
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        slug: asaf-kali/pimp-my-repo
     - name: Extract coverage percentage
       run: |
         COVERAGE=$(just cover-percentage)
