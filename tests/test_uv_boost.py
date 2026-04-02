@@ -3,6 +3,7 @@
 import configparser
 import re
 import subprocess
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from unittest import mock
 from unittest.mock import patch
@@ -152,6 +153,40 @@ def uv_boost(boost_tools: BoostTools) -> UvBoost:
     return UvBoost(boost_tools)
 
 
+@dataclass
+class PatchedUvApply:
+    """Pre-patched UvBoost with all subprocess mocks wired for apply()."""
+
+    boost: UvBoost
+    mock_exec: mock.MagicMock
+    mock_exec_uvx: mock.MagicMock
+    mock_add_from_requirements: mock.MagicMock
+
+
+@pytest.fixture
+def patched_uv_apply(mock_repo: RepositoryController, uv_boost: UvBoost) -> Generator[PatchedUvApply]:
+    """Yield a UvBoost with all subprocess calls pre-mocked (no real uv execution)."""
+
+    def create_lock_file(*args: str, **_kwargs: object) -> mock.MagicMock:
+        if args and args[0] == "lock":
+            (mock_repo.path / "uv.lock").touch()
+        return mock.MagicMock(returncode=0, stdout="", stderr="")
+
+    with (
+        patch.object(uv_boost, "_check_uv_installed", return_value=True),
+        patch.object(uv_boost.tools.uv, "exec", side_effect=create_lock_file) as mock_exec,
+        patch.object(uv_boost.tools.uv, "exec_uvx") as mock_exec_uvx,
+        patch.object(uv_boost.tools.uv, "add_from_requirements_file") as mock_add,
+        patch("pimp_my_repo.core.boosts.uv.uv.resolve_requires_python", return_value=None),
+    ):
+        yield PatchedUvApply(
+            boost=uv_boost,
+            mock_exec=mock_exec,
+            mock_exec_uvx=mock_exec_uvx,
+            mock_add_from_requirements=mock_add,
+        )
+
+
 @pytest.fixture
 def patched_uv_boost_installed(uv_boost: UvBoost) -> Generator[UvBoost]:
     with patch.object(uv_boost, "_check_uv_installed", return_value=True):
@@ -185,6 +220,7 @@ def patched_uv_boost_installable_with_mocked_run(uv_boost: UvBoost) -> Generator
         patch.object(uv_boost, "_check_uv_installed", side_effect=lambda: check_calls.pop(0)),
         patch.object(uv_boost, "_install_uv", return_value=True),
         patch.object(uv_boost.tools.uv, "exec"),
+        patch("pimp_my_repo.core.boosts.uv.uv.resolve_requires_python", return_value=None),
     ):
         yield uv_boost
 
@@ -206,13 +242,14 @@ def uv_boost_with_lock_error(mock_repo: RepositoryController, uv_boost: UvBoost)
     error = subprocess.CalledProcessError(1, "uv lock", stderr="Lock failed")
 
     def run_side_effect(*args: str, check: bool = True) -> CommandResult:  # noqa: ARG001
-        # Only raise error for "lock" command, not for "--version" check
         if args and args[0] == "lock":
             raise error
-        # Return success for version check
         return CommandResult(cmd=["uv", *args], returncode=0, stdout="", stderr="")
 
-    with patch.object(uv_boost.tools.uv, "exec", side_effect=run_side_effect):
+    with (
+        patch.object(uv_boost.tools.uv, "exec", side_effect=run_side_effect),
+        patch("pimp_my_repo.core.boosts.uv.uv.resolve_requires_python", return_value=None),
+    ):
         yield uv_boost
 
 
@@ -334,68 +371,60 @@ def test_has_migration_source_ignores_docs_requirements(mock_repo: RepositoryCon
 # =============================================================================
 
 
-def test_apply_with_poetry_migration(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+def test_apply_with_poetry_migration(mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply) -> None:
     mock_repo.write_file("poetry.lock", "# Poetry lock file")
-    pyproject_content = (
+    mock_repo.write_file(
+        "pyproject.toml",
         '[tool.poetry]\nname = "test-project"\nversion = "0.1.0"\n\n'
-        '[tool.poetry.dependencies]\npython = "^3.8"\nrequests = "^2.28.0"\n'
+        '[tool.poetry.dependencies]\npython = "^3.8"\nrequests = "^2.28.0"\n',
     )
-    mock_repo.write_file("pyproject.toml", pyproject_content)
-
-    uv_boost.apply()
-
+    patched_uv_apply.boost.apply()
     assert (mock_repo.path / "pyproject.toml").exists()
     assert (mock_repo.path / "uv.lock").exists()
+    patched_uv_apply.mock_exec_uvx.assert_called_once_with("migrate-to-uv", "--skip-lock")
 
 
-def test_apply_with_requirements_txt(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+def test_apply_with_requirements_txt(mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply) -> None:
     mock_repo.write_file("requirements.txt", "requests>=2.0.0\npytest>=7.0.0")
-
-    uv_boost.apply()
-
+    patched_uv_apply.boost.apply()
     assert (mock_repo.path / "pyproject.toml").exists()
     assert (mock_repo.path / "uv.lock").exists()
+    patched_uv_apply.mock_exec_uvx.assert_called_once_with("migrate-to-uv", "--skip-lock")
 
 
-def test_apply_creates_minimal_pyproject_when_no_source(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    uv_boost.apply()
-
+def test_apply_creates_minimal_pyproject_when_no_source(
+    mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply
+) -> None:
+    patched_uv_apply.boost.apply()
     pyproject_path = mock_repo.path / "pyproject.toml"
     assert pyproject_path.exists()
     assert (mock_repo.path / "uv.lock").exists()
-
-    pyproject_content = pyproject_path.read_text()
-    assert "[project]" in pyproject_content
-    assert "[tool.uv]" in pyproject_content
-
-
-def test_apply_ensures_uv_config(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    pyproject_content = '[project]\nname = "test-project"\nversion = "0.1.0"\n'
-    mock_repo.write_file("pyproject.toml", pyproject_content)
-
-    uv_boost.apply()
-
-    pyproject_content_after = (mock_repo.path / "pyproject.toml").read_text()
-    assert "[tool.uv]" in pyproject_content_after
+    content = pyproject_path.read_text()
+    assert "[project]" in content
+    assert "[tool.uv]" in content
 
 
-def test_apply_preserves_existing_pyproject(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    pyproject_content = (
+def test_apply_ensures_uv_config(mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply) -> None:
+    mock_repo.write_file("pyproject.toml", '[project]\nname = "test-project"\nversion = "0.1.0"\n')
+    patched_uv_apply.boost.apply()
+    assert "[tool.uv]" in (mock_repo.path / "pyproject.toml").read_text()
+
+
+def test_apply_preserves_existing_pyproject(mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply) -> None:
+    mock_repo.write_file(
+        "pyproject.toml",
         '[project]\nname = "test-project"\nversion = "0.1.0"\n'
-        'description = "A test project"\n\n[tool.ruff]\nline-length = 120\n'
+        'description = "A test project"\n\n[tool.ruff]\nline-length = 120\n',
     )
-    mock_repo.write_file("pyproject.toml", pyproject_content)
-
-    uv_boost.apply()
-
-    pyproject_content_after = (mock_repo.path / "pyproject.toml").read_text()
-    assert 'description = "A test project"' in pyproject_content_after
-    assert "[tool.ruff]" in pyproject_content_after
-    assert "[tool.uv]" in pyproject_content_after
+    patched_uv_apply.boost.apply()
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert 'description = "A test project"' in content
+    assert "[tool.ruff]" in content
+    assert "[tool.uv]" in content
 
 
-def test_apply_creates_uv_lock(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    uv_boost.apply()
+def test_apply_creates_uv_lock(mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply) -> None:
+    patched_uv_apply.boost.apply()
     assert (mock_repo.path / "uv.lock").exists()
 
 
@@ -778,7 +807,9 @@ def test_augment_setup_cfg_does_nothing_without_string_kwargs(
 # =============================================================================
 
 
-def test_apply_with_bare_setup_cfg_and_setup_py(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+def test_apply_with_bare_setup_cfg_and_setup_py(
+    mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply
+) -> None:
     """Full apply() on a repo with bare setup.cfg + setup.py skips migrate-to-uv and creates a minimal pyproject.toml."""  # noqa: E501
     mock_repo.write_file("setup.cfg", "[wheel]\nuniversal = 1")
     mock_repo.write_file(
@@ -793,10 +824,9 @@ def test_apply_with_bare_setup_cfg_and_setup_py(mock_repo: RepositoryController,
         ),
     )
 
-    with patch.object(uv_boost.tools.uv, "exec_uvx") as mock_migrate:
-        uv_boost.apply()
-        # migrate-to-uv should NOT be called — bare setup.cfg + setup.py is not a migration source
-        mock_migrate.assert_not_called()
+    patched_uv_apply.boost.apply()
+    # migrate-to-uv should NOT be called — bare setup.cfg + setup.py is not a migration source
+    patched_uv_apply.mock_exec_uvx.assert_not_called()
 
     assert (mock_repo.path / "pyproject.toml").exists()
     assert (mock_repo.path / "uv.lock").exists()
@@ -870,42 +900,42 @@ def test_detect_requirements_files_no_main(mock_repo: RepositoryController, uv_b
     assert "dev" in result.groups
 
 
-def test_apply_with_pipfile_migration(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    pipfile_content = '[packages]\nrequests = ">=2.0.0"\n\n[dev-packages]\npytest = ">=7.0.0"\n'
-    mock_repo.write_file("Pipfile", pipfile_content)
-
-    uv_boost.apply()
-
+def test_apply_with_pipfile_migration(mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply) -> None:
+    mock_repo.write_file("Pipfile", '[packages]\nrequests = ">=2.0.0"\n\n[dev-packages]\npytest = ">=7.0.0"\n')
+    patched_uv_apply.boost.apply()
     assert (mock_repo.path / "pyproject.toml").exists()
     assert (mock_repo.path / "uv.lock").exists()
+    patched_uv_apply.mock_exec_uvx.assert_called_once_with("migrate-to-uv", "--skip-lock")
 
 
-def test_apply_adds_grouped_requirements_files(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    """Test that grouped requirements files are added after migration."""
+def test_apply_adds_grouped_requirements_files(
+    mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply
+) -> None:
+    """PMR adds grouped requirements files that migrate-to-uv did not consume."""
     mock_repo.write_file("requirements.txt", "requests>=2.0.0")
     mock_repo.write_file("requirements-dev.txt", "pytest>=7.0.0")
     mock_repo.write_file("test-requirements.txt", "pytest-cov>=4.0.0")
 
-    with patch.object(uv_boost.tools.uv, "add_from_requirements_file") as mock_add:
-        uv_boost.apply()
+    def simulate_migrate_to_uv(*_args: str, **_kwargs: object) -> None:
+        # simulate migrate-to-uv consuming requirements-dev.txt (recognised pattern)
+        (mock_repo.path / "requirements-dev.txt").unlink()
 
-        # migrate-to-uv already migrates requirements-dev.txt into [dependency-groups] dev and
-        # deletes the file, so PMR must not try to add it again. Only test-requirements.txt
-        # (an unrecognised pattern for migrate-to-uv) should be added by PMR.
-        assert mock_add.call_count == 1
+    patched_uv_apply.mock_exec_uvx.side_effect = simulate_migrate_to_uv
+    patched_uv_apply.boost.apply()
 
-        test_calls = [call for call in mock_add.call_args_list if call.kwargs.get("group") == "test"]
-        assert len(test_calls) == 1
-        assert test_calls[0].args[0].name == "test-requirements.txt"
+    # Only test-requirements.txt (unrecognised by migrate-to-uv) should be added by PMR
+    assert patched_uv_apply.mock_add_from_requirements.call_count == 1
+    call = patched_uv_apply.mock_add_from_requirements.call_args_list[0]
+    assert call.kwargs.get("group") == "test"
+    assert call.args[0].name == "test-requirements.txt"
 
 
-def test_apply_infers_project_name_from_directory(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
-    uv_boost.apply()
-
+def test_apply_infers_project_name_from_directory(
+    mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply
+) -> None:
+    patched_uv_apply.boost.apply()
     content = (mock_repo.path / "pyproject.toml").read_text()
     assert "[project]" in content
-    assert "name = " in content
-
     name_match = re.search(r'name = "([^"]+)"', content)
     assert name_match, "Could not find project name in pyproject.toml"
     project_name = name_match.group(1)
@@ -918,13 +948,13 @@ def test_apply_infers_project_name_from_directory(mock_repo: RepositoryControlle
 # =============================================================================
 
 
-def test_apply_is_idempotent(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+def test_apply_is_idempotent(mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply) -> None:
     mock_repo.write_file("pyproject.toml", '[project]\nname = "test-project"\nversion = "0.1.0"\n')
 
-    uv_boost.apply()
+    patched_uv_apply.boost.apply()
     first_content = (mock_repo.path / "pyproject.toml").read_text()
 
-    uv_boost.apply()
+    patched_uv_apply.boost.apply()
     second_content = (mock_repo.path / "pyproject.toml").read_text()
 
     assert "[tool.uv]" in first_content
