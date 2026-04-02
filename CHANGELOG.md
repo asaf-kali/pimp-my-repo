@@ -1,6 +1,28 @@
 # CHANGELOG
 
 
+## v0.4.0 (2026-04-02)
+
+### 🎆
+
+- 🎆 Add Codecov integration ([#39](https://github.com/asaf-kali/pimp-my-repo/pull/39),
+  [`d381de1`](https://github.com/asaf-kali/pimp-my-repo/commit/d381de11db67a2c9f28fe63511cd686adb2dd36a))
+
+* 📊 Add Codecov integration
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+* 📊 Add Codecov test analytics
+
+* 🧹 Remove unused coverage percentage step
+
+* 🔧 Pass secrets to reusable checks workflow
+
+---------
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+
 ## v0.3.10 (2026-04-02)
 
 ### 📝
