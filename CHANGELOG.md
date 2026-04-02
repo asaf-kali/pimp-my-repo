@@ -1,6 +1,51 @@
 # CHANGELOG
 
 
+## v0.4.1 (2026-04-02)
+
+### Other
+
+- ✅ Improve unit test coverage ([#40](https://github.com/asaf-kali/pimp-my-repo/pull/40),
+  [`df56a6a`](https://github.com/asaf-kali/pimp-my-repo/commit/df56a6a4daed203f3eac9b1a3c576debd48713f2))
+
+* ✅ Improve unit test coverage
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+* 🔧 Migrate test results upload to codecov-action@v5
+
+* ⚡ Fix slow uv apply tests by using patched_uv_apply fixture
+
+All apply() tests now mock subprocess calls (uv exec, exec_uvx, add_from_requirements,
+  resolve_requires_python) via the patched_uv_apply fixture, preventing real uv/pip invocations and
+  keeping tests fast.
+
+---------
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+### 🖼️
+
+- 🖼️ Implement pre-commit hooks boost ([#41](https://github.com/asaf-kali/pimp-my-repo/pull/41),
+  [`4147bf7`](https://github.com/asaf-kali/pimp-my-repo/commit/4147bf7ce2296aa3bc8437e203901c4bc0b539be))
+
+* Add implementation plan for pre-commit hooks boost
+
+* 🎁 Implement pre-commit hooks boost
+
+* ✅ Assert pre-commit config and hooks pass in e2e tests
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+* 🐛 Run pre-commit hooks once in apply() to pre-fix violations before commit
+
+* 🐛 Only assert pre-commit hooks for PMR-generated configs
+
+---------
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+
 ## v0.4.0 (2026-04-02)
 
 ### 🎆
