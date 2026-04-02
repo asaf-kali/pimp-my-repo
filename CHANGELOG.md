@@ -1,6 +1,33 @@
 # CHANGELOG
 
 
+## v0.3.10 (2026-04-02)
+
+### 📝
+
+- 📝 Logging fixes ([#38](https://github.com/asaf-kali/pimp-my-repo/pull/38),
+  [`6e71776`](https://github.com/asaf-kali/pimp-my-repo/commit/6e717769cb0965017cd6edfdb918a545d3f09fff))
+
+* 🪵 Add logging improvements
+
+- Expose package version in startup log message - Add finish log after all boosts complete - Log git
+  status output in is_clean for better visibility - Widen e2e separator line
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+* ♻️ Refactor RepositoryController: eliminate duplicate git add calls
+
+- Use self.add() in add_and_commit, commit, and reset_tracking instead of calling
+  self.execute("add", ...) directly - Extract _get_stripped_output() to deduplicate the
+  execute→validate→strip pattern in get_origin_url and get_current_commit_sha
+
+* Add new boost skill
+
+---------
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+
 ## v0.3.9 (2026-04-01)
 
 ### Other
