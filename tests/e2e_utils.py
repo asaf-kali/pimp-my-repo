@@ -52,7 +52,7 @@ def setup_remote_repo(*, url: str, rev: str | None) -> Path:
 
 def run_e2e_test(repo_path: Path) -> None:
     run_pmr(repo_path)
-    logger.info("===================")
+    logger.info("=========================================================")
     logger.info("PMR run complete, verifying results...")
     assert_git_clean(repo_path)
     assert_ruff_passes(repo_path)
