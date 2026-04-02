@@ -84,6 +84,10 @@ class PreCommitBoost(Boost):
         self.uv.exec("run", "pre-commit", "install")
         logger.info("pre-commit hooks installed")
 
+        # Run all hooks once to auto-fix any existing violations (e.g. trailing whitespace)
+        # so the committed state is already clean for future runs.
+        self.uv.exec("run", "--no-sync", "pre-commit", "run", "--all-files", check=False, log_on_error=False)
+
     def commit_message(self) -> str:
         """Generate commit message for pre-commit boost."""
         return "✨ Add pre-commit hooks"
