@@ -28,11 +28,16 @@ jobs:
     - uses: ./.github/actions/setup
     - run: just install-test
     - run: just cover-xml
-    - name: Extract coverage percentage
-      run: |
-        COVERAGE=$(just cover-percentage)
-        echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
-        echo "Coverage: $COVERAGE%"
+    - name: Upload coverage reports to Codecov
+      uses: codecov/codecov-action@v5
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        slug: asaf-kali/pimp-my-repo
+    - name: Upload test results to Codecov
+      if: ${{ !cancelled() }}
+      uses: codecov/test-results-action@v1
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
 
   test-e2e:
     if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'

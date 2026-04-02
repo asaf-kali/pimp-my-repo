@@ -46,11 +46,12 @@ test-e2e-local name *args:
 test-e2e url rev="HEAD" *args:
     just test -m "e2e_remote" --e2e-url={{ url }} --e2e-rev={{ rev }} {{ args }}
 
-cover-base:
-    {{ RUN }} coverage run -m {{ PYTHON_TEST_COMMAND }}
+cover-base *args:
+    {{ RUN }} coverage run -m {{ PYTHON_TEST_COMMAND }} {{ args }}
     {{ RUN }} coverage report
 
-cover-xml: cover-base
+cover-xml:
+    just cover-base --junitxml=junit.xml -o junit_family=legacy
     {{ RUN }} coverage xml
 
 cover-html: cover-base
