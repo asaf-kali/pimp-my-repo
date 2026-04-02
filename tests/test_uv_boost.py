@@ -3,11 +3,13 @@
 import configparser
 import re
 import subprocess
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from unittest import mock
 from unittest.mock import patch
 
 import pytest
+from tomlkit import document as toml_document
+from tomlkit import table as toml_table
 
 from pimp_my_repo.core.boosts.uv.detector import (
     detect_all,
@@ -1062,3 +1064,255 @@ def test_lock_removes_requires_python_when_all_versions_fail(
     content = (mock_repo.path / "pyproject.toml").read_text()
     assert "requires-python" not in content
     mock_lock_and_sync.assert_called_once()
+
+
+# =============================================================================
+# _STRIP_NATIVE_BACKEND_METADATA
+# =============================================================================
+
+
+def test_strip_native_backend_metadata_no_project_section(
+    mock_repo: RepositoryController,
+    uv_boost: UvBoost,
+) -> None:
+    mock_repo.write_file("pyproject.toml", '[build-system]\nrequires = ["mesonpy"]\n')
+    data = uv_boost.tools.pyproject.read()
+    result = uv_boost._strip_native_backend_metadata(data)  # noqa: SLF001
+    assert result is data  # unchanged
+
+
+def test_strip_native_backend_metadata_removes_optional_deps(
+    mock_repo: RepositoryController,
+    uv_boost: UvBoost,
+) -> None:
+    mock_repo.write_file(
+        "pyproject.toml",
+        '[project]\nname = "x"\n[project.optional-dependencies]\nextra = ["requests"]\n',
+    )
+    data = uv_boost.tools.pyproject.read()
+    result = uv_boost._strip_native_backend_metadata(data)  # noqa: SLF001
+    project: Any = result["project"]
+    assert "optional-dependencies" not in project
+
+
+def test_strip_native_backend_metadata_replaces_dynamic_version(
+    mock_repo: RepositoryController,
+    uv_boost: UvBoost,
+) -> None:
+    mock_repo.write_file("pyproject.toml", '[project]\nname = "x"\ndynamic = ["version"]\n')
+    data = uv_boost.tools.pyproject.read()
+    result = uv_boost._strip_native_backend_metadata(data)  # noqa: SLF001
+    project: Any = result["project"]
+    assert "dynamic" not in project
+    assert project["version"] == "0.0.0"
+
+
+def test_strip_native_backend_metadata_preserves_other_dynamic_fields(
+    mock_repo: RepositoryController,
+    uv_boost: UvBoost,
+) -> None:
+    mock_repo.write_file("pyproject.toml", '[project]\nname = "x"\ndynamic = ["version", "description"]\n')
+    data = uv_boost.tools.pyproject.read()
+    result = uv_boost._strip_native_backend_metadata(data)  # noqa: SLF001
+    project: Any = result["project"]
+    assert "description" in project["dynamic"]
+    assert "version" not in project["dynamic"]
+
+
+def test_strip_native_backend_metadata_skips_when_version_already_set(
+    mock_repo: RepositoryController,
+    uv_boost: UvBoost,
+) -> None:
+    mock_repo.write_file("pyproject.toml", '[project]\nname = "x"\nversion = "1.2.3"\ndynamic = ["version"]\n')
+    data = uv_boost.tools.pyproject.read()
+    result = uv_boost._strip_native_backend_metadata(data)  # noqa: SLF001
+    project: Any = result["project"]
+    assert project["version"] == "1.2.3"
+
+
+# =============================================================================
+# _HAS_NATIVE_BUILD_BACKEND
+# =============================================================================
+
+
+def test_has_native_build_backend_oserror(uv_boost: UvBoost) -> None:
+    with patch.object(uv_boost.tools.pyproject, "read", side_effect=OSError):
+        assert uv_boost._has_native_build_backend() is False  # noqa: SLF001
+
+
+def test_has_native_build_backend_value_error(uv_boost: UvBoost) -> None:
+    with patch.object(uv_boost.tools.pyproject, "read", side_effect=ValueError):
+        assert uv_boost._has_native_build_backend() is False  # noqa: SLF001
+
+
+# =============================================================================
+# _FIX_EMPTY_PROJECT_NAME / _WRITE / _REMOVE_REQUIRES_PYTHON / _ENSURE_UPPER_BOUND
+# =============================================================================
+
+
+def test_fix_empty_project_name_skips_when_no_project_section(
+    mock_repo: RepositoryController,
+    uv_boost: UvBoost,
+) -> None:
+    mock_repo.write_file("pyproject.toml", "[tool.uv]\npackage = false\n")
+    uv_boost._fix_empty_project_name()  # noqa: SLF001
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert "name" not in content
+
+
+def test_write_requires_python_creates_project_section(
+    mock_repo: RepositoryController,
+    uv_boost: UvBoost,
+) -> None:
+    mock_repo.write_file("pyproject.toml", "[tool.uv]\npackage = false\n")
+    uv_boost._write_requires_python(">=3.9")  # noqa: SLF001
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert 'requires-python = ">=3.9"' in content
+
+
+def test_remove_requires_python_skips_when_no_project_section(
+    mock_repo: RepositoryController,
+    uv_boost: UvBoost,
+) -> None:
+    mock_repo.write_file("pyproject.toml", "[tool.uv]\npackage = false\n")
+    uv_boost._remove_requires_python()  # noqa: SLF001
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert "requires-python" not in content
+
+
+def test_ensure_upper_bound_skips_when_no_project_section(
+    mock_repo: RepositoryController,
+    uv_boost: UvBoost,
+) -> None:
+    mock_repo.write_file("pyproject.toml", "[tool.uv]\npackage = false\n")
+    uv_boost._ensure_upper_bound()  # noqa: SLF001  # should not raise
+
+
+# =============================================================================
+# _BUILD_PROJECT_TABLE AND _APPLY_SETUP_CFG_SCRIPTS
+# =============================================================================
+
+
+def test_build_project_table_with_attr_version(uv_boost: UvBoost) -> None:
+    cfg = configparser.ConfigParser()
+    cfg["metadata"] = {"name": "mylib", "version": "attr: mylib.__version__"}
+    result = uv_boost._build_project_table(cfg)  # noqa: SLF001
+    assert result["version"] == "0.1.0"
+    assert result["name"] == "mylib"
+
+
+def test_build_project_table_with_python_requires_and_deps(uv_boost: UvBoost) -> None:
+    cfg = configparser.ConfigParser()
+    cfg["metadata"] = {"name": "mylib", "version": "1.0.0"}
+    cfg["options"] = {"python_requires": ">=3.8", "install_requires": "requests>=2.0\nclick>=8.0"}
+    result = uv_boost._build_project_table(cfg)  # noqa: SLF001
+    assert result["requires-python"] == ">=3.8"
+    assert "requests>=2.0" in result["dependencies"]
+    assert "click>=8.0" in result["dependencies"]
+
+
+def test_build_project_table_with_extras_require(uv_boost: UvBoost) -> None:
+    cfg = configparser.ConfigParser()
+    cfg["metadata"] = {"name": "mylib", "version": "1.0.0"}
+    cfg["options.extras_require"] = {"dev": "pytest>=7.0\n# comment\n", "docs": "sphinx>=5.0"}
+    result = uv_boost._build_project_table(cfg)  # noqa: SLF001
+    assert "optional-dependencies" in result
+    assert "pytest>=7.0" in result["optional-dependencies"]["dev"]
+    assert "sphinx>=5.0" in result["optional-dependencies"]["docs"]
+
+
+def test_apply_setup_cfg_scripts_adds_scripts(uv_boost: UvBoost) -> None:
+    cfg = configparser.ConfigParser()
+    cfg["options.entry_points"] = {"console_scripts": "myapp = mypackage.cli:main\n"}
+    pyproject_data = toml_document()
+    project_tbl: Any = toml_table()
+    pyproject_data["project"] = project_tbl
+    uv_boost._apply_setup_cfg_scripts(cfg, pyproject_data)  # noqa: SLF001
+    result_project: Any = pyproject_data["project"]
+    assert result_project["scripts"]["myapp"] == "mypackage.cli:main"
+
+
+def test_apply_setup_cfg_scripts_skips_when_no_scripts(uv_boost: UvBoost) -> None:
+    cfg = configparser.ConfigParser()
+    pyproject_data = toml_document()
+    uv_boost._apply_setup_cfg_scripts(cfg, pyproject_data)  # noqa: SLF001
+    assert "project" not in pyproject_data
+
+
+# =============================================================================
+# _MIGRATE_FROM_SETUP_CFG
+# =============================================================================
+
+
+def test_migrate_from_setup_cfg_creates_pyproject(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+    mock_repo.write_file(
+        "setup.cfg",
+        "[metadata]\nname = mylib\nversion = 1.0.0\n\n"
+        "[options]\npython_requires = >=3.8\ninstall_requires =\n    requests>=2.0\n",
+    )
+    mock_repo.write_file("setup.py", "from setuptools import setup\nsetup()\n")
+
+    uv_boost._migrate_from_setup_cfg()  # noqa: SLF001
+
+    assert (mock_repo.path / "pyproject.toml").exists()
+    assert not (mock_repo.path / "setup.cfg").exists()
+    assert not (mock_repo.path / "setup.py").exists()
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert "mylib" in content
+    assert "requests>=2.0" in content
+    assert "hatchling" in content
+
+
+def test_migrate_from_setup_cfg_no_setup_py(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+    mock_repo.write_file("setup.cfg", "[metadata]\nname = mylib\nversion = 1.0.0\n")
+    uv_boost._migrate_from_setup_cfg()  # noqa: SLF001
+    assert not (mock_repo.path / "setup.cfg").exists()
+
+
+# =============================================================================
+# _TRY_PIP_INSTALL / _TRY_SCRIPT_INSTALL
+# =============================================================================
+
+
+@pytest.fixture
+def uv_boost_pip_oserror(uv_boost: UvBoost) -> Generator[UvBoost]:
+    with patch("pimp_my_repo.core.boosts.uv.uv.run_command", side_effect=OSError("no pip")):
+        yield uv_boost
+
+
+@pytest.fixture
+def uv_boost_pip_nonzero(uv_boost: UvBoost) -> Generator[UvBoost]:
+    result = mock.MagicMock()
+    result.returncode = 1
+    with patch("pimp_my_repo.core.boosts.uv.uv.run_command", return_value=result):
+        yield uv_boost
+
+
+def test_try_pip_install_oserror_returns_false(uv_boost_pip_oserror: UvBoost) -> None:
+    assert uv_boost_pip_oserror._try_pip_install() is False  # noqa: SLF001
+
+
+def test_try_pip_install_nonzero_returns_false(uv_boost_pip_nonzero: UvBoost) -> None:
+    assert uv_boost_pip_nonzero._try_pip_install() is False  # noqa: SLF001
+
+
+@pytest.fixture
+def uv_boost_script_oserror(uv_boost: UvBoost) -> Generator[UvBoost]:
+    with patch("pimp_my_repo.core.boosts.uv.uv.run_command", side_effect=OSError("no curl")):
+        yield uv_boost
+
+
+@pytest.fixture
+def uv_boost_script_nonzero(uv_boost: UvBoost) -> Generator[UvBoost]:
+    result = mock.MagicMock()
+    result.returncode = 1
+    with patch("pimp_my_repo.core.boosts.uv.uv.run_command", return_value=result):
+        yield uv_boost
+
+
+def test_try_script_install_oserror_returns_false(uv_boost_script_oserror: UvBoost) -> None:
+    assert uv_boost_script_oserror._try_script_install() is False  # noqa: SLF001
+
+
+def test_try_script_install_nonzero_returns_false(uv_boost_script_nonzero: UvBoost) -> None:
+    assert uv_boost_script_nonzero._try_script_install() is False  # noqa: SLF001

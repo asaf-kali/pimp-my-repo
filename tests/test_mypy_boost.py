@@ -777,3 +777,143 @@ def test_commit_message(mypy_boost: MypyBoost) -> None:
 
 def test_get_name() -> None:
     assert MypyBoost.get_name() == "mypy"
+
+
+# =============================================================================
+# DMYPY MISC
+# =============================================================================
+
+
+def test_dmypy_commit_message(dmypy_boost: DmypyBoost) -> None:
+    assert dmypy_boost.commit_message() == "✅ Silence dmypy violations"
+
+
+# =============================================================================
+# _PARSE_VIOLATIONS EDGE CASES
+# =============================================================================
+
+
+def test_parses_violations_skips_empty_lines(mypy_boost: MypyBoost) -> None:
+    output = "\nsrc/foo.py:1: error: Bad type  [assignment]\n\n"
+    result = mypy_boost._parse_violations(output)  # noqa: SLF001
+    assert result == {_vl("src/foo.py", 1): {"assignment"}}
+
+
+def test_parses_unused_ignore_without_codes_adds_bare_marker(mypy_boost: MypyBoost) -> None:
+    """When unused-ignore message doesn't match the expected format, store bare 'unused-ignore'."""
+    output = 'src/foo.py:1: error: Unused "type: ignore" comment  [unused-ignore]'
+    result = mypy_boost._parse_violations(output)  # noqa: SLF001
+    assert result == {_vl("src/foo.py", 1): {"unused-ignore"}}
+
+
+# =============================================================================
+# _APPLY_TYPE_IGNORES_TO_FILE EDGE CASES
+# =============================================================================
+
+
+def test_apply_type_ignores_skips_out_of_bounds_line(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
+    mock_repo.write_file("src/foo.py", "x = 1\n")
+    # violation on line 99 which doesn't exist
+    mypy_boost._apply_type_ignores({_vl("src/foo.py", 99): {"attr-defined"}})  # noqa: SLF001
+    assert (mock_repo.path / "src/foo.py").read_text() == "x = 1\n"
+
+
+# =============================================================================
+# _EXCLUDE_BLOCKING_UNCODED_ERRORS EDGE CASES
+# =============================================================================
+
+
+def test_exclude_blocking_uncoded_errors_no_files_when_no_uncoded_errors(
+    mock_repo: RepositoryController,
+    patched_mypy_apply: PatchedMypyApply,
+    fail_result: SubprocessResultFactory,
+    ok_result: SubprocessResultFactory,
+) -> None:
+    """Blocking error detected but all errors have [codes] → no files excluded, loop continues."""
+    # Output has "errors prevented further checking" but ALL errors have [codes]
+    # so _parse_uncoded_error_files returns empty — the blocking flag is set but no exclusion happens.
+    mypy_output = (
+        "src/foo.py:1: error: Bad  [attr-defined]\nFound 1 error in 1 file (errors prevented further checking)\n"
+    )
+    mock_repo.write_file("src/foo.py", "x = bad\n")
+    patched_mypy_apply.mock_mypy.side_effect = [fail_result(mypy_output), ok_result()]
+    patched_mypy_apply.boost.apply()
+    content = (mock_repo.path / "src/foo.py").read_text()
+    assert "# type: ignore[attr-defined]" in content
+
+
+# =============================================================================
+# _RUN_RUFF WHEN RUFF IS CONFIGURED
+# =============================================================================
+
+
+def test_run_ruff_runs_suppress_when_ruff_configured(
+    mock_repo: RepositoryController,
+    patched_mypy_apply: PatchedMypyApply,
+    fail_result: SubprocessResultFactory,
+    ok_result: SubprocessResultFactory,
+) -> None:
+    mock_repo.write_file(
+        "pyproject.toml", "[project]\nname='x'\n\n[tool.ruff]\nline-length = 120\n\n[tool.mypy]\nstrict = true\n"
+    )
+    mock_repo.write_file("src/foo.py", "x: int = 'hello'\n")
+    patched_mypy_apply.mock_mypy.side_effect = [
+        fail_result("src/foo.py:1: error: Bad type  [assignment]\n"),
+        ok_result(),
+    ]
+    with patch.object(patched_mypy_apply.boost, "_run_ruff") as mock_ruff:
+        patched_mypy_apply.boost.apply()
+    mock_ruff.assert_called()
+
+
+# =============================================================================
+# _EXCLUDE_INVALID_PACKAGE_NAMES
+# =============================================================================
+
+
+def test_exclude_invalid_package_names_excludes_found_dirs(
+    mock_repo: RepositoryController,
+    patched_mypy_apply: PatchedMypyApply,
+    fail_result: SubprocessResultFactory,
+    ok_result: SubprocessResultFactory,
+) -> None:
+    (mock_repo.path / "fonts-standard").mkdir()
+    mypy_output = "fonts-standard is not a valid Python package name\n"
+    patched_mypy_apply.mock_mypy.side_effect = [fail_result(mypy_output), ok_result()]
+    patched_mypy_apply.boost.apply()
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert "exclude" in content
+    assert "fonts" in content
+
+
+# =============================================================================
+# TRIPLE-QUOTE EDGE CASES
+# =============================================================================
+
+
+def test_type_ignore_on_closing_triple_quote_no_closer(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
+    """When a closing triple-quote cannot be found (e.g. end of file), no crash occurs."""
+    mock_repo.write_file("src/foo.py", 'x = """\n')  # no closing triple-quote
+    # Should not raise; the violation is simply not suppressed
+    mypy_boost._apply_type_ignores({_vl("src/foo.py", 1): {"assignment"}})  # noqa: SLF001
+
+
+def test_find_unclosed_triple_quote_closed_on_same_line(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
+    """A triple-quote that opens and closes on the same line is treated as closed."""
+    mock_repo.write_file("src/foo.py", 'x = """closed""" + y\n')
+    mypy_boost._apply_type_ignores({_vl("src/foo.py", 1): {"attr-defined"}})  # noqa: SLF001
+    content = (mock_repo.path / "src/foo.py").read_text()
+    assert "# type: ignore[attr-defined]" in content
+
+
+# =============================================================================
+# BARE UNUSED-IGNORE REMOVAL
+# =============================================================================
+
+
+def test_apply_type_ignores_removes_bare_unused_ignore(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
+    """A bare 'unused-ignore' code (no parseable codes) removes the whole type: ignore comment."""
+    mock_repo.write_file("src/foo.py", "x = 1  # type: ignore\n")
+    mypy_boost._apply_type_ignores({_vl("src/foo.py", 1): {"unused-ignore"}})  # noqa: SLF001
+    content = (mock_repo.path / "src/foo.py").read_text()
+    assert "# type: ignore" not in content
