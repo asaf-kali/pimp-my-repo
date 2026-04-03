@@ -165,7 +165,7 @@ def test_calls_pre_commit_install(patched_pre_commit_apply: PatchedPreCommitAppl
 
 def test_adds_pre_commit_as_dev_dependency(patched_pre_commit_apply: PatchedPreCommitApply) -> None:
     patched_pre_commit_apply.boost.apply()
-    patched_pre_commit_apply.mock_add_package.assert_called_once_with("pre-commit", dev=True)
+    patched_pre_commit_apply.mock_add_package.assert_called_once_with("pre-commit", group="dev")
 
 
 # --- Metadata ---
