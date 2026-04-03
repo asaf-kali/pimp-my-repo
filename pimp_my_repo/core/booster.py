@@ -42,7 +42,7 @@ def _run_boost(
     Captures the git HEAD before calling apply().  On any non-skip failure,
     resets hard back to that ref so the repo is left in a clean state.
     """
-    logger.debug(f"Starting boost '{boost_name}'")
+    logger.info(f"Running boost '{boost_name}'")
     try:
         with _git_revert_context(repo_controller) as sha_before_apply:
             boost.apply()
@@ -50,14 +50,14 @@ def _run_boost(
             commits_made_during_apply = sha_before_apply != sha_after_apply
             committed = repo_controller.commit(boost.commit_message())
     except BoostSkippedError as e:
-        logger.debug(f"Boost '{boost_name}' skipped: {e.reason}")
+        logger.info(f"Boost '{boost_name}' skipped: {e.reason}")
         return BoostResult(name=boost_name, status="skipped", message=e.reason)
 
     if commits_made_during_apply or committed:
-        logger.debug(f"Boost '{boost_name}' applied successfully")
+        logger.info(f"Boost '{boost_name}' applied successfully")
         return BoostResult(name=boost_name, status="applied", message="Success")
 
-    logger.debug(f"Boost '{boost_name}' made no changes")
+    logger.info(f"Boost '{boost_name}' made no changes")
     return BoostResult(name=boost_name, status="skipped", message="No changes to commit")
 
 
