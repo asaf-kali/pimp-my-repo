@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -13,6 +14,9 @@ if TYPE_CHECKING:
     from pimp_my_repo.core.tools.pyproject import PyProjectController
     from pimp_my_repo.core.tools.repo import RepositoryController
     from pimp_my_repo.core.tools.uv import UvController
+
+type BoostName = str
+type BoostStartCallback = Callable[[BoostName], None]
 
 
 class BoostSkippedError(Exception):
@@ -54,7 +58,7 @@ class Boost(ABC):
         return self.tools.pyproject
 
     @classmethod
-    def get_name(cls) -> str:
+    def get_name(cls) -> BoostName:
         """Extract boost name from class name.
 
         Returns:

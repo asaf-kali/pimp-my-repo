@@ -1,23 +1,18 @@
 import contextlib
-import subprocess
 from typing import TYPE_CHECKING
 
 from loguru import logger
 
 from pimp_my_repo import __version__
-from pimp_my_repo.core.boosts.base import Boost, BoostSkippedError
+from pimp_my_repo.core.boosts.base import Boost, BoostSkippedError, BoostStartCallback
 from pimp_my_repo.core.result import BoostResult
 from pimp_my_repo.core.tools.boost_tools import BoostTools
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Generator, Iterator
+    from collections.abc import Generator, Iterator
     from pathlib import Path
 
     from pimp_my_repo.core.tools.repo import RepositoryController
-
-
-type BoostName = str
-type BoostStartCallback = Callable[[BoostName], None]
 
 
 @contextlib.contextmanager
@@ -70,7 +65,7 @@ def _run_boost_class(
     try:
         boost = boost_class(boost_tools)
         return _run_boost(boost=boost, boost_name=boost_name, repo_controller=repo_controller)
-    except (subprocess.CalledProcessError, OSError, RuntimeError) as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error applying '{boost_name}' boost: {e}")
         logger.debug(f"Error applying '{boost_name}' boost", exc_info=True)
         return BoostResult(name=boost_name, status="failed", message=str(e))
