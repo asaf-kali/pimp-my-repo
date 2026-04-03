@@ -7,15 +7,17 @@ from rich.layout import Layout
 from rich.panel import Panel
 from rich.text import Text
 
+from pimp_my_repo.core.result import BoostResultStatus
+
 if TYPE_CHECKING:
     from rich.console import Console, ConsoleOptions, RenderResult
 
     from pimp_my_repo.core.result import BoostResult
 
 _STATUS_CONFIG: dict[str, tuple[str, str]] = {
-    "applied": ("✓", "green"),
-    "skipped": ("⊘", "yellow"),
-    "failed": ("✗", "red"),
+    BoostResultStatus.APPLIED: ("✓", "green"),
+    BoostResultStatus.SKIPPED: ("⊘", "yellow"),
+    BoostResultStatus.FAILED: ("✗", "red"),
 }
 
 _PENDING: tuple[str, str] = ("·", "dim")

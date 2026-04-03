@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
-from pimp_my_repo.core.boosts.base import Boost, BoostSkippedError
+from pimp_my_repo.core.boosts.base import Boost, BoostSkipped
 from pimp_my_repo.core.tools.pyproject import PyProjectNotFoundError
 from pimp_my_repo.core.tools.uv import UvNotFoundError
 
@@ -64,19 +64,19 @@ class PreCommitBoost(Boost):
         """Create pre-commit config and install hooks."""
         if (self.repo_path / _CONFIG_FILE).exists():
             msg = f"{_CONFIG_FILE} already exists"
-            raise BoostSkippedError(msg)
+            raise BoostSkipped(msg)
 
         try:
             self.uv.verify_present()
         except UvNotFoundError as exc:
             msg = "uv is not available"
-            raise BoostSkippedError(msg) from exc
+            raise BoostSkipped(msg) from exc
 
         try:
             self.pyproject.verify_present()
         except PyProjectNotFoundError as exc:
             msg = "No pyproject.toml found"
-            raise BoostSkippedError(msg) from exc
+            raise BoostSkipped(msg) from exc
 
         logger.debug("Adding pre-commit to dev dependencies...")
         self.uv.add_package("pre-commit", group="dev")

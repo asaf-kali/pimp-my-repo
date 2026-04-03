@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
-from pimp_my_repo.core.boosts.base import Boost, BoostSkippedError
+from pimp_my_repo.core.boosts.base import Boost, BoostSkipped
 from pimp_my_repo.core.tools.subprocess import run_command
 
 if TYPE_CHECKING:
@@ -63,7 +63,7 @@ class JustfileBoost(Boost):
             logger.info("just not found, attempting installation...")
             if not _try_install_just():
                 msg = "just is not available and could not be installed"
-                raise BoostSkippedError(msg)
+                raise BoostSkipped(msg)
 
         justfile_path = self.repo_path / "justfile"
         existing_recipes = _get_existing_recipes(justfile_path) if justfile_path.exists() else set()
@@ -81,7 +81,7 @@ class JustfileBoost(Boost):
 
         if new_content is None:
             msg = "All justfile recipes already present"
-            raise BoostSkippedError(msg)
+            raise BoostSkipped(msg)
 
         self.git.write_file("justfile", new_content)
 

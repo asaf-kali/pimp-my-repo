@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import pimp_my_repo.core.boosts.justfile as justfile_module
-from pimp_my_repo.core.boosts.base import BoostSkippedError
+from pimp_my_repo.core.boosts.base import BoostSkipped
 from pimp_my_repo.core.boosts.justfile import JustfileBoost
 
 if TYPE_CHECKING:
@@ -100,7 +100,7 @@ def all_install_commands_fail() -> Generator[AllInstallCommandsFail]:
 
 @pytest.mark.smoke
 def test_skips_when_just_not_installable(just_not_installable: JustNotInstallable) -> None:
-    with pytest.raises(BoostSkippedError, match="just is not available"):
+    with pytest.raises(BoostSkipped, match="just is not available"):
         just_not_installable.boost.apply()
 
 
@@ -209,7 +209,7 @@ def test_excludes_precommit_from_lint_when_no_config(
 def test_skips_when_no_pyproject_and_no_tools(
     patched_justfile_apply: PatchedJustfileApply,
 ) -> None:
-    with pytest.raises(BoostSkippedError):
+    with pytest.raises(BoostSkipped):
         patched_justfile_apply.boost.apply()
 
 
@@ -244,7 +244,7 @@ def test_skips_when_all_recipes_already_present(
         "check-ruff:\n    uv run ruff check\n"
     )
     mock_repo.write_file("justfile", existing)
-    with pytest.raises(BoostSkippedError):
+    with pytest.raises(BoostSkipped):
         patched_justfile_apply.boost.apply()
 
 

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from loguru import logger
 from tomlkit import TOMLDocument, table
 
-from pimp_my_repo.core.boosts.base import Boost, BoostSkippedError
+from pimp_my_repo.core.boosts.base import Boost, BoostSkipped
 from pimp_my_repo.core.tools.pyproject import PyProjectNotFoundError
 
 if TYPE_CHECKING:
@@ -87,17 +87,17 @@ class RuffBoost(Boost):
             result = self.uv.exec("--version", check=False)
             if result.returncode != 0:
                 msg = "uv is not available"
-                raise BoostSkippedError(msg)
+                raise BoostSkipped(msg)
         except (FileNotFoundError, OSError) as exc:
             msg = "uv is not installed"
-            raise BoostSkippedError(msg) from exc
+            raise BoostSkipped(msg) from exc
 
     def _verify_pyproject_present(self) -> None:
         try:
             self.pyproject.verify_present()
         except PyProjectNotFoundError as exc:
             msg = "No pyproject.toml found"
-            raise BoostSkippedError(msg) from exc
+            raise BoostSkipped(msg) from exc
 
     def _run_ruff_format(self) -> CommandResult:
         logger.debug("Running ruff format...")

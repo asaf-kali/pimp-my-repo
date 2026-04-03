@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pimp_my_repo.core.boosts.base import BoostSkippedError
+from pimp_my_repo.core.boosts.base import BoostSkipped
 from pimp_my_repo.core.boosts.ruff import _MAX_RUFF_ITERATIONS, RuffBoost, ViolationLocation
 
 if TYPE_CHECKING:
@@ -136,23 +136,23 @@ def ruff_boost_uv_ok(
 
 
 def test_raises_skip_when_uv_nonzero(ruff_boost_uv_failing: RuffBoost) -> None:
-    with pytest.raises(BoostSkippedError, match="uv is not available"):
+    with pytest.raises(BoostSkipped, match="uv is not available"):
         ruff_boost_uv_failing.apply()
 
 
 def test_raises_skip_when_uv_raises_file_not_found(ruff_boost_uv_file_not_found: RuffBoost) -> None:
-    with pytest.raises(BoostSkippedError, match="uv is not installed"):
+    with pytest.raises(BoostSkipped, match="uv is not installed"):
         ruff_boost_uv_file_not_found.apply()
 
 
 def test_raises_skip_when_uv_raises_oserror(ruff_boost_uv_oserror: RuffBoost) -> None:
-    with pytest.raises(BoostSkippedError, match="uv is not installed"):
+    with pytest.raises(BoostSkipped, match="uv is not installed"):
         ruff_boost_uv_oserror.apply()
 
 
 @pytest.mark.smoke
 def test_raises_skip_when_no_pyproject(ruff_boost_uv_ok: RuffBoost) -> None:
-    with pytest.raises(BoostSkippedError, match=r"No pyproject\.toml found"):
+    with pytest.raises(BoostSkipped, match=r"No pyproject\.toml found"):
         ruff_boost_uv_ok.apply()
 
 

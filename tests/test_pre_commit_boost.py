@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pimp_my_repo.core.boosts.base import BoostSkippedError
+from pimp_my_repo.core.boosts.base import BoostSkipped
 from pimp_my_repo.core.boosts.pre_commit import PreCommitBoost
 from pimp_my_repo.core.tools.uv import UvNotFoundError
 
@@ -66,7 +66,7 @@ def test_skips_when_config_already_exists(
     pre_commit_boost: PreCommitBoost,
 ) -> None:
     mock_repo.write_file(".pre-commit-config.yaml", "repos: []\n")
-    with pytest.raises(BoostSkippedError, match="already exists"):
+    with pytest.raises(BoostSkipped, match="already exists"):
         pre_commit_boost.apply()
 
 
@@ -77,7 +77,7 @@ def test_skips_when_uv_not_present(
     mock_repo.write_file("pyproject.toml", "[project]\nname = 'test'\n")
     with (
         patch.object(pre_commit_boost.uv, "verify_present", side_effect=UvNotFoundError("no uv")),
-        pytest.raises(BoostSkippedError, match="uv is not available"),
+        pytest.raises(BoostSkipped, match="uv is not available"),
     ):
         pre_commit_boost.apply()
 
@@ -85,7 +85,7 @@ def test_skips_when_uv_not_present(
 def test_skips_when_no_pyproject(pre_commit_boost: PreCommitBoost) -> None:
     with (
         patch.object(pre_commit_boost.uv, "verify_present"),
-        pytest.raises(BoostSkippedError, match=r"No pyproject\.toml found"),
+        pytest.raises(BoostSkipped, match=r"No pyproject\.toml found"),
     ):
         pre_commit_boost.apply()
 

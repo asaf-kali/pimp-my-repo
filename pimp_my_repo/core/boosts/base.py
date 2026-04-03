@@ -19,7 +19,7 @@ type BoostName = str
 type BoostStartCallback = Callable[[BoostName], None]
 
 
-class BoostSkippedError(Exception):
+class BoostSkipped(Exception):  # noqa: N818
     """Raised inside apply() to signal that the boost should be skipped.
 
     The boost must not have made any changes before raising this exception.

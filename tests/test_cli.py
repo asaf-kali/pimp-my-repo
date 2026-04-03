@@ -7,7 +7,7 @@ from typer.testing import CliRunner
 
 from pimp_my_repo.cli.main import app, main
 from pimp_my_repo.cli.runner import BoostRunResult
-from pimp_my_repo.core.result import BoostResult
+from pimp_my_repo.core.result import BoostResult, BoostResultStatus
 from pimp_my_repo.core.tools.subprocess import run_command
 
 if TYPE_CHECKING:
@@ -136,7 +136,7 @@ def test_validate_path_not_a_directory(tmp_path: Path) -> None:
 @pytest.fixture
 def patched_run_boosts_no_applied(mock_repo: RepositoryController) -> Generator[RepositoryController]:
     run_result = BoostRunResult(
-        results=[BoostResult(name="ruff", status="skipped", message="skipped")],
+        results=[BoostResult(name="ruff", status=BoostResultStatus.SKIPPED, message="skipped")],
         log_path=None,
     )
     with patch("pimp_my_repo.cli.main.run_boosts", return_value=run_result):
@@ -146,7 +146,7 @@ def patched_run_boosts_no_applied(mock_repo: RepositoryController) -> Generator[
 @pytest.fixture
 def patched_run_boosts_with_failure(mock_repo: RepositoryController) -> Generator[RepositoryController]:
     run_result = BoostRunResult(
-        results=[BoostResult(name="ruff", status="failed", message="error")],
+        results=[BoostResult(name="ruff", status=BoostResultStatus.FAILED, message="error")],
         log_path=None,
     )
     with patch("pimp_my_repo.cli.main.run_boosts", return_value=run_result):
