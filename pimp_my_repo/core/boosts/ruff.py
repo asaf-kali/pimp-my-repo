@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from loguru import logger
 from tomlkit import TOMLDocument, table
 
-from pimp_my_repo.core.boosts.base import Boost, BoostSkippedError
+from pimp_my_repo.core.boosts.base import Boost, BoostSkipped
 from pimp_my_repo.core.tools.pyproject import PyProjectNotFoundError
 
 if TYPE_CHECKING:
@@ -19,8 +19,8 @@ _RUFF_PACKAGE = "ruff<0.16"  # upper-bound: output format is parsed; bump after 
 
 # Rules that must never be suppressed via noqa:
 # - ERA001: treats the noqa comment itself as commented-out code → oscillation loop.
-# - RUF100: "unused noqa directive" — fired on file-level `# ruff: noqa: CODE` lines.
-#   Adding `# noqa: RUF100` to such lines doesn't suppress RUF100 (the file-level
+# - RUF100: "unused noqa directive" — fired on file-level `# ruff: no-qa: CODE` lines.
+#   Adding `# no-qa: RUF100` to such lines doesn't suppress RUF100 (the file-level
 #   directive is still unused), causing an infinite oscillation loop.
 #   Both codes are added to ruff's ignore list in the config instead.
 _UNSUPPRESSIBLE_CODES: frozenset[str] = frozenset({"ERA001", "RUF100"})
@@ -87,17 +87,17 @@ class RuffBoost(Boost):
             result = self.uv.exec("--version", check=False)
             if result.returncode != 0:
                 msg = "uv is not available"
-                raise BoostSkippedError(msg)
+                raise BoostSkipped(msg)
         except (FileNotFoundError, OSError) as exc:
             msg = "uv is not installed"
-            raise BoostSkippedError(msg) from exc
+            raise BoostSkipped(msg) from exc
 
     def _verify_pyproject_present(self) -> None:
         try:
             self.pyproject.verify_present()
         except PyProjectNotFoundError as exc:
             msg = "No pyproject.toml found"
-            raise BoostSkippedError(msg) from exc
+            raise BoostSkipped(msg) from exc
 
     def _run_ruff_format(self) -> CommandResult:
         logger.debug("Running ruff format...")
@@ -122,8 +122,8 @@ class RuffBoost(Boost):
         lint_section: Any = ruff_section["lint"]
         lint_section["select"] = ["ALL"]
         # ERA001: adding `# no-qa: ERA001` itself gets flagged as commented-out code.
-        # RUF100: "unused noqa" fires on pre-existing `# ruff: noqa:` file-level directives;
-        #   inline `# noqa: RUF100` doesn't suppress it → oscillation loop.
+        # RUF100: "unused noqa" fires on pre-existing `# ruff: no-qa:` file-level directives;
+        #   inline `# no-qa: RUF100` doesn't suppress it → oscillation loop.
         # COM812, ISC001: conflict with ruff formatter, causing format/check oscillation.
         # D203, D212: incompatible with D211/D213 (ruff picks one but warns; be explicit).
         lint_section["ignore"] = ["ERA001", "RUF100", "COM812", "ISC001", "D203", "D212"]
@@ -142,7 +142,7 @@ class RuffBoost(Boost):
         violations: ViolationsByLocation = {}
         try:
             raw_violations = json.loads(output)
-        except (json.JSONDecodeError, ValueError) as e:  # fmt: off
+        except (json.JSONDecodeError, ValueError) as e:
             msg = "ruff check produced non-JSON output — ruff may have failed to start"
             raise RuntimeError(msg) from e
 
@@ -212,7 +212,7 @@ class RuffBoost(Boost):
         files: set[str] = set()
         try:
             raw_violations = json.loads(output)
-        except (json.JSONDecodeError, ValueError):  # fmt: off
+        except json.JSONDecodeError, ValueError:
             return files
         for v in raw_violations:
             if v.get("code") != "invalid-syntax":

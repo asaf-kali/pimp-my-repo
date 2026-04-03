@@ -9,6 +9,7 @@ from typer import Exit
 
 from pimp_my_repo.cli.runner import run_boosts
 from pimp_my_repo.core.registry import get_all_boosts, get_opt_in_boosts
+from pimp_my_repo.core.result import BoostResultStatus
 
 if TYPE_CHECKING:
     from pimp_my_repo.core.boosts.base import Boost
@@ -97,8 +98,8 @@ def _validate_path(repo_path: Path, console: Console) -> None:
 
 
 def _print_summary(results: list[BoostResult], console: Console) -> None:
-    applied = sum(1 for r in results if r.status == "applied")
-    failed = sum(1 for r in results if r.status == "failed")
+    applied = sum(1 for r in results if r.status == BoostResultStatus.APPLIED)
+    failed = sum(1 for r in results if r.status == BoostResultStatus.FAILED)
     console.print()
     if failed:
         console.print(f"[red]✗ {failed} boost(s) failed[/red]  ", end="")

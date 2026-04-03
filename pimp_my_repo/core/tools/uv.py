@@ -50,14 +50,11 @@ class UvController:
         package: str,
         *,
         group: str | None = None,
-        dev: bool = False,
     ) -> None:
         """Add a package using uv add."""
         logger.info(f"Adding {package} dependency...")
         cmd = ["add", "--no-sync"]
-        if dev:
-            cmd.append("--dev")
-        elif group:
+        if group:
             cmd.extend(["--group", group])
         cmd.append(package)
         self.exec(*cmd)

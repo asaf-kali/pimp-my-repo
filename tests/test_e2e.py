@@ -6,6 +6,7 @@ from loguru import logger
 from rich.console import Console
 
 from pimp_my_repo.cli.runner import run_boosts
+from pimp_my_repo.core.result import BoostResultStatus
 from pimp_my_repo.core.tools.subprocess import run_command
 
 if TYPE_CHECKING:
@@ -34,7 +35,7 @@ def test_e2e_boosts_applied_then_idempotent(mock_repo: RepositoryController) -> 
     assert not failed1, f"Boosts failed on first run: {failed1}"
 
     by_name1 = {r.name: r.status for r in run_result1.results}
-    assert by_name1["uv"] == "applied"
+    assert by_name1["uv"] == BoostResultStatus.APPLIED
 
     assert mock_repo.is_clean()
     commits_after_run1 = mock_repo.commit_count()

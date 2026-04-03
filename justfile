@@ -95,6 +95,11 @@ upload:
 
 build-and-upload: build upload
 
+# CI
+
+run-checks *args:
+    {{ RUN }} scripts/run_checks.py {{ args }}
+
 # Semantic release
 
 semrel:

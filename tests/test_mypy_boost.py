@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pimp_my_repo.core.boosts.base import BoostSkippedError
+from pimp_my_repo.core.boosts.base import BoostSkipped
 from pimp_my_repo.core.boosts.mypy import _MAX_MYPY_ITERATIONS, DmypyBoost, MypyBoost, ViolationLocation
 
 if TYPE_CHECKING:
@@ -139,23 +139,23 @@ def mypy_boost_uv_ok(
 
 
 def test_raises_skip_when_uv_nonzero(mypy_boost_uv_failing: MypyBoost) -> None:
-    with pytest.raises(BoostSkippedError, match="uv is not available"):
+    with pytest.raises(BoostSkipped, match="uv is not available"):
         mypy_boost_uv_failing.apply()
 
 
 def test_raises_skip_when_uv_raises_file_not_found(mypy_boost_uv_file_not_found: MypyBoost) -> None:
-    with pytest.raises(BoostSkippedError, match="uv is not installed"):
+    with pytest.raises(BoostSkipped, match="uv is not installed"):
         mypy_boost_uv_file_not_found.apply()
 
 
 def test_raises_skip_when_uv_raises_oserror(mypy_boost_uv_oserror: MypyBoost) -> None:
-    with pytest.raises(BoostSkippedError, match="uv is not installed"):
+    with pytest.raises(BoostSkipped, match="uv is not installed"):
         mypy_boost_uv_oserror.apply()
 
 
 @pytest.mark.smoke
 def test_raises_skip_when_no_pyproject(mypy_boost_uv_ok: MypyBoost) -> None:
-    with pytest.raises(BoostSkippedError, match=r"No pyproject\.toml found"):
+    with pytest.raises(BoostSkipped, match=r"No pyproject\.toml found"):
         mypy_boost_uv_ok.apply()
 
 

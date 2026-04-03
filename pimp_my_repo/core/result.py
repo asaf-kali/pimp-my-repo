@@ -1,12 +1,18 @@
 from datetime import datetime
-from typing import Literal
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
 
+class BoostResultStatus(StrEnum):
+    APPLIED = "applied"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+
+
 class BoostResult(BaseModel):
     name: str
-    status: Literal["applied", "skipped", "failed"]
+    status: BoostResultStatus
     message: str
 
 

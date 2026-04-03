@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
-from pimp_my_repo.core.boosts.base import Boost, BoostSkippedError
+from pimp_my_repo.core.boosts.base import Boost, BoostSkipped
 from pimp_my_repo.core.tools.pyproject import PyProjectNotFoundError
 from pimp_my_repo.core.tools.uv import UvNotFoundError
 
@@ -64,31 +64,32 @@ class PreCommitBoost(Boost):
         """Create pre-commit config and install hooks."""
         if (self.repo_path / _CONFIG_FILE).exists():
             msg = f"{_CONFIG_FILE} already exists"
-            raise BoostSkippedError(msg)
+            raise BoostSkipped(msg)
 
         try:
             self.uv.verify_present()
         except UvNotFoundError as exc:
             msg = "uv is not available"
-            raise BoostSkippedError(msg) from exc
+            raise BoostSkipped(msg) from exc
 
         try:
             self.pyproject.verify_present()
         except PyProjectNotFoundError as exc:
             msg = "No pyproject.toml found"
-            raise BoostSkippedError(msg) from exc
+            raise BoostSkipped(msg) from exc
 
-        self.uv.add_package("pre-commit", dev=True)
+        logger.debug("Adding pre-commit to dev dependencies...")
+        self.uv.add_package("pre-commit", group="dev")
 
+        logger.debug("Generating pre-commit config...")
         justfile_recipes = _get_justfile_recipes(self.repo_path)
         config_content = _build_config(justfile_recipes=justfile_recipes)
         self.git.write_file(_CONFIG_FILE, config_content)
 
+        logger.debug("Installing pre-commit hooks...")
         self.uv.exec("run", "pre-commit", "install")
-        logger.info("pre-commit hooks installed")
 
-        # Run all hooks once to auto-fix any existing violations (e.g. trailing whitespace)
-        # so the committed state is already clean for future runs.
+        logger.debug("Running pre-commit hooks on all files to auto-fix any existing issues...")
         self.uv.exec("run", "--no-sync", "pre-commit", "run", "--all-files", check=False, log_on_error=False)
 
     def commit_message(self) -> str:
@@ -98,6 +99,7 @@ class PreCommitBoost(Boost):
 
 def _get_justfile_recipes(repo_path: Path) -> set[str]:
     """Return the set of recipe names defined in the justfile, or empty set if absent."""
+    logger.debug("Checking for justfile recipes to include in pre-commit config...")
     justfile_path = repo_path / "justfile"
     if not justfile_path.exists():
         return set()
@@ -107,11 +109,13 @@ def _get_justfile_recipes(repo_path: Path) -> set[str]:
         m = re.match(r"^([a-zA-Z0-9][a-zA-Z0-9_-]*)", line)
         if m and ":=" not in line and ":" in line:
             recipes.add(m.group(1))
+    logger.debug(f"Found justfile recipes: {recipes}")
     return recipes
 
 
 def _build_config(*, justfile_recipes: set[str]) -> str:
     """Build .pre-commit-config.yaml content based on available justfile recipes."""
+    logger.debug("Building pre-commit config based on justfile recipes...")
     local_hooks: list[str] = []
     if "check-lock" in justfile_recipes:
         local_hooks.append(_HOOK_CHECK_LOCK)
@@ -123,4 +127,5 @@ def _build_config(*, justfile_recipes: set[str]) -> str:
     content = _STANDARD_HOOKS
     if local_hooks:
         content += _LOCAL_HOOKS_HEADER + "".join(local_hooks)
+    logger.trace(f"Generated pre-commit config content:\n{content}")
     return content
