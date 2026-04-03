@@ -36,6 +36,7 @@ _RECIPE_LINT_NO_PRECOMMIT = "lint: format\n    {{ RUN }} ruff check --fix --unsa
 _RECIPE_LINT_WITH_PRECOMMIT = (
     "lint: format\n    {{ RUN }} ruff check --fix --unsafe-fixes\n    {{ RUN }} pre-commit run --all-files\n"
 )
+_RECIPE_CHECK_LOCK = "check-lock:\n    uv lock --check\n"
 _RECIPE_CHECK_RUFF = "check-ruff:\n    {{ RUN }} ruff format --check\n    {{ RUN }} ruff check\n"
 _RECIPE_CHECK_MYPY = "check-mypy:\n    {{ RUN }} mypy .\n"
 
@@ -47,6 +48,7 @@ class _JustfileConfig:
     existing_path: Path | None
     existing_recipes: set[str]
     has_pyproject: bool
+    has_uv: bool
     has_ruff: bool
     has_mypy: bool
     has_precommit: bool
@@ -70,6 +72,7 @@ class JustfileBoost(Boost):
             existing_path=justfile_path if justfile_path.exists() else None,
             existing_recipes=existing_recipes,
             has_pyproject=(self.repo_path / "pyproject.toml").exists(),
+            has_uv=(self.repo_path / "uv.lock").exists(),
             has_ruff=_is_ruff_configured(self.repo_path),
             has_mypy=_is_mypy_configured(self.repo_path),
             has_precommit=(self.repo_path / ".pre-commit-config.yaml").exists(),
@@ -143,6 +146,8 @@ def _select_recipes(*, config: _JustfileConfig) -> list[str]:
     recipes: list[str] = []
     if config.has_pyproject and "install" not in existing:
         recipes.append(_RECIPE_INSTALL)
+    if config.has_uv and "check-lock" not in existing:
+        recipes.append(_RECIPE_CHECK_LOCK)
     if config.has_ruff:
         if "format" not in existing:
             recipes.append(_RECIPE_FORMAT)

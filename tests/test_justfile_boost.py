@@ -173,6 +173,18 @@ def test_creates_justfile_with_mypy_recipe(
     assert "format:" not in content
 
 
+def test_creates_check_lock_recipe_when_uv_lock_present(
+    mock_repo: RepositoryController,
+    patched_justfile_apply: PatchedJustfileApply,
+) -> None:
+    mock_repo.write_file("pyproject.toml", "[project]\nname = 'test'\n")
+    mock_repo.write_file("uv.lock", "")
+    patched_justfile_apply.boost.apply()
+    content = (mock_repo.path / "justfile").read_text()
+    assert "check-lock:" in content
+    assert "uv lock --check" in content
+
+
 def test_includes_precommit_in_lint_when_config_present(
     mock_repo: RepositoryController,
     patched_justfile_apply: PatchedJustfileApply,
