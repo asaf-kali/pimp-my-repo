@@ -1,5 +1,9 @@
 # pimp-my-repo project memory
 
+## Meta
+- When told to remember something, add it here unless it's clearly personal/behavioral (then use `~/.claude/`).
+- When adding/changing project infra (justfile, CI workflows, major directory structure, etc.), update this file to reflect the change. Only address important tools/commands/workflows, not minor details.
+
 ## What it does
 CLI tool (`pmr`) that "boosts" a target Python repo by adding tooling (ruff, mypy, uv, gitignore).
 Each boost: configures the tool in `pyproject.toml`, runs it, suppresses all violations, commits.
@@ -7,7 +11,8 @@ Each boost: configures the tool in `pyproject.toml`, runs it, suppresses all vio
 ## Dev workflow
 - `just lint` — format + ruff check + pre-commit
 - `just test` — pytest
-- Always run both before committing.
+- `just run-checks` — trigger CI Checks workflow on current branch and follow output; Ctrl+C exits follow.
+- Always run `just lint && just test` before committing.
 
 ## Architecture
 - `pimp_my_repo/core/boosts/` — one file per boost, each subclasses `Boost`
