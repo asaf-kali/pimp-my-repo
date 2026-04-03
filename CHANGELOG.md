@@ -1,6 +1,39 @@
 # CHANGELOG
 
 
+## v0.4.2 (2026-04-03)
+
+### 🐛
+
+- 🐛 JustfileBoost fixes; other infra adjustments
+  ([#42](https://github.com/asaf-kali/pimp-my-repo/pull/42),
+  [`ad6aebc`](https://github.com/asaf-kali/pimp-my-repo/commit/ad6aebc603b344d6daa2cdfec2c3da1173ec487d))
+
+* 🐛 Add check-lock recipe to JustfileBoost to enable check-uv-lock pre-commit hook
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+* Logging fixes
+
+* Adjust pre-commit boost logs and structure
+
+* Move type defs
+
+* Typing fixes
+
+* noqa rule fixes
+
+* Edit CLAUDE.md
+
+* Add run-checks command
+
+* Move CLAUDE.md
+
+---------
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+
 ## v0.4.1 (2026-04-02)
 
 ### Other
