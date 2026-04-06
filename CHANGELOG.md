@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.4.3 (2026-04-06)
+
+### 🐛
+
+- 🐛 Fail on unparsable mypy output; rename space-named dirs
+  ([#43](https://github.com/asaf-kali/pimp-my-repo/pull/43),
+  [`f8f3f61`](https://github.com/asaf-kali/pimp-my-repo/commit/f8f3f610c40c20ddc9516a50b3b0207c690afcc2))
+
+- Raise RuntimeError when mypy returns non-zero but output cannot be parsed or handled, instead of
+  silently treating as success - Fix _MYPY_INVALID_PKG_NAME_RE to match directory names containing
+  spaces (was \S+, now .+) - Rename directories with spaces in their names (replace space →
+  underscore) instead of excluding them from mypy - Update and add tests covering all new behaviors
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+
 ## v0.4.2 (2026-04-03)
 
 ### 🐛
