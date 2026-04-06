@@ -44,7 +44,7 @@ _MYPY_ANY_ERROR_RE = re.compile(r"^(?P<path>.+?)(?::\d+(?::\d+)?)?: error: ")
 _MYPY_FOUND_TWICE_RE = re.compile(r"Source file found twice under different module names")
 # Directories with hyphens (e.g. "fonts-standard") are invalid Python package names.
 # Mypy outputs these as fatal errors with no file/line context.
-_MYPY_INVALID_PKG_NAME_RE = re.compile(r"^(\S+) is not a valid Python package name$", re.MULTILINE)
+_MYPY_INVALID_PKG_NAME_RE = re.compile(r"^(.+) is not a valid Python package name$", re.MULTILINE)
 
 
 def _normalize_mypy_output(output: str) -> str:
@@ -233,8 +233,8 @@ class BaseMypyBoost(Boost, abc.ABC):
             and not newly_excluded_uncoded
             and not newly_excluded_invalid_pkg
         ):
-            logger.info("No parseable violations found; stopping")
-            return False
+            msg = f"mypy failed but output could not be parsed or handled:\n{raw_output}"
+            raise RuntimeError(msg)
 
         made_progress = newly_excluded_syntax or newly_excluded_uncoded or newly_excluded_invalid_pkg
         if violations:
@@ -285,25 +285,53 @@ class BaseMypyBoost(Boost, abc.ABC):
         return True
 
     def _exclude_invalid_package_names(self, output: str) -> bool:
-        """Exclude directories that are not valid Python package names (e.g. 'fonts-standard').
+        """Exclude or rename directories that are not valid Python package names.
 
-        Mypy reports these as fatal errors with no file/line context. We find matching
-        directories under the repo root and add regex patterns to the mypy exclude list.
+        Mypy reports these as fatal errors with no file/line context. Names containing
+        spaces are renamed (spaces replaced with underscores). Other names are found and
+        added to the mypy exclude list.
 
-        Returns True if any directories were excluded.
+        Returns True if any progress was made (exclusion or rename).
         """
         names = set(_MYPY_INVALID_PKG_NAME_RE.findall(output))
         if not names:
             return False
+        space_names = {n for n in names if " " in n}
+        other_names = names - space_names
+        made_progress = False
+        if space_names:
+            made_progress |= self._rename_space_dirs(space_names)
+        if other_names:
+            dirs = self._find_invalid_pkg_dirs(other_names)
+            if dirs:
+                logger.info(f"Excluding invalid package name directories: {sorted(dirs)}")
+                made_progress |= self._exclude_mypy_files(dirs)
+        return made_progress
+
+    def _find_invalid_pkg_dirs(self, names: set[str]) -> set[str]:
+        """Search for directories matching any of the given names under the repo root."""
         dirs: set[str] = set()
         for name in names:
             for found in self.tools.repo_path.rglob(name):
                 if found.is_dir():
                     dirs.add(str(found.relative_to(self.tools.repo_path)) + "/")
-        if not dirs:
-            return False
-        logger.info(f"Excluding invalid package name directories: {sorted(dirs)}")
-        return self._exclude_mypy_files(dirs)
+        return dirs
+
+    def _rename_space_dirs(self, names: set[str]) -> bool:
+        """Rename directories whose names contain spaces, replacing spaces with underscores.
+
+        Returns True if any directory was renamed.
+        """
+        renamed = False
+        for name in names:
+            for found in self.tools.repo_path.rglob(name):
+                if not found.is_dir():
+                    continue
+                new_name = name.replace(" ", "_")
+                found.rename(found.parent / new_name)
+                logger.info(f"Renamed invalid package directory: '{found.name}' -> '{new_name}'")
+                renamed = True
+        return renamed
 
     def _exclude_blocking_uncoded_errors(self, output: str) -> bool:
         """Exclude files with no-code blocking errors. Returns True if new files were excluded.
