@@ -652,7 +652,8 @@ def test_apply_stops_early_when_no_parseable_violations(
     fail_result: SubprocessResultFactory,
 ) -> None:
     patched_mypy_apply.mock_mypy.return_value = fail_result("src/foo.py:1: error: Cannot import module\n")
-    patched_mypy_apply.boost.apply()
+    with pytest.raises(RuntimeError, match="mypy failed but output could not be parsed"):
+        patched_mypy_apply.boost.apply()
     patched_mypy_apply.mock_mypy.assert_called_once()
 
 
@@ -737,17 +738,18 @@ def test_stops_when_syntax_file_already_excluded(
     patched_mypy_apply: PatchedMypyApply,
     fail_result: SubprocessResultFactory,
 ) -> None:
-    """Even if escalation to parent dir can't make mypy stop, the loop still terminates.
+    """When all exclusions are exhausted, a RuntimeError is raised after no further progress.
 
     Iteration 1 excludes the file, iteration 2 escalates to the parent dir,
-    iteration 3 finds nothing new to exclude and stops.
+    iteration 3 finds nothing new to exclude and raises.
     """
     syntax_error_output = "src/bad.py:5: error: Invalid syntax  [syntax]\n"
     patched_mypy_apply.mock_mypy.return_value = fail_result(syntax_error_output)
-    patched_mypy_apply.boost.apply()
+    with pytest.raises(RuntimeError, match="mypy failed but output could not be parsed"):
+        patched_mypy_apply.boost.apply()
     # Iteration 1: excludes src/bad.py (new file pattern).
     # Iteration 2: file already excluded → escalates to src/ (new parent pattern).
-    # Iteration 3: both already excluded → no progress → stop.
+    # Iteration 3: both already excluded → no progress → raises.
     assert patched_mypy_apply.mock_mypy.call_count == 3  # noqa: PLR2004
 
 
@@ -761,8 +763,9 @@ def test_stops_when_uncoded_blocking_file_already_excluded(
         "Found 1 error in 1 file (errors prevented further checking)\n"
     )
     patched_mypy_apply.mock_mypy.return_value = fail_result(mypy_output)
-    patched_mypy_apply.boost.apply()
-    # Iteration 1: excludes tests/pkg/ (new). Iteration 2: already excluded, no progress → stop.
+    with pytest.raises(RuntimeError, match="mypy failed but output could not be parsed"):
+        patched_mypy_apply.boost.apply()
+    # Iteration 1: excludes tests/pkg/ (new). Iteration 2: already excluded, no progress → raises.
     assert patched_mypy_apply.mock_mypy.call_count == 2  # noqa: PLR2004
 
 
@@ -884,6 +887,32 @@ def test_exclude_invalid_package_names_excludes_found_dirs(
     content = (mock_repo.path / "pyproject.toml").read_text()
     assert "exclude" in content
     assert "fonts" in content
+
+
+def test_apply_raises_when_mypy_fails_and_output_unparsable(
+    patched_mypy_apply: PatchedMypyApply,
+    fail_result: SubprocessResultFactory,
+) -> None:
+    patched_mypy_apply.mock_mypy.return_value = fail_result("src/foo.py:1: error: Cannot import module\n")
+    with pytest.raises(RuntimeError, match="mypy failed but output could not be parsed"):
+        patched_mypy_apply.boost.apply()
+
+
+def test_exclude_invalid_package_names_renames_dirs_with_spaces(
+    mock_repo: RepositoryController,
+    patched_mypy_apply: PatchedMypyApply,
+    fail_result: SubprocessResultFactory,
+    ok_result: SubprocessResultFactory,
+) -> None:
+    (mock_repo.path / "my dir").mkdir()
+    mypy_output = "my dir is not a valid Python package name\n"
+    patched_mypy_apply.mock_mypy.side_effect = [fail_result(mypy_output), ok_result()]
+    patched_mypy_apply.boost.apply()
+    assert not (mock_repo.path / "my dir").exists()
+    assert (mock_repo.path / "my_dir").exists()
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert "my dir" not in content
+    assert "my_dir" not in content  # not excluded, just renamed
 
 
 # =============================================================================
