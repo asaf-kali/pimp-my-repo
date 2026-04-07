@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.4.4 (2026-04-07)
+
+### 🏗️
+
+- 🏗️ Refactor mypy output parsing into a single-pass _parse_mypy_output
+  ([#44](https://github.com/asaf-kali/pimp-my-repo/pull/44),
+  [`eebe35f`](https://github.com/asaf-kali/pimp-my-repo/commit/eebe35f0653b1eea2b138c6c6525d27f52ef9a8c))
+
+
 ## v0.4.3 (2026-04-06)
 
 ### 🐛
