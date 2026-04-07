@@ -1,6 +1,29 @@
 # CHANGELOG
 
 
+## v0.4.5 (2026-04-07)
+
+### 🐛
+
+- 🐛 Raise only for truly unhandled mypy output; stop gracefully on exhausted exclusions
+  ([#45](https://github.com/asaf-kali/pimp-my-repo/pull/45),
+  [`89aa164`](https://github.com/asaf-kali/pimp-my-repo/commit/89aa164cc0685b8c3518877067d742b68a4e1b7c))
+
+When all file/dir exclusions were exhausted (e.g. syntax file excluded at both file and parent-dir
+  level), violations were stripped and the boost raised a misleading RuntimeError showing raw_output
+  that contained normal coded violations.
+
+Fix: only raise RuntimeError when `unhandled_lines` is non-empty (lines that matched no known
+  pattern). When everything was parsed but no further exclusion is possible, log a warning and stop
+  gracefully instead.
+
+Also extracted the per-line loop body in `_parse_mypy_output` into small helpers
+  (`_apply_note_line`, `_apply_coded_error_line`, `_apply_diagnostic_line`,
+  `_collect_no_line_number_errors`) and applied early-return style throughout.
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+
 ## v0.4.4 (2026-04-07)
 
 ### 🏗️
