@@ -67,7 +67,86 @@ def _normalize_mypy_output(output: str) -> str:
     return "\n".join(result)
 
 
-def _parse_mypy_output(*, output: str, raw_output: str) -> ParsedMypyOutput:  # noqa: C901, PLR0912, PLR0915
+def _apply_note_line(line: str, violations: ViolationsByLocation) -> None:
+    """Handle a note: diagnostic line, adding to violations if it carries an error code."""
+    match = _MYPY_NOTE_UNCOVERED_RE.match(line)
+    if not match:
+        return
+    key = ViolationLocation(file_path=match.group("path"), line_number=int(match.group("line")))
+    violations.setdefault(key, set()).add(match.group("code"))
+
+
+def _apply_coded_error_line(
+    line: str,
+    match: re.Match[str],
+    violations: ViolationsByLocation,
+    syntax_files: set[str],
+) -> None:
+    """Handle a coded error line (has [code] bracket), updating violations or syntax_files."""
+    code = match.group("code")
+    if code == "syntax":
+        syntax_files.add(match.group("path"))
+        return
+    key = ViolationLocation(file_path=match.group("path"), line_number=int(match.group("line")))
+    if code != "unused-ignore":
+        violations.setdefault(key, set()).add(code)
+        return
+    # Extract which specific codes are unused so we only remove those,
+    # leaving any codes that are still suppressing real errors intact.
+    unused_match = _MYPY_UNUSED_IGNORE_RE.search(line)
+    if not unused_match:
+        violations.setdefault(key, set()).add("unused-ignore")
+        return
+    for uc in unused_match.group("codes").split(","):
+        violations.setdefault(key, set()).add(f"!{uc.strip()}")
+
+
+def _apply_diagnostic_line(
+    line: str,
+    violations: ViolationsByLocation,
+    syntax_files: set[str],
+    uncoded_error_files: set[str],
+    unhandled_lines: list[str],
+) -> None:
+    """Classify one normalized diagnostic line (already confirmed to have path:line: prefix)."""
+    if ": note: " in line:
+        _apply_note_line(line, violations)
+        return
+    match = _MYPY_ERROR_RE.match(line)
+    if match:
+        _apply_coded_error_line(line, match, violations, syntax_files)
+        return
+    m = _MYPY_ANY_ERROR_RE.match(line)
+    if m:
+        uncoded_error_files.add(m.group("path"))
+        return
+    unhandled_lines.append(line)
+
+
+def _collect_no_line_number_errors(
+    raw_output: str,
+    uncoded_error_files: set[str],
+    found_twice_dirs: set[str],
+) -> None:
+    """Catch uncoded errors that have no line number (e.g. 'Duplicate module named').
+
+    These fail _MYPY_LINE_START_RE and are invisible to the per-line loop.
+    """
+    for raw_line in raw_output.splitlines():
+        line = raw_line.strip()
+        if not line or _MYPY_LINE_START_RE.match(line):
+            continue  # blank or already handled by the per-line loop
+        m = _MYPY_ANY_ERROR_RE.match(line)
+        if not m or _MYPY_ERROR_RE.match(line):
+            continue  # not an uncoded error line
+        filepath = m.group("path")
+        if _MYPY_FOUND_TWICE_RE.search(line):
+            found_twice_dirs.add(str(Path(filepath).parent) + "/")
+        else:
+            uncoded_error_files.add(filepath)
+
+
+def _parse_mypy_output(*, output: str, raw_output: str) -> ParsedMypyOutput:
     """Parse all mypy output in a single pass, classifying each diagnostic line.
 
     ``output`` is the normalized output (from _normalize_mypy_output) used for
@@ -90,54 +169,11 @@ def _parse_mypy_output(*, output: str, raw_output: str) -> ParsedMypyOutput:  # 
 
     for raw_line in output.splitlines():
         line = raw_line.strip()
-        if not line:
-            continue
-        if not _MYPY_LINE_START_RE.match(line):
-            continue  # summary / non-diagnostic (no path:line: prefix)
-        if ": note: " in line:
-            match = _MYPY_NOTE_UNCOVERED_RE.match(line)
-            if match:
-                key = ViolationLocation(file_path=match.group("path"), line_number=int(match.group("line")))
-                violations.setdefault(key, set()).add(match.group("code"))
-            continue  # all other notes are informational
-        match = _MYPY_ERROR_RE.match(line)
-        if match:
-            code = match.group("code")
-            if code == "syntax":
-                syntax_files.add(match.group("path"))
-            else:
-                key = ViolationLocation(file_path=match.group("path"), line_number=int(match.group("line")))
-                if code == "unused-ignore":
-                    unused_match = _MYPY_UNUSED_IGNORE_RE.search(line)
-                    if unused_match:
-                        for uc in unused_match.group("codes").split(","):
-                            violations.setdefault(key, set()).add(f"!{uc.strip()}")
-                    else:
-                        violations.setdefault(key, set()).add("unused-ignore")
-                else:
-                    violations.setdefault(key, set()).add(code)
-            continue
-        m = _MYPY_ANY_ERROR_RE.match(line)
-        if m:
-            uncoded_error_files.add(m.group("path"))
-            continue
-        unhandled_lines.append(line)
+        if not line or not _MYPY_LINE_START_RE.match(line):
+            continue  # blank or summary / non-diagnostic (no path:line: prefix)
+        _apply_diagnostic_line(line, violations, syntax_files, uncoded_error_files, unhandled_lines)
 
-    # Some uncoded errors have no line number (e.g. "Duplicate module named",
-    # "Source file found twice") and therefore fail _MYPY_LINE_START_RE, making
-    # them invisible to the per-line loop above.  Scan raw_output to catch them.
-    for raw_line in raw_output.splitlines():
-        line = raw_line.strip()
-        if not line or _MYPY_LINE_START_RE.match(line):
-            continue  # blank or already handled by the per-line loop
-        m = _MYPY_ANY_ERROR_RE.match(line)
-        if not m or _MYPY_ERROR_RE.match(line):
-            continue  # not an uncoded error line
-        filepath = m.group("path")
-        if _MYPY_FOUND_TWICE_RE.search(line):
-            found_twice_dirs.add(str(Path(filepath).parent) + "/")
-        else:
-            uncoded_error_files.add(filepath)
+    _collect_no_line_number_errors(raw_output, uncoded_error_files, found_twice_dirs)
 
     # Strip violations for syntax-error files: the whole file gets excluded, not suppressed inline.
     if syntax_files:
