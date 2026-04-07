@@ -67,6 +67,133 @@ def _normalize_mypy_output(output: str) -> str:
     return "\n".join(result)
 
 
+def _apply_note_line(line: str, violations: ViolationsByLocation) -> None:
+    """Handle a note: diagnostic line, adding to violations if it carries an error code."""
+    match = _MYPY_NOTE_UNCOVERED_RE.match(line)
+    if not match:
+        return
+    key = ViolationLocation(file_path=match.group("path"), line_number=int(match.group("line")))
+    violations.setdefault(key, set()).add(match.group("code"))
+
+
+def _apply_coded_error_line(
+    line: str,
+    match: re.Match[str],
+    violations: ViolationsByLocation,
+    syntax_files: set[str],
+) -> None:
+    """Handle a coded error line (has [code] bracket), updating violations or syntax_files."""
+    code = match.group("code")
+    if code == "syntax":
+        syntax_files.add(match.group("path"))
+        return
+    key = ViolationLocation(file_path=match.group("path"), line_number=int(match.group("line")))
+    if code != "unused-ignore":
+        violations.setdefault(key, set()).add(code)
+        return
+    # Extract which specific codes are unused so we only remove those,
+    # leaving any codes that are still suppressing real errors intact.
+    unused_match = _MYPY_UNUSED_IGNORE_RE.search(line)
+    if not unused_match:
+        violations.setdefault(key, set()).add("unused-ignore")
+        return
+    for uc in unused_match.group("codes").split(","):
+        violations.setdefault(key, set()).add(f"!{uc.strip()}")
+
+
+def _apply_diagnostic_line(
+    line: str,
+    violations: ViolationsByLocation,
+    syntax_files: set[str],
+    uncoded_error_files: set[str],
+    unhandled_lines: list[str],
+) -> None:
+    """Classify one normalized diagnostic line (already confirmed to have path:line: prefix)."""
+    if ": note: " in line:
+        _apply_note_line(line, violations)
+        return
+    match = _MYPY_ERROR_RE.match(line)
+    if match:
+        _apply_coded_error_line(line, match, violations, syntax_files)
+        return
+    m = _MYPY_ANY_ERROR_RE.match(line)
+    if m:
+        uncoded_error_files.add(m.group("path"))
+        return
+    unhandled_lines.append(line)
+
+
+def _collect_no_line_number_errors(
+    raw_output: str,
+    uncoded_error_files: set[str],
+    found_twice_dirs: set[str],
+) -> None:
+    """Catch uncoded errors that have no line number (e.g. 'Duplicate module named').
+
+    These fail _MYPY_LINE_START_RE and are invisible to the per-line loop.
+    """
+    for raw_line in raw_output.splitlines():
+        line = raw_line.strip()
+        if not line or _MYPY_LINE_START_RE.match(line):
+            continue  # blank or already handled by the per-line loop
+        m = _MYPY_ANY_ERROR_RE.match(line)
+        if not m or _MYPY_ERROR_RE.match(line):
+            continue  # not an uncoded error line
+        filepath = m.group("path")
+        if _MYPY_FOUND_TWICE_RE.search(line):
+            found_twice_dirs.add(str(Path(filepath).parent) + "/")
+        else:
+            uncoded_error_files.add(filepath)
+
+
+def _parse_mypy_output(*, output: str, raw_output: str) -> ParsedMypyOutput:
+    """Parse all mypy output in a single pass, classifying each diagnostic line.
+
+    ``output`` is the normalized output (from _normalize_mypy_output) used for
+    per-line diagnostics.  ``raw_output`` is used for patterns that operate on
+    the full text (invalid package names, "errors prevented further checking").
+
+    Each diagnostic line falls into exactly one bucket:
+    - coded error (has [code])    → violations (or syntax_files if code=="syntax")
+    - "Error code not covered"    → violations (note variant)
+    - uncoded error               → found_twice_dirs or uncoded_error_files
+    - note line                   → skipped (informational)
+    - non-diagnostic line         → skipped (summary / free-form)
+    - nothing matched             → unhandled_lines
+    """
+    violations: ViolationsByLocation = {}
+    syntax_files: set[str] = set()
+    uncoded_error_files: set[str] = set()
+    found_twice_dirs: set[str] = set()
+    unhandled_lines: list[str] = []
+
+    for raw_line in output.splitlines():
+        line = raw_line.strip()
+        if not line or not _MYPY_LINE_START_RE.match(line):
+            continue  # blank or summary / non-diagnostic (no path:line: prefix)
+        _apply_diagnostic_line(line, violations, syntax_files, uncoded_error_files, unhandled_lines)
+
+    _collect_no_line_number_errors(raw_output, uncoded_error_files, found_twice_dirs)
+
+    # Strip violations for syntax-error files: the whole file gets excluded, not suppressed inline.
+    if syntax_files:
+        violations = {loc: codes for loc, codes in violations.items() if loc.file_path not in syntax_files}
+
+    invalid_pkg_names = set(_MYPY_INVALID_PKG_NAME_RE.findall(raw_output))
+    has_blocking_error = "errors prevented further checking" in raw_output or bool(
+        _MYPY_FOUND_TWICE_RE.search(raw_output)
+    )
+    return ParsedMypyOutput(
+        violations=violations,
+        syntax_files=syntax_files,
+        uncoded_error_files=uncoded_error_files,
+        found_twice_dirs=found_twice_dirs,
+        invalid_pkg_names=invalid_pkg_names,
+        has_blocking_error=has_blocking_error,
+        unhandled_lines=unhandled_lines,
+    )
+
+
 class ViolationLocation(NamedTuple):
     file_path: str
     line_number: int
@@ -83,9 +210,14 @@ type LineViolations = dict[int, ErrorCodes]
 type ViolationsByFile = dict[str, LineViolations]
 
 
-class SyntaxHandlingResult(NamedTuple):
-    violations: ViolationsByLocation
-    newly_excluded: bool
+class ParsedMypyOutput(NamedTuple):
+    violations: ViolationsByLocation  # coded errors (syntax-file violations already stripped)
+    syntax_files: set[str]  # files with [syntax] errors — will be excluded entirely
+    uncoded_error_files: set[str]  # error lines without [code], only excluded if blocking
+    found_twice_dirs: set[str]  # parent dirs for "source file found twice" errors
+    invalid_pkg_names: set[str]  # names from "X is not a valid Python package name"
+    has_blocking_error: bool  # "errors prevented further checking" in output
+    unhandled_lines: list[str]  # diagnostic lines not matched by any known pattern
 
 
 class BaseMypyBoost(Boost, abc.ABC):
@@ -134,39 +266,6 @@ class BaseMypyBoost(Boost, abc.ABC):
         mypy_section: Any = tool_section["mypy"]
         mypy_section["strict"] = True
         return data
-
-    def _parse_violations(self, output: str) -> ViolationsByLocation:
-        """Parse mypy output into {ViolationLocation: {error_codes}}.
-
-        Handles both error lines and "note: Error code not covered" lines,
-        and supports optional column numbers in the output format.
-        """
-        violations: ViolationsByLocation = {}
-        for raw_line in output.splitlines():
-            line = raw_line.strip()
-            if not line:
-                continue
-            match = _MYPY_ERROR_RE.match(line)
-            if match:
-                key = ViolationLocation(file_path=match.group("path"), line_number=int(match.group("line")))
-                code = match.group("code")
-                if code == "unused-ignore":
-                    # Extract which specific codes are unused so we only remove those,
-                    # leaving any codes that are still suppressing real errors intact.
-                    unused_match = _MYPY_UNUSED_IGNORE_RE.search(line)
-                    if unused_match:
-                        for uc in unused_match.group("codes").split(","):
-                            violations.setdefault(key, set()).add(f"!{uc.strip()}")
-                    else:
-                        violations.setdefault(key, set()).add("unused-ignore")
-                else:
-                    violations.setdefault(key, set()).add(code)
-                continue
-            match = _MYPY_NOTE_UNCOVERED_RE.match(line)
-            if match:
-                key = ViolationLocation(file_path=match.group("path"), line_number=int(match.group("line")))
-                violations.setdefault(key, set()).add(match.group("code"))
-        return violations
 
     def _apply_type_ignores(self, violations: ViolationsByLocation) -> bool:
         """Insert or merge # type: ignore[codes] on each violating line. Returns True if any file changed."""
@@ -218,14 +317,19 @@ class BaseMypyBoost(Boost, abc.ABC):
             return False
 
         raw_output = result.stdout + result.stderr
-        # Normalize joins wrapped lines from pretty=true (e.g. long messages split across
-        # lines). Parsers that match non-path standalone messages (like invalid package
-        # names) use raw_output to avoid losing lines that get joined away.
+        # Normalize joins wrapped lines from pretty=true; raw_output is kept for patterns
+        # that operate on the full text (invalid package names, blocking-error summary).
         output = _normalize_mypy_output(raw_output)
-        violations = self._parse_violations(output)
-        violations, newly_excluded_syntax = self._handle_syntax_violations(violations)
-        newly_excluded_uncoded = self._exclude_blocking_uncoded_errors(output)
-        newly_excluded_invalid_pkg = self._exclude_invalid_package_names(raw_output)
+        parsed = _parse_mypy_output(output=output, raw_output=raw_output)
+
+        newly_excluded_syntax = self._apply_syntax_exclusions(parsed.syntax_files)
+        newly_excluded_uncoded = self._apply_uncoded_exclusions(
+            uncoded_error_files=parsed.uncoded_error_files,
+            found_twice_dirs=parsed.found_twice_dirs,
+            has_blocking_error=parsed.has_blocking_error,
+        )
+        newly_excluded_invalid_pkg = self._apply_invalid_pkg_handling(parsed.invalid_pkg_names)
+        violations = parsed.violations
 
         if (
             not violations
@@ -233,7 +337,12 @@ class BaseMypyBoost(Boost, abc.ABC):
             and not newly_excluded_uncoded
             and not newly_excluded_invalid_pkg
         ):
-            msg = f"mypy failed but output could not be parsed or handled:\n{raw_output}"
+            lines_str = (
+                "\n".join(f"  {line}" for line in parsed.unhandled_lines)
+                if parsed.unhandled_lines
+                else raw_output.strip()
+            )
+            msg = f"mypy returned errors that could not be handled:\n{lines_str}"
             raise RuntimeError(msg)
 
         made_progress = newly_excluded_syntax or newly_excluded_uncoded or newly_excluded_invalid_pkg
@@ -249,11 +358,10 @@ class BaseMypyBoost(Boost, abc.ABC):
             return False
         return True
 
-    def _handle_syntax_violations(self, violations: ViolationsByLocation) -> SyntaxHandlingResult:
-        """Exclude syntax-error files. Returns (remaining_violations, newly_excluded)."""
-        syntax_files = {loc.file_path for loc, codes in violations.items() if "syntax" in codes}
+    def _apply_syntax_exclusions(self, syntax_files: set[str]) -> bool:
+        """Exclude syntax-error files from mypy. Returns True if any new exclusion was added."""
         if not syntax_files:
-            return SyntaxHandlingResult(violations=violations, newly_excluded=False)
+            return False
         logger.debug(f"Syntax violations in {len(syntax_files)} file(s): {syntax_files}")
         newly_excluded = self._exclude_mypy_files(syntax_files)
         if not newly_excluded:
@@ -264,8 +372,7 @@ class BaseMypyBoost(Boost, abc.ABC):
             parent_dirs = {str(Path(f).parent) + "/" for f in syntax_files}
             logger.debug(f"File-level exclusion ineffective; escalating to parent dirs: {parent_dirs}")
             newly_excluded = self._exclude_mypy_files(parent_dirs)
-        remaining = {loc: codes for loc, codes in violations.items() if loc.file_path not in syntax_files}
-        return SyntaxHandlingResult(violations=remaining, newly_excluded=newly_excluded)
+        return newly_excluded
 
     def _exclude_mypy_files(self, files: set[str]) -> bool:
         """Add files to [tool.mypy] exclude list in pyproject.toml (as regex patterns).
@@ -284,16 +391,14 @@ class BaseMypyBoost(Boost, abc.ABC):
         self.pyproject.write(data)
         return True
 
-    def _exclude_invalid_package_names(self, output: str) -> bool:
+    def _apply_invalid_pkg_handling(self, names: set[str]) -> bool:
         """Exclude or rename directories that are not valid Python package names.
 
-        Mypy reports these as fatal errors with no file/line context. Names containing
-        spaces are renamed (spaces replaced with underscores). Other names are found and
-        added to the mypy exclude list.
+        Names with spaces are renamed (spaces → underscores). Other names (e.g. hyphens)
+        are located on disk and added to the mypy exclude list.
 
         Returns True if any progress was made (exclusion or rename).
         """
-        names = set(_MYPY_INVALID_PKG_NAME_RE.findall(output))
         if not names:
             return False
         space_names = {n for n in names if " " in n}
@@ -333,43 +438,29 @@ class BaseMypyBoost(Boost, abc.ABC):
                 renamed = True
         return renamed
 
-    def _exclude_blocking_uncoded_errors(self, output: str) -> bool:
-        """Exclude files with no-code blocking errors. Returns True if new files were excluded.
+    def _apply_uncoded_exclusions(
+        self,
+        *,
+        uncoded_error_files: set[str],
+        found_twice_dirs: set[str],
+        has_blocking_error: bool,
+    ) -> bool:
+        """Exclude files/dirs with uncoded errors that cannot be suppressed inline.
 
-        "Found twice" errors are always blocking and are detected unconditionally.
-        Other uncoded errors are only acted on when mypy confirms they blocked checking,
-        since dmypy may omit the "errors prevented further checking" summary line.
+        "Found twice" dirs are always excluded. Other uncoded-error files are only
+        excluded when mypy confirms they blocked further checking, since dmypy may omit
+        the "errors prevented further checking" summary line.
+
+        Returns True if any new exclusion was added.
         """
-        has_blocking_error = "errors prevented further checking" in output or bool(_MYPY_FOUND_TWICE_RE.search(output))
         if not has_blocking_error:
             return False
-        files = self._parse_uncoded_error_files(output)
+        files = found_twice_dirs | uncoded_error_files
         if not files:
             logger.debug("Blocking error detected but no uncoded error files identified")
             return False
         logger.debug(f"Blocking uncoded errors in {len(files)} file(s): {files}")
         return self._exclude_mypy_files(files)
-
-    def _parse_uncoded_error_files(self, output: str) -> set[str]:
-        """Extract files/dirs with mypy errors that have no [code] (can't be suppressed inline).
-
-        For "source file found twice" errors, returns the parent directory (with trailing slash)
-        because mypy's exclude cannot prevent file-discovery errors for a specific file path.
-        """
-        files: set[str] = set()
-        for line in output.splitlines():
-            if ": error: " not in line:
-                continue
-            if _MYPY_ERROR_RE.match(line):
-                continue  # has a [code]; handled by _parse_violations
-            m = _MYPY_ANY_ERROR_RE.match(line)
-            if not m:
-                continue
-            filepath = m.group("path")
-            if _MYPY_FOUND_TWICE_RE.search(line):
-                filepath = str(Path(filepath).parent) + "/"
-            files.add(filepath)
-        return files
 
     def _run_ruff(self) -> None:
         """Run ruff suppress iterations if ruff is configured in the repo."""

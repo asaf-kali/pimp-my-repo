@@ -7,7 +7,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pimp_my_repo.core.boosts.base import BoostSkipped
-from pimp_my_repo.core.boosts.mypy import _MAX_MYPY_ITERATIONS, DmypyBoost, MypyBoost, ViolationLocation
+from pimp_my_repo.core.boosts.mypy import (
+    _MAX_MYPY_ITERATIONS,
+    DmypyBoost,
+    MypyBoost,
+    ViolationLocation,
+    _parse_mypy_output,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -160,80 +166,145 @@ def test_raises_skip_when_no_pyproject(mypy_boost_uv_ok: MypyBoost) -> None:
 
 
 # =============================================================================
-# PARSE VIOLATIONS
+# PARSE MYPY OUTPUT — violations
 # =============================================================================
 
 
+def _parse(output: str) -> dict:  # type: ignore[type-arg]
+    """Run _parse_mypy_output with identical output and raw_output, return violations."""
+    return _parse_mypy_output(output=output, raw_output=output).violations
+
+
 @pytest.mark.smoke
-def test_parses_single_violation(mypy_boost: MypyBoost) -> None:
+def test_parses_single_violation() -> None:
     output = 'src/foo.py:10: error: Argument 1 has incompatible type "str"  [arg-type]'
-    assert mypy_boost._parse_violations(output) == {_vl("src/foo.py", 10): {"arg-type"}}  # noqa: SLF001
+    assert _parse(output) == {_vl("src/foo.py", 10): {"arg-type"}}
 
 
-def test_parses_violations_on_different_lines(mypy_boost: MypyBoost) -> None:
+def test_parses_violations_on_different_lines() -> None:
     output = "src/foo.py:10: error: Error A  [arg-type]\nsrc/foo.py:20: error: Error B  [union-attr]\n"
-    result = mypy_boost._parse_violations(output)  # noqa: SLF001
-    assert result == {
+    assert _parse(output) == {
         _vl("src/foo.py", 10): {"arg-type"},
         _vl("src/foo.py", 20): {"union-attr"},
     }
 
 
-def test_accumulates_multiple_codes_on_same_line(mypy_boost: MypyBoost) -> None:
+def test_accumulates_multiple_codes_on_same_line() -> None:
     output = "src/foo.py:5: error: First error  [arg-type]\nsrc/foo.py:5: error: Second error  [return-value]\n"
-    result = mypy_boost._parse_violations(output)  # noqa: SLF001
-    assert result == {_vl("src/foo.py", 5): {"arg-type", "return-value"}}
+    assert _parse(output) == {_vl("src/foo.py", 5): {"arg-type", "return-value"}}
 
 
-def test_parses_violations_across_multiple_files(mypy_boost: MypyBoost) -> None:
+def test_parses_violations_across_multiple_files() -> None:
     output = "src/foo.py:1: error: Error in foo  [misc]\nsrc/bar.py:2: error: Error in bar  [assignment]\n"
-    result = mypy_boost._parse_violations(output)  # noqa: SLF001
+    result = _parse(output)
     assert _vl("src/foo.py", 1) in result
     assert _vl("src/bar.py", 2) in result
 
 
-def test_parses_violation_with_column_number(mypy_boost: MypyBoost) -> None:
+def test_parses_violation_with_column_number() -> None:
     output = "src/foo.py:10:5: error: Incompatible type  [arg-type]"
-    assert mypy_boost._parse_violations(output) == {_vl("src/foo.py", 10): {"arg-type"}}  # noqa: SLF001
+    assert _parse(output) == {_vl("src/foo.py", 10): {"arg-type"}}
 
 
-def test_parses_note_uncovered_code(mypy_boost: MypyBoost) -> None:
+def test_parses_note_uncovered_code() -> None:
     output = 'src/foo.py:10: note: Error code "misc" not covered by "type: ignore" comment'
-    assert mypy_boost._parse_violations(output) == {_vl("src/foo.py", 10): {"misc"}}  # noqa: SLF001
+    assert _parse(output) == {_vl("src/foo.py", 10): {"misc"}}
 
 
-def test_parses_note_uncovered_code_with_column(mypy_boost: MypyBoost) -> None:
+def test_parses_note_uncovered_code_with_column() -> None:
     output = 'src/foo.py:10:1: note: Error code "misc" not covered by "type: ignore" comment'
-    assert mypy_boost._parse_violations(output) == {_vl("src/foo.py", 10): {"misc"}}  # noqa: SLF001
+    assert _parse(output) == {_vl("src/foo.py", 10): {"misc"}}
 
 
-def test_parses_unused_ignore_from_note(mypy_boost: MypyBoost) -> None:
+def test_parses_unused_ignore_from_note() -> None:
     """unused-ignore is reported as a note: Error code not covered line."""
     output = 'src/foo.py:5: note: Error code "unused-ignore" not covered by "type: ignore" comment'
-    assert mypy_boost._parse_violations(output) == {_vl("src/foo.py", 5): {"unused-ignore"}}  # noqa: SLF001
+    assert _parse(output) == {_vl("src/foo.py", 5): {"unused-ignore"}}
 
 
-def test_ignores_note_lines(mypy_boost: MypyBoost) -> None:
+def test_ignores_note_lines() -> None:
     output = "src/foo.py:10: error: Some error  [misc]\nsrc/foo.py:10: note: See https://mypy.rtfd.io\n"
-    assert len(mypy_boost._parse_violations(output)) == 1  # noqa: SLF001
+    assert len(_parse(output)) == 1
 
 
-def test_ignores_errors_without_bracket_code(mypy_boost: MypyBoost) -> None:
+def test_ignores_errors_without_bracket_code() -> None:
     output = "src/foo.py:10: error: Some error without a code\n"
-    assert mypy_boost._parse_violations(output) == {}  # noqa: SLF001
+    assert _parse(output) == {}
 
 
-def test_ignores_summary_line(mypy_boost: MypyBoost) -> None:
+def test_ignores_summary_line() -> None:
     output = "src/foo.py:10: error: Some error  [misc]\nFound 1 error in 1 file (checked 5 source files)\n"
-    assert len(mypy_boost._parse_violations(output)) == 1  # noqa: SLF001
+    assert len(_parse(output)) == 1
 
 
-def test_empty_output(mypy_boost: MypyBoost) -> None:
-    assert mypy_boost._parse_violations("") == {}  # noqa: SLF001
+def test_empty_output() -> None:
+    assert _parse("") == {}
 
 
-def test_success_output(mypy_boost: MypyBoost) -> None:
-    assert mypy_boost._parse_violations("Success: no issues found in 5 source files\n") == {}  # noqa: SLF001
+def test_success_output() -> None:
+    assert _parse("Success: no issues found in 5 source files\n") == {}
+
+
+# =============================================================================
+# PARSE MYPY OUTPUT — unhandled lines
+# =============================================================================
+
+
+def test_parse_output_uncoded_error_goes_to_uncoded_files() -> None:
+    output = "src/foo.py:1: error: Cannot import module\n"
+    result = _parse_mypy_output(output=output, raw_output=output)
+    assert result.uncoded_error_files == {"src/foo.py"}
+    assert result.unhandled_lines == []
+
+
+def test_parse_output_unhandled_ignores_coded_errors() -> None:
+    output = "src/foo.py:1: error: Bad type  [assignment]\n"
+    assert _parse_mypy_output(output=output, raw_output=output).unhandled_lines == []
+
+
+def test_parse_output_unhandled_ignores_note_lines() -> None:
+    output = "src/foo.py:1: note: See https://mypy.rtfd.io\n"
+    assert _parse_mypy_output(output=output, raw_output=output).unhandled_lines == []
+
+
+def test_parse_output_unhandled_ignores_found_twice() -> None:
+    output = 'src/a.py: error: Source file found twice under different module names: "a" and "b"\n'
+    assert _parse_mypy_output(output=output, raw_output=output).unhandled_lines == []
+
+
+def test_parse_output_unhandled_ignores_summary_lines() -> None:
+    output = "Found 1 error in 1 file (checked 5 source files)\n"
+    assert _parse_mypy_output(output=output, raw_output=output).unhandled_lines == []
+
+
+def test_parse_output_uncoded_goes_to_uncoded_files_coded_goes_to_violations() -> None:
+    output = (
+        "src/foo.py:1: error: Bad type  [assignment]\n"
+        "src/bar.py:2: error: Cannot import module\n"
+        "src/foo.py:1: note: See docs\n"
+        "Found 2 errors\n"
+    )
+    result = _parse_mypy_output(output=output, raw_output=output)
+    assert _vl("src/foo.py", 1) in result.violations
+    assert result.uncoded_error_files == {"src/bar.py"}
+    assert result.unhandled_lines == []
+
+
+# =============================================================================
+# PARSE MYPY OUTPUT — syntax files stripped from violations
+# =============================================================================
+
+
+def test_parse_output_syntax_file_stripped_from_violations() -> None:
+    output = (
+        "src/bad.py:5: error: Invalid syntax  [syntax]\n"
+        "src/bad.py:10: error: Some other error  [misc]\n"
+        "src/good.py:1: error: Bad type  [assignment]\n"
+    )
+    result = _parse_mypy_output(output=output, raw_output=output)
+    assert "src/bad.py" in result.syntax_files
+    assert all(loc.file_path != "src/bad.py" for loc in result.violations)
+    assert _vl("src/good.py", 1) in result.violations
 
 
 # =============================================================================
@@ -652,7 +723,7 @@ def test_apply_stops_early_when_no_parseable_violations(
     fail_result: SubprocessResultFactory,
 ) -> None:
     patched_mypy_apply.mock_mypy.return_value = fail_result("src/foo.py:1: error: Cannot import module\n")
-    with pytest.raises(RuntimeError, match="mypy failed but output could not be parsed"):
+    with pytest.raises(RuntimeError, match="mypy returned errors that could not be handled"):
         patched_mypy_apply.boost.apply()
     patched_mypy_apply.mock_mypy.assert_called_once()
 
@@ -745,7 +816,7 @@ def test_stops_when_syntax_file_already_excluded(
     """
     syntax_error_output = "src/bad.py:5: error: Invalid syntax  [syntax]\n"
     patched_mypy_apply.mock_mypy.return_value = fail_result(syntax_error_output)
-    with pytest.raises(RuntimeError, match="mypy failed but output could not be parsed"):
+    with pytest.raises(RuntimeError, match="mypy returned errors that could not be handled"):
         patched_mypy_apply.boost.apply()
     # Iteration 1: excludes src/bad.py (new file pattern).
     # Iteration 2: file already excluded → escalates to src/ (new parent pattern).
@@ -763,7 +834,7 @@ def test_stops_when_uncoded_blocking_file_already_excluded(
         "Found 1 error in 1 file (errors prevented further checking)\n"
     )
     patched_mypy_apply.mock_mypy.return_value = fail_result(mypy_output)
-    with pytest.raises(RuntimeError, match="mypy failed but output could not be parsed"):
+    with pytest.raises(RuntimeError, match="mypy returned errors that could not be handled"):
         patched_mypy_apply.boost.apply()
     # Iteration 1: excludes tests/pkg/ (new). Iteration 2: already excluded, no progress → raises.
     assert patched_mypy_apply.mock_mypy.call_count == 2  # noqa: PLR2004
@@ -792,21 +863,19 @@ def test_dmypy_commit_message(dmypy_boost: DmypyBoost) -> None:
 
 
 # =============================================================================
-# _PARSE_VIOLATIONS EDGE CASES
+# PARSE MYPY OUTPUT — edge cases
 # =============================================================================
 
 
-def test_parses_violations_skips_empty_lines(mypy_boost: MypyBoost) -> None:
+def test_parse_output_skips_empty_lines() -> None:
     output = "\nsrc/foo.py:1: error: Bad type  [assignment]\n\n"
-    result = mypy_boost._parse_violations(output)  # noqa: SLF001
-    assert result == {_vl("src/foo.py", 1): {"assignment"}}
+    assert _parse(output) == {_vl("src/foo.py", 1): {"assignment"}}
 
 
-def test_parses_unused_ignore_without_codes_adds_bare_marker(mypy_boost: MypyBoost) -> None:
+def test_parse_output_unused_ignore_without_codes_adds_bare_marker() -> None:
     """When unused-ignore message doesn't match the expected format, store bare 'unused-ignore'."""
     output = 'src/foo.py:1: error: Unused "type: ignore" comment  [unused-ignore]'
-    result = mypy_boost._parse_violations(output)  # noqa: SLF001
-    assert result == {_vl("src/foo.py", 1): {"unused-ignore"}}
+    assert _parse(output) == {_vl("src/foo.py", 1): {"unused-ignore"}}
 
 
 # =============================================================================
@@ -826,6 +895,25 @@ def test_apply_type_ignores_skips_out_of_bounds_line(mock_repo: RepositoryContro
 # =============================================================================
 
 
+def test_excludes_duplicate_module_no_line_number(
+    mock_repo: RepositoryController,
+    patched_mypy_apply: PatchedMypyApply,
+    fail_result: SubprocessResultFactory,
+    ok_result: SubprocessResultFactory,
+) -> None:
+    """Errors without line numbers (e.g. 'Duplicate module named') are detected and excluded."""
+    mypy_output = (
+        'docs/installation/generate.py: error: Duplicate module named "generate"'
+        ' (also at "./docs/contributors/generate.py")\n'
+        "Found 1 error in 1 file (errors prevented further checking)\n"
+    )
+    (mock_repo.path / "docs" / "installation").mkdir(parents=True)
+    patched_mypy_apply.mock_mypy.side_effect = [fail_result(mypy_output), ok_result()]
+    patched_mypy_apply.boost.apply()
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert "docs/installation/generate" in content
+
+
 def test_exclude_blocking_uncoded_errors_no_files_when_no_uncoded_errors(
     mock_repo: RepositoryController,
     patched_mypy_apply: PatchedMypyApply,
@@ -834,7 +922,7 @@ def test_exclude_blocking_uncoded_errors_no_files_when_no_uncoded_errors(
 ) -> None:
     """Blocking error detected but all errors have [codes] → no files excluded, loop continues."""
     # Output has "errors prevented further checking" but ALL errors have [codes]
-    # so _parse_uncoded_error_files returns empty — the blocking flag is set but no exclusion happens.
+    # so uncoded_error_files is empty — the blocking flag is set but no exclusion happens.
     mypy_output = (
         "src/foo.py:1: error: Bad  [attr-defined]\nFound 1 error in 1 file (errors prevented further checking)\n"
     )
@@ -894,7 +982,7 @@ def test_apply_raises_when_mypy_fails_and_output_unparsable(
     fail_result: SubprocessResultFactory,
 ) -> None:
     patched_mypy_apply.mock_mypy.return_value = fail_result("src/foo.py:1: error: Cannot import module\n")
-    with pytest.raises(RuntimeError, match="mypy failed but output could not be parsed"):
+    with pytest.raises(RuntimeError, match="mypy returned errors that could not be handled"):
         patched_mypy_apply.boost.apply()
 
 
