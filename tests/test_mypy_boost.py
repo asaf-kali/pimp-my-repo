@@ -722,9 +722,9 @@ def test_apply_stops_early_when_no_parseable_violations(
     patched_mypy_apply: PatchedMypyApply,
     fail_result: SubprocessResultFactory,
 ) -> None:
+    """Uncoded errors without a blocking indicator are parsed but not actionable; stop gracefully."""
     patched_mypy_apply.mock_mypy.return_value = fail_result("src/foo.py:1: error: Cannot import module\n")
-    with pytest.raises(RuntimeError, match="mypy returned errors that could not be handled"):
-        patched_mypy_apply.boost.apply()
+    patched_mypy_apply.boost.apply()
     patched_mypy_apply.mock_mypy.assert_called_once()
 
 
@@ -809,18 +809,17 @@ def test_stops_when_syntax_file_already_excluded(
     patched_mypy_apply: PatchedMypyApply,
     fail_result: SubprocessResultFactory,
 ) -> None:
-    """When all exclusions are exhausted, a RuntimeError is raised after no further progress.
+    """When all exclusions are exhausted, the boost stops gracefully (no RuntimeError).
 
     Iteration 1 excludes the file, iteration 2 escalates to the parent dir,
-    iteration 3 finds nothing new to exclude and raises.
+    iteration 3 finds nothing new to exclude and stops.
     """
     syntax_error_output = "src/bad.py:5: error: Invalid syntax  [syntax]\n"
     patched_mypy_apply.mock_mypy.return_value = fail_result(syntax_error_output)
-    with pytest.raises(RuntimeError, match="mypy returned errors that could not be handled"):
-        patched_mypy_apply.boost.apply()
+    patched_mypy_apply.boost.apply()
     # Iteration 1: excludes src/bad.py (new file pattern).
     # Iteration 2: file already excluded → escalates to src/ (new parent pattern).
-    # Iteration 3: both already excluded → no progress → raises.
+    # Iteration 3: both already excluded → no progress → stops gracefully.
     assert patched_mypy_apply.mock_mypy.call_count == 3  # noqa: PLR2004
 
 
@@ -834,9 +833,8 @@ def test_stops_when_uncoded_blocking_file_already_excluded(
         "Found 1 error in 1 file (errors prevented further checking)\n"
     )
     patched_mypy_apply.mock_mypy.return_value = fail_result(mypy_output)
-    with pytest.raises(RuntimeError, match="mypy returned errors that could not be handled"):
-        patched_mypy_apply.boost.apply()
-    # Iteration 1: excludes tests/pkg/ (new). Iteration 2: already excluded, no progress → raises.
+    patched_mypy_apply.boost.apply()
+    # Iteration 1: excludes tests/pkg/ (new). Iteration 2: already excluded, no progress → stops.
     assert patched_mypy_apply.mock_mypy.call_count == 2  # noqa: PLR2004
 
 
@@ -977,11 +975,12 @@ def test_exclude_invalid_package_names_excludes_found_dirs(
     assert "fonts" in content
 
 
-def test_apply_raises_when_mypy_fails_and_output_unparsable(
+def test_apply_raises_when_mypy_output_has_unhandled_lines(
     patched_mypy_apply: PatchedMypyApply,
     fail_result: SubprocessResultFactory,
 ) -> None:
-    patched_mypy_apply.mock_mypy.return_value = fail_result("src/foo.py:1: error: Cannot import module\n")
+    """Lines that match path:line: but are neither error: nor note: go to unhandled_lines → RuntimeError."""
+    patched_mypy_apply.mock_mypy.return_value = fail_result("src/foo.py:1: warning: Something unexpected\n")
     with pytest.raises(RuntimeError, match="mypy returned errors that could not be handled"):
         patched_mypy_apply.boost.apply()
 

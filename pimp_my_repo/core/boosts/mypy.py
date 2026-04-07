@@ -337,13 +337,12 @@ class BaseMypyBoost(Boost, abc.ABC):
             and not newly_excluded_uncoded
             and not newly_excluded_invalid_pkg
         ):
-            lines_str = (
-                "\n".join(f"  {line}" for line in parsed.unhandled_lines)
-                if parsed.unhandled_lines
-                else raw_output.strip()
-            )
-            msg = f"mypy returned errors that could not be handled:\n{lines_str}"
-            raise RuntimeError(msg)
+            if parsed.unhandled_lines:
+                lines_str = "\n".join(f"  {line}" for line in parsed.unhandled_lines)
+                msg = f"mypy returned errors that could not be handled:\n{lines_str}"
+                raise RuntimeError(msg)
+            logger.warning("No further progress possible; stable state reached, stopping")
+            return False
 
         made_progress = newly_excluded_syntax or newly_excluded_uncoded or newly_excluded_invalid_pkg
         if violations:
