@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from loguru import logger
-from tomlkit import TOMLDocument, table
+from tomlkit import TOMLDocument, array, table
 
 from pimp_my_repo.core.boosts.base import Boost, BoostSkipped
 from pimp_my_repo.core.boosts.ruff import RuffBoost
@@ -55,15 +55,25 @@ def _normalize_mypy_output(output: str) -> str:
     function reassembles wrapped lines into a single line and discards the
     indented context lines so that all downstream regex parsers see a uniform
     ``path:line: error: message [code]`` format.
+
+    Lines that start a new message (diagnostics with line numbers, errors
+    without line numbers, invalid package names) are preserved as separate
+    entries. Only true continuations (wrapped text from pretty=true) are joined.
     """
     result: list[str] = []
     for line in output.splitlines():
         if not line or line[0] in (" ", "\t"):
             continue  # skip empty lines and indented context / caret lines
-        if result and not _MYPY_LINE_START_RE.match(line):
-            result[-1] = result[-1] + " " + line.strip()
-        else:
+        if (
+            not result
+            or _MYPY_LINE_START_RE.match(line)
+            or _MYPY_ANY_ERROR_RE.match(line)
+            or _MYPY_INVALID_PKG_NAME_RE.match(line)
+        ):
             result.append(line)
+        else:
+            # Continuation of previous diagnostic (pretty=true wrapping) or summary
+            result[-1] = result[-1] + " " + line.strip()
     return "\n".join(result)
 
 
@@ -82,11 +92,10 @@ def _apply_coded_error_line(
     violations: ViolationsByLocation,
     syntax_files: set[str],
 ) -> None:
-    """Handle a coded error line (has [code] bracket), updating violations or syntax_files."""
+    """Handle a coded error line (has [code] bracket), updating violations and/or syntax_files."""
     code = match.group("code")
     if code == "syntax":
         syntax_files.add(match.group("path"))
-        return
     key = ViolationLocation(file_path=match.group("path"), line_number=int(match.group("line")))
     if code != "unused-ignore":
         violations.setdefault(key, set()).add(code)
@@ -123,66 +132,67 @@ def _apply_diagnostic_line(
     unhandled_lines.append(line)
 
 
-def _collect_no_line_number_errors(
-    raw_output: str,
-    uncoded_error_files: set[str],
-    found_twice_dirs: set[str],
-) -> None:
-    """Catch uncoded errors that have no line number (e.g. 'Duplicate module named').
+def _parse_mypy_output(*, output: str) -> ParsedMypyOutput:
+    """Parse all mypy output in a single pass, classifying each line.
 
-    These fail _MYPY_LINE_START_RE and are invisible to the per-line loop.
-    """
-    for raw_line in raw_output.splitlines():
-        line = raw_line.strip()
-        if not line or _MYPY_LINE_START_RE.match(line):
-            continue  # blank or already handled by the per-line loop
-        m = _MYPY_ANY_ERROR_RE.match(line)
-        if not m or _MYPY_ERROR_RE.match(line):
-            continue  # not an uncoded error line
-        filepath = m.group("path")
-        if _MYPY_FOUND_TWICE_RE.search(line):
-            found_twice_dirs.add(str(Path(filepath).parent) + "/")
-        else:
-            uncoded_error_files.add(filepath)
+    ``output`` is the normalized output (from _normalize_mypy_output).
 
-
-def _parse_mypy_output(*, output: str, raw_output: str) -> ParsedMypyOutput:
-    """Parse all mypy output in a single pass, classifying each diagnostic line.
-
-    ``output`` is the normalized output (from _normalize_mypy_output) used for
-    per-line diagnostics.  ``raw_output`` is used for patterns that operate on
-    the full text (invalid package names, "errors prevented further checking").
-
-    Each diagnostic line falls into exactly one bucket:
-    - coded error (has [code])    → violations (or syntax_files if code=="syntax")
-    - "Error code not covered"    → violations (note variant)
-    - uncoded error               → found_twice_dirs or uncoded_error_files
-    - note line                   → skipped (informational)
-    - non-diagnostic line         → skipped (summary / free-form)
-    - nothing matched             → unhandled_lines
+    Each line falls into exactly one category:
+    - Diagnostic with line number (path:line: ...) → coded error, note, uncoded error, or unhandled
+    - Error without line number (path: error: ...)  → found_twice_dirs or uncoded_error_files
+    - Invalid package name message                  → invalid_pkg_names
+    - Summary/info line                             → skipped (checked for blocking indicator)
     """
     violations: ViolationsByLocation = {}
     syntax_files: set[str] = set()
     uncoded_error_files: set[str] = set()
     found_twice_dirs: set[str] = set()
+    invalid_pkg_names: set[str] = set()
     unhandled_lines: list[str] = []
+    has_blocking_error = False
 
     for raw_line in output.splitlines():
         line = raw_line.strip()
-        if not line or not _MYPY_LINE_START_RE.match(line):
-            continue  # blank or summary / non-diagnostic (no path:line: prefix)
-        _apply_diagnostic_line(line, violations, syntax_files, uncoded_error_files, unhandled_lines)
+        if not line:
+            continue
 
-    _collect_no_line_number_errors(raw_output, uncoded_error_files, found_twice_dirs)
+        # Check for blocking error indicator in any line (may appear in summary joined to diagnostic)
+        if "errors prevented further checking" in line:
+            has_blocking_error = True
 
-    # Strip violations for syntax-error files: the whole file gets excluded, not suppressed inline.
-    if syntax_files:
-        violations = {loc: codes for loc, codes in violations.items() if loc.file_path not in syntax_files}
+        # Category 1: Diagnostic line with line number (path:line: ...)
+        if _MYPY_LINE_START_RE.match(line):
+            _apply_diagnostic_line(line, violations, syntax_files, uncoded_error_files, unhandled_lines)
+            continue
 
-    invalid_pkg_names = set(_MYPY_INVALID_PKG_NAME_RE.findall(raw_output))
-    has_blocking_error = "errors prevented further checking" in raw_output or bool(
-        _MYPY_FOUND_TWICE_RE.search(raw_output)
+        # Category 2: Error line without line number (path: error: ...)
+        m = _MYPY_ANY_ERROR_RE.match(line)
+        if m:
+            filepath = m.group("path")
+            if _MYPY_FOUND_TWICE_RE.search(line):
+                found_twice_dirs.add(str(Path(filepath).parent) + "/")
+                has_blocking_error = True
+            else:
+                uncoded_error_files.add(filepath)
+            continue
+
+        # Category 3: Invalid package name
+        m = _MYPY_INVALID_PKG_NAME_RE.match(line)
+        if m:
+            invalid_pkg_names.add(m.group(1))
+            continue
+
+        # Category 4: Summary/info line — already checked for blocking indicator above
+
+    logger.trace(
+        f"Parsed mypy output: {len(violations)} violations, "
+        f"{len(syntax_files)} syntax files, {len(uncoded_error_files)} uncoded error files, "
+        f"{len(found_twice_dirs)} found-twice dirs, {len(invalid_pkg_names)} invalid pkg names, "
+        f"blocking={has_blocking_error}, {len(unhandled_lines)} unhandled lines"
     )
+    if unhandled_lines:
+        logger.debug(f"Unhandled mypy lines: {unhandled_lines}")
+
     return ParsedMypyOutput(
         violations=violations,
         syntax_files=syntax_files,
@@ -298,7 +308,7 @@ class BaseMypyBoost(Boost, abc.ABC):
         new_content = "".join(lines)
         if new_content == original:
             return False
-        logger.trace(f"Writing type: ignore comments to {filepath} in lines: {sorted(line_violations.keys())}")
+        logger.trace(f"Writing 'type: ignore' comments to {filepath} in lines: {sorted(line_violations.keys())}")
         full_path.write_text(new_content, encoding="utf-8")
         return True
 
@@ -317,10 +327,9 @@ class BaseMypyBoost(Boost, abc.ABC):
             return False
 
         raw_output = result.stdout + result.stderr
-        # Normalize joins wrapped lines from pretty=true; raw_output is kept for patterns
-        # that operate on the full text (invalid package names, blocking-error summary).
+        logger.trace(f"Raw mypy output:\n{raw_output}")
         output = _normalize_mypy_output(raw_output)
-        parsed = _parse_mypy_output(output=output, raw_output=raw_output)
+        parsed = _parse_mypy_output(output=output)
 
         newly_excluded_syntax = self._apply_syntax_exclusions(parsed.syntax_files)
         newly_excluded_uncoded = self._apply_uncoded_exclusions(
@@ -362,31 +371,28 @@ class BaseMypyBoost(Boost, abc.ABC):
         if not syntax_files:
             return False
         logger.debug(f"Syntax violations in {len(syntax_files)} file(s): {syntax_files}")
-        newly_excluded = self._exclude_mypy_files(syntax_files)
-        if not newly_excluded:
-            # File-level exclusion already present but mypy still reports the file.
-            # mypy cannot prevent discovery-stage syntax errors via file-level patterns
-            # (e.g. when the file is imported during package discovery). Escalate to
-            # excluding the parent directory.
-            parent_dirs = {str(Path(f).parent) + "/" for f in syntax_files}
-            logger.debug(f"File-level exclusion ineffective; escalating to parent dirs: {parent_dirs}")
-            newly_excluded = self._exclude_mypy_files(parent_dirs)
-        return newly_excluded
+        return self._exclude_mypy_files(syntax_files)
 
     def _exclude_mypy_files(self, files: set[str]) -> bool:
         """Add files to [tool.mypy] exclude list in pyproject.toml (as regex patterns).
 
         Returns True if new files were actually added, False if all were already excluded.
         """
-        logger.info(f"Excluding {len(files)} file(s) with syntax errors from mypy: {files}")
         data = self.pyproject.read()
         tool_section: Any = data["tool"]
         mypy_section: Any = tool_section["mypy"]
         existing: set[str] = set(mypy_section.get("exclude", []))
         new_excludes = existing | {re.escape(f) for f in files}
         if new_excludes == existing:
+            logger.debug(f"All {len(files)} path(s) already excluded from mypy: {files}")
             return False
-        mypy_section["exclude"] = sorted(new_excludes)
+        newly_added = new_excludes - existing
+        logger.info(f"Excluding {len(newly_added)} new path(s) from mypy: {newly_added}")
+        exclude_array = array()
+        exclude_array.multiline(True)  # noqa: FBT003
+        for item in sorted(new_excludes):
+            exclude_array.append(item)
+        mypy_section["exclude"] = exclude_array
         self.pyproject.write(data)
         return True
 

@@ -171,8 +171,8 @@ def test_raises_skip_when_no_pyproject(mypy_boost_uv_ok: MypyBoost) -> None:
 
 
 def _parse(output: str) -> dict:  # type: ignore[type-arg]
-    """Run _parse_mypy_output with identical output and raw_output, return violations."""
-    return _parse_mypy_output(output=output, raw_output=output).violations
+    """Run _parse_mypy_output and return violations."""
+    return _parse_mypy_output(output=output).violations
 
 
 @pytest.mark.smoke
@@ -252,29 +252,29 @@ def test_success_output() -> None:
 
 def test_parse_output_uncoded_error_goes_to_uncoded_files() -> None:
     output = "src/foo.py:1: error: Cannot import module\n"
-    result = _parse_mypy_output(output=output, raw_output=output)
+    result = _parse_mypy_output(output=output)
     assert result.uncoded_error_files == {"src/foo.py"}
     assert result.unhandled_lines == []
 
 
 def test_parse_output_unhandled_ignores_coded_errors() -> None:
     output = "src/foo.py:1: error: Bad type  [assignment]\n"
-    assert _parse_mypy_output(output=output, raw_output=output).unhandled_lines == []
+    assert _parse_mypy_output(output=output).unhandled_lines == []
 
 
 def test_parse_output_unhandled_ignores_note_lines() -> None:
     output = "src/foo.py:1: note: See https://mypy.rtfd.io\n"
-    assert _parse_mypy_output(output=output, raw_output=output).unhandled_lines == []
+    assert _parse_mypy_output(output=output).unhandled_lines == []
 
 
 def test_parse_output_unhandled_ignores_found_twice() -> None:
     output = 'src/a.py: error: Source file found twice under different module names: "a" and "b"\n'
-    assert _parse_mypy_output(output=output, raw_output=output).unhandled_lines == []
+    assert _parse_mypy_output(output=output).unhandled_lines == []
 
 
 def test_parse_output_unhandled_ignores_summary_lines() -> None:
     output = "Found 1 error in 1 file (checked 5 source files)\n"
-    assert _parse_mypy_output(output=output, raw_output=output).unhandled_lines == []
+    assert _parse_mypy_output(output=output).unhandled_lines == []
 
 
 def test_parse_output_uncoded_goes_to_uncoded_files_coded_goes_to_violations() -> None:
@@ -284,7 +284,7 @@ def test_parse_output_uncoded_goes_to_uncoded_files_coded_goes_to_violations() -
         "src/foo.py:1: note: See docs\n"
         "Found 2 errors\n"
     )
-    result = _parse_mypy_output(output=output, raw_output=output)
+    result = _parse_mypy_output(output=output)
     assert _vl("src/foo.py", 1) in result.violations
     assert result.uncoded_error_files == {"src/bar.py"}
     assert result.unhandled_lines == []
@@ -295,15 +295,20 @@ def test_parse_output_uncoded_goes_to_uncoded_files_coded_goes_to_violations() -
 # =============================================================================
 
 
-def test_parse_output_syntax_file_stripped_from_violations() -> None:
+def test_parse_output_syntax_file_keeps_all_violations() -> None:
+    """All violations from files with [syntax] errors are preserved for inline suppression."""
     output = (
         "src/bad.py:5: error: Invalid syntax  [syntax]\n"
         "src/bad.py:10: error: Some other error  [misc]\n"
         "src/good.py:1: error: Bad type  [assignment]\n"
     )
-    result = _parse_mypy_output(output=output, raw_output=output)
+    result = _parse_mypy_output(output=output)
     assert "src/bad.py" in result.syntax_files
-    assert all(loc.file_path != "src/bad.py" for loc in result.violations)
+    # syntax violation itself is also in violations for inline suppression
+    assert _vl("src/bad.py", 5) in result.violations
+    assert "syntax" in result.violations[_vl("src/bad.py", 5)]
+    assert _vl("src/bad.py", 10) in result.violations
+    assert result.violations[_vl("src/bad.py", 10)] == {"misc"}
     assert _vl("src/good.py", 1) in result.violations
 
 
@@ -782,45 +787,17 @@ def test_excludes_syntax_error_file_in_pyproject(
     assert r"src/bad\\.py" in content
 
 
-def test_escalates_to_parent_dir_when_syntax_file_exclusion_fails(
-    mock_repo: RepositoryController,
-    patched_mypy_apply: PatchedMypyApply,
-    fail_result: SubprocessResultFactory,
-    ok_result: SubprocessResultFactory,
-) -> None:
-    """When file-level exclusion doesn't prevent mypy from reporting a syntax error, escalate.
-
-    This happens e.g. when the file is imported during package discovery. Escalating to
-    excluding the parent directory makes mypy skip the whole package.
-    """
-    syntax_error_output = "src/pkg/bad.py:5: error: Invalid syntax  [syntax]\n"
-    patched_mypy_apply.mock_mypy.side_effect = [
-        fail_result(syntax_error_output),  # iteration 1: exclude src/pkg/bad.py (new)
-        fail_result(syntax_error_output),  # iteration 2: file already excluded → escalate to src/pkg/
-        ok_result(),  # iteration 3: mypy passes after parent-dir exclusion
-    ]
-    patched_mypy_apply.boost.apply()
-    content = (mock_repo.path / "pyproject.toml").read_text()
-    assert "src/pkg/" in content
-    assert patched_mypy_apply.mock_mypy.call_count == 3  # noqa: PLR2004
-
-
 def test_stops_when_syntax_file_already_excluded(
     patched_mypy_apply: PatchedMypyApply,
     fail_result: SubprocessResultFactory,
 ) -> None:
-    """When all exclusions are exhausted, the boost stops gracefully (no RuntimeError).
-
-    Iteration 1 excludes the file, iteration 2 escalates to the parent dir,
-    iteration 3 finds nothing new to exclude and stops.
-    """
+    """When all exclusions are exhausted, the boost stops gracefully (no RuntimeError)."""
     syntax_error_output = "src/bad.py:5: error: Invalid syntax  [syntax]\n"
     patched_mypy_apply.mock_mypy.return_value = fail_result(syntax_error_output)
     patched_mypy_apply.boost.apply()
     # Iteration 1: excludes src/bad.py (new file pattern).
-    # Iteration 2: file already excluded → escalates to src/ (new parent pattern).
-    # Iteration 3: both already excluded → no progress → stops gracefully.
-    assert patched_mypy_apply.mock_mypy.call_count == 3  # noqa: PLR2004
+    # Iteration 2: file already excluded → no progress → stops gracefully.
+    assert patched_mypy_apply.mock_mypy.call_count == 2  # noqa: PLR2004
 
 
 def test_stops_when_uncoded_blocking_file_already_excluded(
