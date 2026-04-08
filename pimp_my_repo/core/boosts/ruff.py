@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from loguru import logger
-from tomlkit import TOMLDocument, table
+from tomlkit import TOMLDocument, array, table
 
 from pimp_my_repo.core.boosts.base import Boost, BoostSkipped
 from pimp_my_repo.core.tools.pyproject import PyProjectNotFoundError
@@ -126,7 +126,11 @@ class RuffBoost(Boost):
         #   inline `# no-qa: RUF100` doesn't suppress it → oscillation loop.
         # COM812, ISC001: conflict with ruff formatter, causing format/check oscillation.
         # D203, D212: incompatible with D211/D213 (ruff picks one but warns; be explicit).
-        lint_section["ignore"] = ["ERA001", "RUF100", "COM812", "ISC001", "D203", "D212"]
+        ignore_array = array()
+        ignore_array.multiline(True)  # noqa: FBT003
+        for code in ["ERA001", "RUF100", "COM812", "ISC001", "D203", "D212"]:
+            ignore_array.append(code)
+        lint_section["ignore"] = ignore_array
         return data
 
     def _parse_ruff_output(self, result: CommandResult) -> ViolationsByLocation:
@@ -244,9 +248,12 @@ class RuffBoost(Boost):
         if new_excludes == existing:
             logger.debug(f"Ruff extend-exclude unchanged (files already present): {files}")
             return
-        ordered = sorted(new_excludes)
         logger.debug(f"Updating ruff extend-exclude: added {files - existing}")
-        ruff_section["extend-exclude"] = ordered
+        exclude_array = array()
+        exclude_array.multiline(True)  # noqa: FBT003
+        for item in sorted(new_excludes):
+            exclude_array.append(item)
+        ruff_section["extend-exclude"] = exclude_array
         self.pyproject.write(data)
 
 
