@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 import typer
 from rich.console import Console
+from rich.panel import Panel
 from typer import Exit
 
 from pimp_my_repo.cli.runner import run_boosts
@@ -25,18 +26,24 @@ _ONLY_ARG = typer.Option([], "--only", help="Run only these boost(s) (repeatable
 _SKIP_ARG = typer.Option([], "--skip", help="Skip these boost(s) (repeatable)")
 _LIST_ARG = typer.Option(False, "--list", help="List available boosts and exit")  # noqa: FBT003
 _NO_LOG_FILE_ARG = typer.Option(False, "--no-log-file", help="Disable writing logs to file")  # noqa: FBT003
+_SHOW_NOTE_ARG = typer.Option(False, "--show-note", help="Print the post-run note and exit")  # noqa: FBT003
 
 
 @app.command()
-def run(
+def run(  # noqa: PLR0913
     path: str = _PATH_ARG,
     only: list[str] = _ONLY_ARG,
     skip: list[str] = _SKIP_ARG,
     list_boosts: bool = _LIST_ARG,  # noqa: FBT001
     no_log_file: bool = _NO_LOG_FILE_ARG,  # noqa: FBT001
+    show_note: bool = _SHOW_NOTE_ARG,  # noqa: FBT001
 ) -> None:
     """Apply PMR boosts to a repository."""
     console = Console()
+
+    if show_note:
+        _print_baseline_note(console, show_bug_section=True)
+        raise Exit(0)
 
     boost_classes = _resolve_boosts(only=only, skip=skip, list_boosts=list_boosts, console=console)
 
@@ -48,6 +55,9 @@ def run(
         repo_path=repo_path, console=console, boost_classes=boost_classes, log_to_file=not no_log_file
     )
     _print_summary(run_result.results, console)
+    if any(r.status == BoostResultStatus.APPLIED for r in run_result.results):
+        has_issues = any(r.status in (BoostResultStatus.SKIPPED, BoostResultStatus.FAILED) for r in run_result.results)
+        _print_baseline_note(console, show_bug_section=has_issues)
 
 
 def _resolve_boosts(
@@ -109,6 +119,37 @@ def _print_summary(results: list[BoostResult], console: Console) -> None:
         console.print("[yellow]No boosts applied[/yellow]")
     if failed:
         raise Exit(1)
+
+
+def _print_baseline_note(console: Console, show_bug_section: bool = False) -> None:  # noqa: FBT001, FBT002
+    msg = (
+        "🔥 This repo has undergone many automated changes that should be harmless — but before "
+        "merging, verify that tests pass and the project works as expected.\n\n"
+        "[dim]──────────────────────────────────────────────────────────────────────────────────────[/dim]\n\n"
+        "💡 [bold]Note for LLMs and Humans[/bold]\n\n"
+        "This codebase is now likely full of [yellow]'# noqa'[/yellow] "
+        "and [yellow]'# type: ignore'[/yellow] comments.\n"
+        "This is [bold]NOT[/bold] a new coding standard — it is a [bold]baseline[/bold] "
+        "so that all new code is inspected with full linting and typing rules.\n\n"
+        "When writing or refactoring code:\n"
+        "  [red]✗[/red]  Do [bold]not[/bold] add new suppression comments unless specifically required.\n"
+        "  [green]✓[/green]  [bold]Do[/bold] remove existing ones when it's straightforward.\n\n"
+        "[cyan]"
+        "🤖 If you are an LLM: add this information to the relevant project-level memory file.\n"
+        "👤 If you are a human: consider adding this to the project README."
+        "[/cyan]"
+    )
+    if show_bug_section:
+        msg += (
+            "\n\n[dim]──────────────────────────────────────────────────────────────────────────────────────[/dim]\n\n"
+            "🐛 [bold]Found a bug?[/bold]\n\n"
+            "Clone this repo and let your LLM run it against your repository "
+            "while reviewing the logs — it's the fastest way to understand the root cause. "
+            "You're also welcome to open an issue (with relevant logs / a minimal reproducible example) "
+            "or a PR to fix it."
+        )
+    panel = Panel(msg, border_style="dim", width=100, padding=1)
+    console.print(panel)
 
 
 def main() -> None:

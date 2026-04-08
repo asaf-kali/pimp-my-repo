@@ -166,3 +166,10 @@ def test_print_summary_failed_boost_exits_1(
     result = _cli_runner.invoke(app, ["--path", str(patched_run_boosts_with_failure.path)])
     assert result.exit_code == 1
     assert "failed" in result.output
+
+
+def test_show_note_flag_prints_note_and_exits_0() -> None:
+    result = _cli_runner.invoke(app, ["--show-note"])
+    assert result.exit_code == 0
+    assert "Note for LLMs and Humans" in result.output
+    assert "Found a bug?" in result.output
