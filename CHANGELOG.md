@@ -1,6 +1,34 @@
 # CHANGELOG
 
 
+## v0.4.6 (2026-04-08)
+
+### Other
+
+- 🎡 Add post-run comment ([#46](https://github.com/asaf-kali/pimp-my-repo/pull/46),
+  [`e3a1b6f`](https://github.com/asaf-kali/pimp-my-repo/commit/e3a1b6f9816918fb132a5a344f0f7f583bb9eb5f))
+
+### 🐛
+
+- 🐛 Mypy boost stability fixes ([#47](https://github.com/asaf-kali/pimp-my-repo/pull/47),
+  [`a89c037`](https://github.com/asaf-kali/pimp-my-repo/commit/a89c0372832281ef351b8a9615e24128bfb33cdd))
+
+* Logging fixes
+
+* 🐛 Fix mypy parsing: single-pass, keep syntax-file violations, remove parent-dir escalation
+
+- Rewrite _parse_mypy_output as true single-pass: each line falls into exactly one category
+  (diagnostic, no-line-number error, invalid pkg name, or summary). Remove separate
+  _collect_no_line_number_errors pass and raw_output parameter. - Stop stripping non-syntax
+  violations from syntax-error files. These can still be suppressed inline with type: ignore
+  comments, which matters when mypy checks the file via import following (exclude only prevents
+  discovery, not import following). - Remove parent-dir escalation in _apply_syntax_exclusions — it
+  didn't help for import-following cases and caused confusing behavior. - Fix _normalize_mypy_output
+  to preserve no-line-number error lines and invalid package name messages as separate entries. -
+  Use multiline tomlkit arrays for mypy exclude lists. - Add trace/debug logging for parse results,
+  raw output, and exclusion decisions.
+
+
 ## v0.4.5 (2026-04-07)
 
 ### 🐛
