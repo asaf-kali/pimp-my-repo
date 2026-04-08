@@ -185,7 +185,7 @@ class RuffBoost(Boost):
             else:
                 lines[idx] = _merge_noqa(raw_line=lines[idx], codes=codes)
 
-        logger.trace(f"Writing noqa comments to {filepath} in lines: {sorted(line_violations.keys())}")
+        logger.trace(f"Writing 'noqa' comments to {filepath} in lines: {sorted(line_violations.keys())}")
         full_path.write_text("".join(lines), encoding="utf-8")
 
     def _suppress_violations_iteration(self) -> bool:

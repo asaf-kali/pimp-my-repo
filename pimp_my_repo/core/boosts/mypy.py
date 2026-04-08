@@ -298,7 +298,7 @@ class BaseMypyBoost(Boost, abc.ABC):
         new_content = "".join(lines)
         if new_content == original:
             return False
-        logger.trace(f"Writing type: ignore comments to {filepath} in lines: {sorted(line_violations.keys())}")
+        logger.trace(f"Writing 'type: ignore' comments to {filepath} in lines: {sorted(line_violations.keys())}")
         full_path.write_text(new_content, encoding="utf-8")
         return True
 
