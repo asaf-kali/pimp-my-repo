@@ -1,6 +1,36 @@
 # CHANGELOG
 
 
+## v0.4.7 (2026-04-09)
+
+### 🌴
+
+- 🌴 Code quality fixes and UX improvements
+  ([#48](https://github.com/asaf-kali/pimp-my-repo/pull/48),
+  [`980f4a8`](https://github.com/asaf-kali/pimp-my-repo/commit/980f4a84dd828907a1a10d07a9ba47cb470b2d4b))
+
+* fix: replace bare except with except BaseException in git revert context
+
+https://claude.ai/code/session_01L3VUA2nZbrxiPzWicuBrNH
+
+* refactor: remove unused RunResult model from result.py
+
+BoostRunResult in runner.py is the actual result type used throughout the codebase. RunResult was
+  dead code with no references.
+
+* feat: add --branch flag and improve failure UX
+
+- Add --branch/-b CLI option to customize the git branch name (default remains feat/pmr, threaded
+  through runner → booster → init_pmr) - Show each failed boost's error message in the terminal
+  summary, not just in the log file - Print the baseline note even when some boosts failed (raised
+  Exit(1) after the note instead of inside _print_summary) - Add tests for --branch forwarding and
+  error detail display
+
+---------
+
+Co-authored-by: Claude <noreply@anthropic.com>
+
+
 ## v0.4.6 (2026-04-08)
 
 ### Other
