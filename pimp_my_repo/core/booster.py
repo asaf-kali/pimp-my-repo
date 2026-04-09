@@ -21,7 +21,7 @@ def _git_revert_context(repo_controller: RepositoryController) -> Generator[str]
     sha_before = repo_controller.get_current_commit_sha()
     try:
         yield sha_before
-    except:
+    except BaseException:
         logger.debug(f"Reverting git changes to {sha_before}")
         repo_controller.reset_hard(sha_before)
         raise
