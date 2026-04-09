@@ -58,6 +58,7 @@ def run_e2e_test(repo_path: Path) -> None:
     assert_ruff_passes(repo_path)
     assert_mypy_passes(repo_path)
     assert_pre_commit_passes(repo_path)
+    assert_just_install_works(repo_path)
 
 
 # ── PMR runner ────────────────────────────────────────────────────────────────
@@ -90,6 +91,21 @@ def assert_ruff_passes(repo_path: Path) -> None:
 
 def assert_mypy_passes(repo_path: Path) -> None:
     _run_checked([str(_venv_exe(repo_path, "mypy")), "."], cwd=repo_path)
+
+
+def assert_just_install_works(repo_path: Path) -> None:
+    justfile_path = repo_path / "justfile"
+    if not justfile_path.exists():
+        return
+    if "install:" not in justfile_path.read_text(encoding="utf-8"):
+        return
+    just = shutil.which("just")
+    if just is None:
+        return
+    venv_path = repo_path / ".venv"
+    if venv_path.exists():
+        shutil.rmtree(venv_path)
+    _run_checked([just, "install"], cwd=repo_path)
 
 
 def assert_pre_commit_passes(repo_path: Path) -> None:
