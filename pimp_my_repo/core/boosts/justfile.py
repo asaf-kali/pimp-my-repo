@@ -30,7 +30,7 @@ _INSTALL_COMMANDS_BY_OS: dict[str, list[list[str]]] = {
 
 _RUN_VAR = 'RUN := "uv run"'
 
-_RECIPE_INSTALL = "install:\n    uv sync\n"
+_RECIPE_INSTALL = "install:\n    uv sync --all-groups\n"
 _RECIPE_FORMAT = "format:\n    {{ RUN }} ruff format\n"
 _RECIPE_LINT_NO_PRECOMMIT = "lint: format\n    {{ RUN }} ruff check --fix --unsafe-fixes\n"
 _RECIPE_LINT_WITH_PRECOMMIT = (

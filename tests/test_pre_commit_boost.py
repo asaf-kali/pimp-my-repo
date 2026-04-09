@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pimp_my_repo.core.boosts.base import BoostSkipped
-from pimp_my_repo.core.boosts.pre_commit import PreCommitBoost
+from pimp_my_repo.core.boosts.pre_commit import PreCommitBoost, _patch_justfile_content
 from pimp_my_repo.core.tools.uv import UvNotFoundError
 
 if TYPE_CHECKING:
@@ -166,6 +166,60 @@ def test_calls_pre_commit_install(patched_pre_commit_apply: PatchedPreCommitAppl
 def test_adds_pre_commit_as_dev_dependency(patched_pre_commit_apply: PatchedPreCommitApply) -> None:
     patched_pre_commit_apply.boost.apply()
     patched_pre_commit_apply.mock_add_package.assert_called_once_with("pre-commit", group="dev")
+
+
+# --- Justfile patching ---
+
+
+def test_patches_justfile_install_recipe_with_precommit_install(
+    mock_repo: RepositoryController,
+    patched_pre_commit_apply: PatchedPreCommitApply,
+) -> None:
+    mock_repo.write_file("justfile", "install:\n    uv sync --all-groups\n")
+    patched_pre_commit_apply.boost.apply()
+    content = (mock_repo.path / "justfile").read_text()
+    assert "uv sync --all-groups" in content
+    assert "uv run pre-commit install" in content
+
+
+def test_patches_justfile_lint_recipe_when_using_run_var(
+    mock_repo: RepositoryController,
+    patched_pre_commit_apply: PatchedPreCommitApply,
+) -> None:
+    mock_repo.write_file(
+        "justfile",
+        'RUN := "uv run"\n\nlint: format\n    {{ RUN }} ruff check --fix --unsafe-fixes\n',
+    )
+    patched_pre_commit_apply.boost.apply()
+    content = (mock_repo.path / "justfile").read_text()
+    assert "pre-commit run --all-files" in content
+
+
+def test_does_not_patch_lint_recipe_without_run_var(
+    mock_repo: RepositoryController,
+    patched_pre_commit_apply: PatchedPreCommitApply,
+) -> None:
+    mock_repo.write_file("justfile", "lint:\n    ruff check .\n")
+    patched_pre_commit_apply.boost.apply()
+    content = (mock_repo.path / "justfile").read_text()
+    assert "pre-commit run" not in content
+
+
+def test_does_not_patch_justfile_when_absent(
+    patched_pre_commit_apply: PatchedPreCommitApply,
+) -> None:
+    patched_pre_commit_apply.boost.apply()
+    # Just verify apply() completes without error when no justfile exists
+
+
+def test_patch_justfile_content_returns_none_when_already_patched() -> None:
+    content = "install:\n    uv sync --all-groups\n    uv run pre-commit install\n"
+    assert _patch_justfile_content(content) is None
+
+
+def test_patch_justfile_content_returns_none_when_no_install_recipe() -> None:
+    content = "format:\n    ruff format\n"
+    assert _patch_justfile_content(content) is None
 
 
 # --- Metadata ---

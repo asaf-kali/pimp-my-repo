@@ -43,7 +43,7 @@ class UvController:
     def sync_group(self, group: str) -> None:
         """Sync a specific dependency group (additive — does not remove other installed packages)."""
         logger.debug(f"Syncing dependency group: {group}")
-        self.exec("sync", "--group", group)
+        self.exec("sync", "--group", group, "--inexact")
 
     def add_package(
         self,

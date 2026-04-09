@@ -139,7 +139,7 @@ def test_creates_justfile_with_install_only(
     patched_justfile_apply.boost.apply()
     content = (mock_repo.path / "justfile").read_text()
     assert "install:" in content
-    assert "uv sync" in content
+    assert "uv sync --all-groups" in content
     assert "format:" not in content
     assert "RUN :=" not in content
 

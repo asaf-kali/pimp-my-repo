@@ -16,6 +16,9 @@ _CONFIG_FILE = ".pre-commit-config.yaml"
 
 _PMR_MARKER = "# pimp-my-repo:pre-commit"
 
+_JUSTFILE_PRECOMMIT_INSTALL_LINE = "    uv run pre-commit install\n"
+_JUSTFILE_PRECOMMIT_RUN_LINE = "    {{ RUN }} pre-commit run --all-files\n"
+
 _STANDARD_HOOKS = f"""\
 {_PMR_MARKER}
 # See https://pre-commit.com for more information
@@ -81,6 +84,13 @@ class PreCommitBoost(Boost):
         logger.debug("Adding pre-commit to dev dependencies...")
         self.uv.add_package("pre-commit", group="dev")
 
+        logger.debug("Patching justfile with pre-commit steps...")
+        justfile_path = self.repo_path / "justfile"
+        if justfile_path.exists():
+            patched = _patch_justfile_content(justfile_path.read_text(encoding="utf-8"))
+            if patched is not None:
+                self.git.write_file("justfile", patched)
+
         logger.debug("Generating pre-commit config...")
         justfile_recipes = _get_justfile_recipes(self.repo_path)
         config_content = _build_config(justfile_recipes=justfile_recipes)
@@ -111,6 +121,43 @@ def _get_justfile_recipes(repo_path: Path) -> set[str]:
             recipes.add(m.group(1))
     logger.debug(f"Found justfile recipes: {recipes}")
     return recipes
+
+
+def _patch_justfile_content(content: str) -> str | None:
+    """Return justfile content patched with pre-commit steps, or None if nothing changed.
+
+    Appends 'uv run pre-commit install' to the install recipe body and
+    '{{ RUN }} pre-commit run --all-files' to a lint recipe that uses {{ RUN }}.
+    Skips patching if the pre-commit lines are already present.
+    """
+    patched = content
+
+    if "pre-commit install" not in patched:
+        patched = re.sub(
+            r"(^install:[ \t]*[^\n]*\n(?:[ \t]+[^\n]*\n)*)",
+            r"\g<1>" + _JUSTFILE_PRECOMMIT_INSTALL_LINE,
+            patched,
+            count=1,
+            flags=re.MULTILINE,
+        )
+
+    if "pre-commit run" not in patched:
+
+        def _add_precommit_run(m: re.Match[str]) -> str:
+            recipe = m.group(1)
+            if "{{ RUN }}" not in recipe:
+                return recipe  # Don't touch lint recipes that don't use {{ RUN }}
+            return recipe + _JUSTFILE_PRECOMMIT_RUN_LINE
+
+        patched = re.sub(
+            r"(^lint:[ \t]*[^\n]*\n(?:[ \t]+[^\n]*\n)*)",
+            _add_precommit_run,
+            patched,
+            count=1,
+            flags=re.MULTILINE,
+        )
+
+    return patched if patched != content else None
 
 
 def _build_config(*, justfile_recipes: set[str]) -> str:

@@ -73,7 +73,7 @@ def _run_boosts_with_dashboard(
 
     results: list[BoostResult] = []
 
-    with Live(dashboard, console=console, refresh_per_second=10):
+    with Live(dashboard, console=console, refresh_per_second=4):
         for result in execute_boosts(
             repo_path=repo_path,
             boost_classes=boost_classes,
