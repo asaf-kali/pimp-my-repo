@@ -1,5 +1,6 @@
 """Shared helpers for e2e tests (local fixtures and remote repos)."""
 
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -10,6 +11,10 @@ from pimp_my_repo.core.tools.repo import PMR_EMAIL
 
 _PMR_ROOT = Path(__file__).parent.parent
 _TMP_BASE = Path("/tmp/pmr")  # noqa: S108
+
+# Recipes PMR always creates (uv+ruff+mypy boosts always run on Python repos)
+_EXPECTED_JUST_RECIPES = {"install", "check-lock", "check-ruff", "lint", "check-mypy"}
+_JUST_RECIPES_TO_RUN = ("check-lock", "check-ruff", "check-mypy", "lint")
 
 
 # ── Setup helpers ─────────────────────────────────────────────────────────────
@@ -59,6 +64,7 @@ def run_e2e_test(repo_path: Path) -> None:
     assert_mypy_passes(repo_path)
     assert_pre_commit_passes(repo_path)
     assert_just_install_works(repo_path)
+    assert_just_commands_work(repo_path)
 
 
 # ── PMR runner ────────────────────────────────────────────────────────────────
@@ -94,25 +100,42 @@ def assert_mypy_passes(repo_path: Path) -> None:
 
 
 def assert_just_install_works(repo_path: Path) -> None:
+    """Assert justfile exists with a working install recipe.
+
+    Removes .venv and re-runs `just install` from scratch to verify the full
+    install flow (uv sync --all-groups + pre-commit install) works correctly.
+    Asserts .venv is recreated and pre-commit hooks are installed in .git/hooks/.
+    """
+    just = _require_exe("just")
     justfile_path = repo_path / "justfile"
-    if not justfile_path.exists():
-        return
-    if "install:" not in justfile_path.read_text(encoding="utf-8"):
-        return
-    just = shutil.which("just")
-    if just is None:
-        return
+    assert justfile_path.exists(), "justfile not created after pmr"
+    assert "install:" in justfile_path.read_text(encoding="utf-8"), "justfile missing install recipe"
+
     venv_path = repo_path / ".venv"
     if venv_path.exists():
         shutil.rmtree(venv_path)
     _run_checked([just, "install"], cwd=repo_path)
 
+    assert venv_path.exists(), ".venv not created after `just install`"
+    hook_path = repo_path / ".git" / "hooks" / "pre-commit"
+    assert hook_path.exists(), "pre-commit hook not installed in .git/hooks/ after `just install`"
+
+
+def assert_just_commands_work(repo_path: Path) -> None:
+    """Assert all PMR-generated just recipes exist and pass."""
+    just = _require_exe("just")
+    justfile_path = repo_path / "justfile"
+    assert justfile_path.exists(), "justfile not created after pmr"
+    recipes = _get_just_recipes(justfile_path)
+    missing = _EXPECTED_JUST_RECIPES - recipes
+    assert not missing, f"justfile missing expected recipes: {sorted(missing)}"
+    for recipe in _JUST_RECIPES_TO_RUN:
+        _run_checked([just, recipe], cwd=repo_path)
+
 
 def assert_pre_commit_passes(repo_path: Path) -> None:
     config_path = repo_path / ".pre-commit-config.yaml"
     assert config_path.exists(), ".pre-commit-config.yaml not found after pmr"
-    if "pimp-my-repo:pre-commit" not in config_path.read_text():
-        return  # Pre-existing config not managed by pmr — skip hook execution
     _run_checked([str(_venv_exe(repo_path, "pre-commit")), "run", "--all-files"], cwd=repo_path)
 
 
@@ -181,6 +204,16 @@ def _venv_exe(repo_path: Path, name: str) -> Path:
     return exe
 
 
+def _get_just_recipes(justfile_path: Path) -> set[str]:
+    recipes: set[str] = set()
+    for line in justfile_path.read_text(encoding="utf-8").splitlines():
+        m = re.match(r"^([a-zA-Z0-9][a-zA-Z0-9_-]*)", line)
+        if m and ":=" not in line and ":" in line:
+            recipes.add(m.group(1))
+    return recipes
+
+
 def _run_checked(cmd: list[str], *, cwd: Path) -> None:
+    logger.info(f"Running command: {cmd} in '{cwd}'")
     result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=False)  # noqa: S603
     assert result.returncode == 0, f"{cmd[0]} failed:\n{result.stdout}\n{result.stderr}"
