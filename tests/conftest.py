@@ -1,15 +1,33 @@
 """Pytest configuration and shared fixtures."""
 
+import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Protocol
 from unittest.mock import MagicMock
 
 import pytest
+from loguru import logger
 
 from pimp_my_repo.core.tools.boost_tools import BoostTools
 from pimp_my_repo.core.tools.repo import RepositoryController
 from pimp_my_repo.core.tools.subprocess import run_command
+
+
+@pytest.fixture(scope="session", autouse=True)
+def configure_logging() -> None:
+    logger.remove()
+    logger.add(
+        sys.stderr,
+        format=(
+            "[<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green>] [<blue>{level.name:.4}</blue>]"
+            " <bold>{message}</bold> [<dim>{name}</dim>] [<dim>{file}:{line}</dim>]"
+        ),
+        level="DEBUG",
+        colorize=True,
+    )
+    logger.debug("Logging configured for tests")
+
 
 if TYPE_CHECKING:
     from collections.abc import Generator
