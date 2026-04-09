@@ -40,6 +40,7 @@ Each boost: configures the tool in `pyproject.toml`, runs it, suppresses all vio
   - Process violations in **reverse line order** so line insertions don't shift pending indices
 - **`'"""'` (single-quoted string containing triple double-quotes)**: must NOT be treated as an unclosed triple-quote; `_find_unclosed_triple_quote_pos` skips single-char quoted strings before checking for triple-quote sequences
 - **Parsing**: single-pass over normalized output; each line falls into exactly one category (coded error, note, uncoded error, invalid pkg name, summary, or unhandled)
+- **`show_error_end = true`**: mypy outputs `path:line:col:endline:endcol: error:` — all regexes use `(?::\d+)*` (not `(?::\d+)?`) to handle arbitrary extra colon-number segments
 
 ## Key implementation details
 - TOML: `re.escape("a/b.py")` = `a/b\.py` → serialized as `a/b\\.py` in file (double backslash)

@@ -206,6 +206,35 @@ def test_parses_violation_with_column_number() -> None:
     assert _parse(output) == {_vl("src/foo.py", 10): {"arg-type"}}
 
 
+def test_parses_violation_with_show_error_end() -> None:
+    """show_error_end = true produces path:line:col:endline:endcol: format."""
+    output = "src/foo.py:10:5:10:18: error: Incompatible type  [arg-type]"
+    assert _parse(output) == {_vl("src/foo.py", 10): {"arg-type"}}
+
+
+def test_parses_multiple_violations_with_show_error_end() -> None:
+    output = (
+        "src/foo.py:3:1:3:10: error: Missing return type  [no-untyped-def]\n"
+        "src/bar.py:7:5:7:20: error: Incompatible types  [assignment]\n"
+    )
+    assert _parse(output) == {
+        _vl("src/foo.py", 3): {"no-untyped-def"},
+        _vl("src/bar.py", 7): {"assignment"},
+    }
+
+
+def test_parses_note_uncovered_code_with_show_error_end() -> None:
+    output = 'src/foo.py:10:5:10:18: note: Error code "misc" not covered by "type: ignore" comment'
+    assert _parse(output) == {_vl("src/foo.py", 10): {"misc"}}
+
+
+def test_parses_uncoded_error_with_show_error_end() -> None:
+    output = "src/foo.py:10:5:10:18: error: Cannot import module\n"
+    result = _parse_mypy_output(output=output)
+    assert result.uncoded_error_files == {"src/foo.py"}
+    assert result.violations == {}
+
+
 def test_parses_note_uncovered_code() -> None:
     output = 'src/foo.py:10: note: Error code "misc" not covered by "type: ignore" comment'
     assert _parse(output) == {_vl("src/foo.py", 10): {"misc"}}
