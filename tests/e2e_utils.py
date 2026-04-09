@@ -8,6 +8,7 @@ from pathlib import Path
 from loguru import logger
 
 from pimp_my_repo.core.tools.repo import PMR_EMAIL
+from pimp_my_repo.core.tools.subprocess import run_command
 
 _PMR_ROOT = Path(__file__).parent.parent
 _TMP_BASE = Path("/tmp/pmr")  # noqa: S108
@@ -93,12 +94,12 @@ def assert_git_clean(repo_path: Path) -> None:
 
 def assert_ruff_passes(repo_path: Path) -> None:
     ruff = str(_venv_exe(repo_path, "ruff"))
-    _run_checked([ruff, "check", "."], cwd=repo_path)
-    _run_checked([ruff, "format", "--check", "."], cwd=repo_path)
+    run_command([ruff, "check", "."], cwd=repo_path)
+    run_command([ruff, "format", "--check", "."], cwd=repo_path)
 
 
 def assert_mypy_passes(repo_path: Path) -> None:
-    _run_checked([str(_venv_exe(repo_path, "mypy")), "."], cwd=repo_path)
+    run_command([str(_venv_exe(repo_path, "mypy")), "."], cwd=repo_path)
 
 
 def assert_just_install_works(repo_path: Path) -> None:
@@ -117,7 +118,7 @@ def assert_just_install_works(repo_path: Path) -> None:
     venv_path = repo_path / ".venv"
     if venv_path.exists():
         shutil.rmtree(venv_path)
-    _run_checked([just, "install"], cwd=repo_path)
+    run_command([just, "install"], cwd=repo_path)
 
     assert venv_path.exists(), ".venv not created after `just install`"
     if _pmr_manages_pre_commit(repo_path):
@@ -139,8 +140,7 @@ def assert_just_commands_work(repo_path: Path) -> None:
         else _JUST_RECIPES_TO_RUN_WITHOUT_PRECOMMIT
     )
     for recipe in recipes_to_run:
-        logger.info(f"Running 'just {recipe}'...")
-        _run_checked([just, recipe], cwd=repo_path)
+        run_command([just, recipe], cwd=repo_path)
 
 
 def assert_pre_commit_passes(repo_path: Path) -> None:
@@ -149,7 +149,7 @@ def assert_pre_commit_passes(repo_path: Path) -> None:
         return
     config_path = repo_path / ".pre-commit-config.yaml"
     assert config_path.exists(), ".pre-commit-config.yaml not found after pmr"
-    _run_checked([str(_venv_exe(repo_path, "pre-commit")), "run", "--all-files"], cwd=repo_path)
+    run_command([str(_venv_exe(repo_path, "pre-commit")), "run", "--all-files"], cwd=repo_path)
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
@@ -230,9 +230,3 @@ def _get_just_recipes(justfile_path: Path) -> set[str]:
         if m and ":=" not in line and ":" in line:
             recipes.add(m.group(1))
     return recipes
-
-
-def _run_checked(cmd: list[str], *, cwd: Path) -> None:
-    logger.info(f"Running command: {cmd} in '{cwd}'")
-    result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=False)  # noqa: S603
-    assert result.returncode == 0, f"{cmd[0]} failed:\n{result.stdout}\n{result.stderr}"
