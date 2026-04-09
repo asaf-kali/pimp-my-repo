@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.4.8 (2026-04-09)
+
+### 🖼️
+
+- 🖼️ Handle mypy `--show-error-end` output format
+  ([#49](https://github.com/asaf-kali/pimp-my-repo/pull/49),
+  [`dcbb4cd`](https://github.com/asaf-kali/pimp-my-repo/commit/dcbb4cd4dd1e5d8691c03013ed675e9d42fb86f4))
+
+When a target repo has `show_error_end = true` in its mypy config, mypy emits
+  `path:line:col:endline:endcol: error:` instead of `path:line:col:`. The extra colon-number
+  segments broke all four location regexes: _MYPY_LINE_START_RE didn't match, causing errors to fall
+  into Category 2 (uncoded files) with a corrupted path that included the column numbers. No type:
+  ignore comments were placed and the boost stalled.
+
+Fix: replace `(?::\d+)?` with `(?::\d+)*` in the three `path:line` regexes
+
+and use `(?:(?::\d+)+)?` in _MYPY_ANY_ERROR_RE so any number of trailing colon-number segments (col,
+  col:endline:endcol, etc.) are consumed correctly.
+
+https://claude.ai/code/session_01L3VUA2nZbrxiPzWicuBrNH
+
+Co-authored-by: Claude <noreply@anthropic.com>
+
+
 ## v0.4.7 (2026-04-09)
 
 ### 🌴
