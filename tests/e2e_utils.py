@@ -14,7 +14,9 @@ _TMP_BASE = Path("/tmp/pmr")  # noqa: S108
 
 # Recipes PMR always creates (uv+ruff+mypy boosts always run on Python repos)
 _EXPECTED_JUST_RECIPES = {"install", "check-lock", "check-ruff", "lint", "check-mypy"}
-_JUST_RECIPES_TO_RUN = ("check-lock", "check-ruff", "check-mypy", "lint")
+# lint runs pre-commit; skipped when repo had a pre-existing config PMR doesn't manage
+_JUST_RECIPES_TO_RUN_WITH_PRECOMMIT = ("check-lock", "check-ruff", "check-mypy", "lint")
+_JUST_RECIPES_TO_RUN_WITHOUT_PRECOMMIT = ("check-lock", "check-ruff", "check-mypy")
 
 
 # ── Setup helpers ─────────────────────────────────────────────────────────────
@@ -60,11 +62,11 @@ def run_e2e_test(repo_path: Path) -> None:
     logger.info("=========================================================")
     logger.info("PMR run complete, verifying results...")
     assert_git_clean(repo_path)
+    assert_just_install_works(repo_path)
+    assert_just_commands_work(repo_path)
     assert_ruff_passes(repo_path)
     assert_mypy_passes(repo_path)
     assert_pre_commit_passes(repo_path)
-    assert_just_install_works(repo_path)
-    assert_just_commands_work(repo_path)
 
 
 # ── PMR runner ────────────────────────────────────────────────────────────────
@@ -104,7 +106,8 @@ def assert_just_install_works(repo_path: Path) -> None:
 
     Removes .venv and re-runs `just install` from scratch to verify the full
     install flow (uv sync --all-groups + pre-commit install) works correctly.
-    Asserts .venv is recreated and pre-commit hooks are installed in .git/hooks/.
+    Asserts .venv is recreated. When PMR manages pre-commit, also asserts the
+    git hook is installed in .git/hooks/.
     """
     just = _require_exe("just")
     justfile_path = repo_path / "justfile"
@@ -117,8 +120,9 @@ def assert_just_install_works(repo_path: Path) -> None:
     _run_checked([just, "install"], cwd=repo_path)
 
     assert venv_path.exists(), ".venv not created after `just install`"
-    hook_path = repo_path / ".git" / "hooks" / "pre-commit"
-    assert hook_path.exists(), "pre-commit hook not installed in .git/hooks/ after `just install`"
+    if _pmr_manages_pre_commit(repo_path):
+        hook_path = repo_path / ".git" / "hooks" / "pre-commit"
+        assert hook_path.exists(), "pre-commit hook not installed in .git/hooks/ after `just install`"
 
 
 def assert_just_commands_work(repo_path: Path) -> None:
@@ -129,11 +133,20 @@ def assert_just_commands_work(repo_path: Path) -> None:
     recipes = _get_just_recipes(justfile_path)
     missing = _EXPECTED_JUST_RECIPES - recipes
     assert not missing, f"justfile missing expected recipes: {sorted(missing)}"
-    for recipe in _JUST_RECIPES_TO_RUN:
+    recipes_to_run = (
+        _JUST_RECIPES_TO_RUN_WITH_PRECOMMIT
+        if _pmr_manages_pre_commit(repo_path)
+        else _JUST_RECIPES_TO_RUN_WITHOUT_PRECOMMIT
+    )
+    for recipe in recipes_to_run:
+        logger.info(f"Running 'just {recipe}'...")
         _run_checked([just, recipe], cwd=repo_path)
 
 
 def assert_pre_commit_passes(repo_path: Path) -> None:
+    if not _pmr_manages_pre_commit(repo_path):
+        logger.info("Pre-existing .pre-commit-config.yaml not managed by PMR — skipping pre-commit validation")
+        return
     config_path = repo_path / ".pre-commit-config.yaml"
     assert config_path.exists(), ".pre-commit-config.yaml not found after pmr"
     _run_checked([str(_venv_exe(repo_path, "pre-commit")), "run", "--all-files"], cwd=repo_path)
@@ -202,6 +215,12 @@ def _venv_exe(repo_path: Path, name: str) -> Path:
     exe = repo_path / ".venv" / "bin" / name
     assert exe.exists(), f"{name} not found in venv after pmr: {exe}"
     return exe
+
+
+def _pmr_manages_pre_commit(repo_path: Path) -> bool:
+    """Return True if the pre-commit config was created by PMR (has the PMR marker)."""
+    config_path = repo_path / ".pre-commit-config.yaml"
+    return config_path.exists() and "pimp-my-repo:pre-commit" in config_path.read_text(encoding="utf-8")
 
 
 def _get_just_recipes(justfile_path: Path) -> set[str]:

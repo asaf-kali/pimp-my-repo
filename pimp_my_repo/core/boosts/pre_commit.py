@@ -84,17 +84,17 @@ class PreCommitBoost(Boost):
         logger.debug("Adding pre-commit to dev dependencies...")
         self.uv.add_package("pre-commit", group="dev")
 
-        logger.debug("Generating pre-commit config...")
-        justfile_recipes = _get_justfile_recipes(self.repo_path)
-        config_content = _build_config(justfile_recipes=justfile_recipes)
-        self.git.write_file(_CONFIG_FILE, config_content)
-
         logger.debug("Patching justfile with pre-commit steps...")
         justfile_path = self.repo_path / "justfile"
         if justfile_path.exists():
             patched = _patch_justfile_content(justfile_path.read_text(encoding="utf-8"))
             if patched is not None:
                 self.git.write_file("justfile", patched)
+
+        logger.debug("Generating pre-commit config...")
+        justfile_recipes = _get_justfile_recipes(self.repo_path)
+        config_content = _build_config(justfile_recipes=justfile_recipes)
+        self.git.write_file(_CONFIG_FILE, config_content)
 
         logger.debug("Installing pre-commit hooks...")
         self.uv.exec("run", "pre-commit", "install")
