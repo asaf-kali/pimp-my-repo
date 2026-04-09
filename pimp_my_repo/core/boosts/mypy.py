@@ -20,25 +20,30 @@ if TYPE_CHECKING:
 _MAX_MYPY_ITERATIONS = 10
 _MYPY_PACKAGE = "mypy<1.20"  # upper-bound: mypy 1.20 hangs on large codebases; bump after validating new minor
 
-# Supports both "path:line: error:" and "path:line:column: error:" (--show-column-numbers).
+# Supports "path:line: error:", "path:line:col: error:" (--show-column-numbers), and
+# "path:line:col:endline:endcol: error:" (--show-error-end).  (?::\d+)* matches zero or
+# more additional colon-separated numeric segments so all three formats are captured with
+# the correct path and line number.
 # No $ anchor: allows trailing text after [code] that appears when pretty=true wraps
 # the output and the summary line gets joined onto the last error line.
 # Greedy .* before \[code\] ensures we match the LAST [code] in the line.
 _MYPY_ERROR_RE = re.compile(
-    r"^(?P<path>.+?):(?P<line>\d+)(?::\d+)?: error: .*\[(?P<code>[^\]]+)\]",
+    r"^(?P<path>.+?):(?P<line>\d+)(?::\d+)*: error: .*\[(?P<code>[^\]]+)\]",
 )
-# Detects lines that start a new mypy diagnostic (path:line: or path:line:col:).
+# Detects lines that start a new mypy diagnostic (path:line: or path:line:col: or
+# path:line:col:endline:endcol: when --show-error-end is set).
 # Used to distinguish error header lines from pretty=true continuation/context lines.
-_MYPY_LINE_START_RE = re.compile(r"^\S[^:]*:\d+(?::\d+)?: ")
+_MYPY_LINE_START_RE = re.compile(r"^\S[^:]*:\d+(?::\d+)*: ")
 # "note: Error code "X" not covered by "type: ignore" comment"
 _MYPY_NOTE_UNCOVERED_RE = re.compile(
-    r"^(?P<path>.+?):(?P<line>\d+)(?::\d+)?: note: Error code \"(?P<code>[^\"]+)\" not covered",
+    r"^(?P<path>.+?):(?P<line>\d+)(?::\d+)*: note: Error code \"(?P<code>[^\"]+)\" not covered",
 )
 _TYPE_IGNORE_RE = re.compile(r"# type: ignore(?:\[([^\]]*)\])?")
 # Parses which codes are unused from: Unused "type: ignore[X, Y]" comment  [unused-ignore]
 _MYPY_UNUSED_IGNORE_RE = re.compile(r'Unused "type: ignore\[(?P<codes>[^\]]+)\]" comment\s+\[unused-ignore\]')
-# Matches any "error:" line regardless of whether it has a [code] suffix
-_MYPY_ANY_ERROR_RE = re.compile(r"^(?P<path>.+?)(?::\d+(?::\d+)?)?: error: ")
+# Matches any "error:" line regardless of whether it has a [code] suffix.
+# (?:(?::\d+)+)? matches one or more colon-number segments (col, or col:endline:endcol).
+_MYPY_ANY_ERROR_RE = re.compile(r"^(?P<path>.+?)(?:(?::\d+)+)?: error: ")
 # "Source file found twice" errors must exclude the parent directory, not just the file,
 # because mypy's exclude option doesn't prevent discovery-stage errors on specific files.
 _MYPY_FOUND_TWICE_RE = re.compile(r"Source file found twice under different module names")
