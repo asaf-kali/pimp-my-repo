@@ -75,11 +75,13 @@ def execute_boosts(
     repo_path: Path,
     boost_classes: list[type[Boost]],
     on_boost_start: BoostStartCallback | None = None,
+    branch: str | None = None,
 ) -> Iterator[BoostResult]:
     """Execute all boosts and yield results as they complete."""
     logger.info(f"Running PMR [v{__version__}] boosts on repository: [{repo_path}]")
     boost_tools = BoostTools.create(repo_path=repo_path)
-    boost_tools.git.init_pmr()
+    init_kwargs = {"branch_name": branch} if branch is not None else {}
+    boost_tools.git.init_pmr(**init_kwargs)
     logger.info(f"Found {len(boost_classes)} boosts to run: {[bc.get_name() for bc in boost_classes]}")
     for bc in boost_classes:
         if on_boost_start:

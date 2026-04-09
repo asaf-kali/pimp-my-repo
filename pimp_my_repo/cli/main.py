@@ -24,6 +24,7 @@ app = typer.Typer(
 _PATH_ARG = typer.Option(".", "--path", "-p", help="Path to the repository to pimp")
 _ONLY_ARG = typer.Option([], "--only", help="Run only these boost(s) (repeatable)")
 _SKIP_ARG = typer.Option([], "--skip", help="Skip these boost(s) (repeatable)")
+_BRANCH_ARG = typer.Option(None, "--branch", "-b", help="Git branch name to create (default: feat/pmr)")
 _LIST_ARG = typer.Option(False, "--list", help="List available boosts and exit")  # noqa: FBT003
 _NO_LOG_FILE_ARG = typer.Option(False, "--no-log-file", help="Disable writing logs to file")  # noqa: FBT003
 _SHOW_NOTE_ARG = typer.Option(False, "--show-note", help="Print the post-run note and exit")  # noqa: FBT003
@@ -34,6 +35,7 @@ def run(  # noqa: PLR0913
     path: str = _PATH_ARG,
     only: list[str] = _ONLY_ARG,
     skip: list[str] = _SKIP_ARG,
+    branch: str | None = _BRANCH_ARG,
     list_boosts: bool = _LIST_ARG,  # noqa: FBT001
     no_log_file: bool = _NO_LOG_FILE_ARG,  # noqa: FBT001
     show_note: bool = _SHOW_NOTE_ARG,  # noqa: FBT001
@@ -52,12 +54,14 @@ def run(  # noqa: PLR0913
     _validate_path(repo_path, console)
 
     run_result = run_boosts(
-        repo_path=repo_path, console=console, boost_classes=boost_classes, log_to_file=not no_log_file
+        repo_path=repo_path, console=console, boost_classes=boost_classes, log_to_file=not no_log_file, branch=branch
     )
-    _print_summary(run_result.results, console)
+    had_failures = _print_summary(run_result.results, console)
     if any(r.status == BoostResultStatus.APPLIED for r in run_result.results):
         has_issues = any(r.status in (BoostResultStatus.SKIPPED, BoostResultStatus.FAILED) for r in run_result.results)
         _print_baseline_note(console, show_bug_section=has_issues)
+    if had_failures:
+        raise Exit(1)
 
 
 def _resolve_boosts(
@@ -107,18 +111,20 @@ def _validate_path(repo_path: Path, console: Console) -> None:
         raise Exit(code=1)
 
 
-def _print_summary(results: list[BoostResult], console: Console) -> None:
+def _print_summary(results: list[BoostResult], console: Console) -> bool:
+    """Print run summary. Returns True if any boosts failed."""
     applied = sum(1 for r in results if r.status == BoostResultStatus.APPLIED)
-    failed = sum(1 for r in results if r.status == BoostResultStatus.FAILED)
+    failed_results = [r for r in results if r.status == BoostResultStatus.FAILED]
     console.print()
-    if failed:
-        console.print(f"[red]✗ {failed} boost(s) failed[/red]  ", end="")
+    if failed_results:
+        console.print(f"[red]✗ {len(failed_results)} boost(s) failed[/red]  ", end="")
     if applied:
         console.print(f"[green]✓ {applied} boost(s) applied[/green]")
     else:
         console.print("[yellow]No boosts applied[/yellow]")
-    if failed:
-        raise Exit(1)
+    for r in failed_results:
+        console.print(f"  [red]✗ {r.name}:[/red] {r.message}")
+    return bool(failed_results)
 
 
 def _print_baseline_note(console: Console, show_bug_section: bool = False) -> None:  # noqa: FBT001, FBT002
