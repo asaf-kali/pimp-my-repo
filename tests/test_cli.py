@@ -173,3 +173,39 @@ def test_show_note_flag_prints_note_and_exits_0() -> None:
     assert result.exit_code == 0
     assert "Note for LLMs and Humans" in result.output
     assert "Found a bug?" in result.output
+
+
+def test_print_summary_failed_boost_shows_error_message(
+    patched_run_boosts_with_failure: RepositoryController,
+) -> None:
+    """Failed boost error message is shown in summary, not just in logs."""
+    result = _cli_runner.invoke(app, ["--path", str(patched_run_boosts_with_failure.path)])
+    assert result.exit_code == 1
+    assert "ruff" in result.output
+    assert "error" in result.output
+
+
+def test_branch_flag_passed_to_run_boosts(mock_repo: RepositoryController) -> None:
+    """--branch value is forwarded to run_boosts."""
+    run_result = BoostRunResult(
+        results=[BoostResult(name="gitignore", status=BoostResultStatus.SKIPPED, message="ok")],
+        log_path=None,
+    )
+    with patch("pimp_my_repo.cli.main.run_boosts", return_value=run_result) as mock_rb:
+        _cli_runner.invoke(app, ["--path", str(mock_repo.path), "--branch", "my-branch"])
+    mock_rb.assert_called_once()
+    _, kwargs = mock_rb.call_args
+    assert kwargs["branch"] == "my-branch"
+
+
+def test_branch_flag_defaults_to_none(mock_repo: RepositoryController) -> None:
+    """Without --branch, run_boosts receives branch=None (uses repo default)."""
+    run_result = BoostRunResult(
+        results=[BoostResult(name="gitignore", status=BoostResultStatus.SKIPPED, message="ok")],
+        log_path=None,
+    )
+    with patch("pimp_my_repo.cli.main.run_boosts", return_value=run_result) as mock_rb:
+        _cli_runner.invoke(app, ["--path", str(mock_repo.path)])
+    mock_rb.assert_called_once()
+    _, kwargs = mock_rb.call_args
+    assert kwargs["branch"] is None

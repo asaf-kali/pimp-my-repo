@@ -31,6 +31,7 @@ def run_boosts(
     console: Console | None = None,
     boost_classes: list[type[Boost]] | None = None,
     log_to_file: bool = True,  # noqa: FBT001, FBT002
+    branch: str | None = None,
 ) -> BoostRunResult:
     """Run boosts on a repository and return results and the log file path (if any)."""
     if console is None:
@@ -42,6 +43,7 @@ def run_boosts(
         boost_classes=boost_classes,
         console=console,
         log_to_file=log_to_file,
+        branch=branch,
     )
 
 
@@ -50,6 +52,7 @@ def _run_boosts_with_dashboard(
     boost_classes: list[type[Boost]],
     console: Console,
     log_to_file: bool,  # noqa: FBT001
+    branch: str | None = None,
 ) -> BoostRunResult:
     boost_names = [bc.get_name() for bc in boost_classes]
     dashboard = LiveDashboard(boost_names)
@@ -75,6 +78,7 @@ def _run_boosts_with_dashboard(
             repo_path=repo_path,
             boost_classes=boost_classes,
             on_boost_start=dashboard.set_running,
+            branch=branch,
         ):
             dashboard.set_result(result)
             results.append(result)

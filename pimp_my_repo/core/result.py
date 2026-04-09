@@ -1,7 +1,6 @@
-from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class BoostResultStatus(StrEnum):
@@ -14,10 +13,3 @@ class BoostResult(BaseModel):
     name: str
     status: BoostResultStatus
     message: str
-
-
-class RunResult(BaseModel):
-    repo_path: str
-    branch_name: str
-    started_at: datetime = Field(default_factory=datetime.now)
-    boosts: list[BoostResult] = Field(default_factory=list)

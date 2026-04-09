@@ -21,7 +21,7 @@ def _git_revert_context(repo_controller: RepositoryController) -> Generator[str]
     sha_before = repo_controller.get_current_commit_sha()
     try:
         yield sha_before
-    except:
+    except BaseException:
         logger.debug(f"Reverting git changes to {sha_before}")
         repo_controller.reset_hard(sha_before)
         raise
@@ -75,11 +75,13 @@ def execute_boosts(
     repo_path: Path,
     boost_classes: list[type[Boost]],
     on_boost_start: BoostStartCallback | None = None,
+    branch: str | None = None,
 ) -> Iterator[BoostResult]:
     """Execute all boosts and yield results as they complete."""
     logger.info(f"Running PMR [v{__version__}] boosts on repository: [{repo_path}]")
     boost_tools = BoostTools.create(repo_path=repo_path)
-    boost_tools.git.init_pmr()
+    init_kwargs = {"branch_name": branch} if branch is not None else {}
+    boost_tools.git.init_pmr(**init_kwargs)
     logger.info(f"Found {len(boost_classes)} boosts to run: {[bc.get_name() for bc in boost_classes]}")
     for bc in boost_classes:
         if on_boost_start:
