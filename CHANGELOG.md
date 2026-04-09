@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.4.9 (2026-04-09)
+
+### 🐛
+
+- 🐛 Fix three e2e regressions: uv flat-layout, mypy plugin imports, type annotation ordering
+  ([#51](https://github.com/asaf-kali/pimp-my-repo/pull/51),
+  [`b1bda03`](https://github.com/asaf-kali/pimp-my-repo/commit/b1bda03741876998f4226493c5e8fba994ef0408))
+
+- uv boost: detect "Multiple top-level packages" error on `uv sync`, set `[tool.uv] package = false`
+  and retry (Django flat-layout repos) - mypy boost: detect "Error importing plugin" errors, remove
+  the missing plugin from `[tool.mypy] plugins` in pyproject.toml and retry - mypy boost: place `#
+  type: ignore` AFTER legacy PEP 484 `# type: <annotation>` comments to avoid oscillation
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+
 ## v0.4.8 (2026-04-09)
 
 ### 🖼️
