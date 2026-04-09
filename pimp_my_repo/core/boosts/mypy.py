@@ -39,6 +39,9 @@ _MYPY_NOTE_UNCOVERED_RE = re.compile(
     r"^(?P<path>.+?):(?P<line>\d+)(?::\d+)*: note: Error code \"(?P<code>[^\"]+)\" not covered",
 )
 _TYPE_IGNORE_RE = re.compile(r"# type: ignore(?:\[([^\]]*)\])?")
+# Matches a # type: <annotation> comment (not a # type: ignore directive).
+# When present, # type: ignore must be placed AFTER it so mypy reads the annotation first.
+_TYPE_ANNOTATION_COMMENT_RE = re.compile(r"^# type: (?!ignore\b)")
 # Parses which codes are unused from: Unused "type: ignore[X, Y]" comment  [unused-ignore]
 _MYPY_UNUSED_IGNORE_RE = re.compile(r'Unused "type: ignore\[(?P<codes>[^\]]+)\]" comment\s+\[unused-ignore\]')
 # Matches any "error:" line regardless of whether it has a [code] suffix.
@@ -50,6 +53,9 @@ _MYPY_FOUND_TWICE_RE = re.compile(r"Source file found twice under different modu
 # Directories with hyphens (e.g. "fonts-standard") are invalid Python package names.
 # Mypy outputs these as fatal errors with no file/line context.
 _MYPY_INVALID_PKG_NAME_RE = re.compile(r"^(.+) is not a valid Python package name$", re.MULTILINE)
+# Detects "Error importing plugin "X.Y.Z": No module named 'X'" errors — plugin not installed.
+# These appear on pyproject.toml (not a Python file) so they can't be suppressed with # type: ignore.
+_MYPY_PLUGIN_IMPORT_ERROR_RE = re.compile(r'^.+?:\d+(?::\d+)*: error: Error importing plugin "([^"]+)"')
 
 
 def _normalize_mypy_output(output: str) -> str:
@@ -115,16 +121,21 @@ def _apply_coded_error_line(
         violations.setdefault(key, set()).add(f"!{uc.strip()}")
 
 
-def _apply_diagnostic_line(
+def _apply_diagnostic_line(  # noqa: PLR0913
     line: str,
     violations: ViolationsByLocation,
     syntax_files: set[str],
     uncoded_error_files: set[str],
+    missing_plugins: set[str],
     unhandled_lines: list[str],
 ) -> None:
     """Classify one normalized diagnostic line (already confirmed to have path:line: prefix)."""
     if ": note: " in line:
         _apply_note_line(line, violations)
+        return
+    plugin_match = _MYPY_PLUGIN_IMPORT_ERROR_RE.match(line)
+    if plugin_match:
+        missing_plugins.add(plugin_match.group(1))
         return
     match = _MYPY_ERROR_RE.match(line)
     if match:
@@ -153,6 +164,7 @@ def _parse_mypy_output(*, output: str) -> ParsedMypyOutput:
     uncoded_error_files: set[str] = set()
     found_twice_dirs: set[str] = set()
     invalid_pkg_names: set[str] = set()
+    missing_plugins: set[str] = set()
     unhandled_lines: list[str] = []
     has_blocking_error = False
 
@@ -167,7 +179,9 @@ def _parse_mypy_output(*, output: str) -> ParsedMypyOutput:
 
         # Category 1: Diagnostic line with line number (path:line: ...)
         if _MYPY_LINE_START_RE.match(line):
-            _apply_diagnostic_line(line, violations, syntax_files, uncoded_error_files, unhandled_lines)
+            _apply_diagnostic_line(
+                line, violations, syntax_files, uncoded_error_files, missing_plugins, unhandled_lines
+            )
             continue
 
         # Category 2: Error line without line number (path: error: ...)
@@ -193,6 +207,7 @@ def _parse_mypy_output(*, output: str) -> ParsedMypyOutput:
         f"Parsed mypy output: {len(violations)} violations, "
         f"{len(syntax_files)} syntax files, {len(uncoded_error_files)} uncoded error files, "
         f"{len(found_twice_dirs)} found-twice dirs, {len(invalid_pkg_names)} invalid pkg names, "
+        f"{len(missing_plugins)} missing plugins, "
         f"blocking={has_blocking_error}, {len(unhandled_lines)} unhandled lines"
     )
     if unhandled_lines:
@@ -204,6 +219,7 @@ def _parse_mypy_output(*, output: str) -> ParsedMypyOutput:
         uncoded_error_files=uncoded_error_files,
         found_twice_dirs=found_twice_dirs,
         invalid_pkg_names=invalid_pkg_names,
+        missing_plugins=missing_plugins,
         has_blocking_error=has_blocking_error,
         unhandled_lines=unhandled_lines,
     )
@@ -231,6 +247,7 @@ class ParsedMypyOutput(NamedTuple):
     uncoded_error_files: set[str]  # error lines without [code], only excluded if blocking
     found_twice_dirs: set[str]  # parent dirs for "source file found twice" errors
     invalid_pkg_names: set[str]  # names from "X is not a valid Python package name"
+    missing_plugins: set[str]  # plugin names from "Error importing plugin X" — not installed
     has_blocking_error: bool  # "errors prevented further checking" in output
     unhandled_lines: list[str]  # diagnostic lines not matched by any known pattern
 
@@ -336,6 +353,7 @@ class BaseMypyBoost(Boost, abc.ABC):
         output = _normalize_mypy_output(raw_output)
         parsed = _parse_mypy_output(output=output)
 
+        newly_removed_plugins = self._remove_missing_plugins(parsed.missing_plugins)
         newly_excluded_syntax = self._apply_syntax_exclusions(parsed.syntax_files)
         newly_excluded_uncoded = self._apply_uncoded_exclusions(
             uncoded_error_files=parsed.uncoded_error_files,
@@ -347,6 +365,7 @@ class BaseMypyBoost(Boost, abc.ABC):
 
         if (
             not violations
+            and not newly_removed_plugins
             and not newly_excluded_syntax
             and not newly_excluded_uncoded
             and not newly_excluded_invalid_pkg
@@ -358,7 +377,9 @@ class BaseMypyBoost(Boost, abc.ABC):
             logger.warning("No further progress possible; stable state reached, stopping")
             return False
 
-        made_progress = newly_excluded_syntax or newly_excluded_uncoded or newly_excluded_invalid_pkg
+        made_progress = (
+            newly_removed_plugins or newly_excluded_syntax or newly_excluded_uncoded or newly_excluded_invalid_pkg
+        )
         if violations:
             logger.info(f"Found {len(violations)} violations, applying type: ignore comments...")
             files_changed = self._apply_type_ignores(violations)
@@ -447,6 +468,41 @@ class BaseMypyBoost(Boost, abc.ABC):
                 logger.info(f"Renamed invalid package directory: '{found.name}' -> '{new_name}'")
                 renamed = True
         return renamed
+
+    def _remove_missing_plugins(self, plugin_names: set[str]) -> bool:
+        """Remove plugins from [tool.mypy] plugins that failed to import (not installed).
+
+        Plugins listed in pyproject.toml but missing from the lint environment can't be
+        suppressed with # type: ignore (the error appears on pyproject.toml, not a .py file).
+        Removing them lets mypy run in strict mode without the plugin-specific checks.
+
+        Returns True if any plugin was removed.
+        """
+        if not plugin_names:
+            return False
+        data = self.pyproject.read()
+        tool_section: Any = data.get("tool")
+        if not isinstance(tool_section, dict):
+            return False
+        mypy_section: Any = tool_section.get("mypy")
+        if not isinstance(mypy_section, dict):
+            return False
+        existing_plugins: list[str] = list(mypy_section.get("plugins", []))
+        new_plugins = [p for p in existing_plugins if p not in plugin_names]
+        if len(new_plugins) == len(existing_plugins):
+            return False
+        removed = set(existing_plugins) - set(new_plugins)
+        logger.info(f"Removing uninstallable mypy plugins: {sorted(removed)}")
+        if new_plugins:
+            plugins_array = array()
+            plugins_array.multiline(True)  # noqa: FBT003
+            for p in new_plugins:
+                plugins_array.append(p)
+            mypy_section["plugins"] = plugins_array
+        else:
+            del mypy_section["plugins"]
+        self.pyproject.write(data)
+        return True
 
     def _apply_uncoded_exclusions(
         self,
@@ -705,9 +761,14 @@ def _remove_type_ignore_codes(*, raw_line: str, codes: set[str]) -> str:
 def _merge_type_ignore(*, raw_line: str, codes: ErrorCodes) -> str:
     """Add or merge type: ignore[codes] into a source line.
 
-    Mypy only recognizes type: ignore when it is the FIRST comment on a line
-    (before any other # comment). Place it before noqa and any other trailing
-    comments, merging all existing type: ignore comments into one.
+    Normally type: ignore is placed FIRST (before noqa and other trailing comments),
+    merging all existing type: ignore comments into one.
+
+    Exception: when a ``# type: <annotation>`` comment is present (a legacy PEP 484
+    type comment), mypy only reads the FIRST ``# type:`` directive on the line.
+    Placing ``# type: ignore`` before the annotation would hide the annotation.
+    In this case ``# type: ignore`` is appended AFTER the annotation so that mypy
+    reads the annotation first and then suppresses the error.
     """
     line = raw_line.rstrip("\n").rstrip("\r")
     eol = raw_line[len(line) :]
@@ -749,7 +810,12 @@ def _merge_type_ignore(*, raw_line: str, codes: ErrorCodes) -> str:
     if remaining.startswith(",") or remaining.endswith(","):
         remaining = remaining.strip(",").strip()
 
-    # Reconstruct with type: ignore FIRST, then remaining comments (noqa etc.) after.
+    # Legacy PEP 484 type annotation comment: mypy reads only the first "# type:" directive
+    # on a line, so the ignore directive must be appended after the annotation, not before.
+    if remaining and _TYPE_ANNOTATION_COMMENT_RE.match(remaining):
+        return f"{code}  {remaining}  {new_type_ignore}{eol}"
+
+    # Default: type: ignore FIRST, then remaining comments (noqa etc.) after.
     if remaining and remaining != "#":
         return f"{code}  {new_type_ignore}  {remaining}{eol}"
     return f"{code}  {new_type_ignore}{eol}"

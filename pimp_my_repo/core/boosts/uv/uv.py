@@ -26,6 +26,8 @@ _MIN_PYTHON_MINOR: int = 8
 # Build backends that require native compilation (C/C++/Rust etc.).
 # Projects using these cannot be built by uv without external toolchains,
 # so we set package = false to skip the local-build step.
+_MULTI_TOP_LEVEL_PACKAGES_MSG = "Multiple top-level packages discovered in a flat-layout"
+
 _NATIVE_BUILD_BACKEND_PREFIXES: tuple[str, ...] = (
     "mesonpy",
     "scikit_build_core",
@@ -614,8 +616,22 @@ class UvBoost(Boost):
         logger.debug("Running uv lock...")
         self.uv.exec("lock")
         logger.debug("Running uv sync --all-groups...")
-        self.uv.exec("sync", "--all-groups")
+        try:
+            self.uv.exec("sync", "--all-groups")
+        except subprocess.CalledProcessError as e:
+            if _MULTI_TOP_LEVEL_PACKAGES_MSG not in (e.stderr or ""):
+                raise
+            logger.info("Multiple top-level packages detected; setting [tool.uv] package = false and retrying")
+            self._set_uv_package_false()
+            self.uv.exec("sync", "--all-groups")
         logger.debug("uv lock and sync completed successfully")
+
+    def _set_uv_package_false(self) -> None:
+        pyproject_data = self.pyproject.read()
+        tool: Any = pyproject_data.setdefault("tool", {})
+        uv_section: Any = tool.setdefault("uv", {})
+        uv_section["package"] = False
+        self.pyproject.write(pyproject_data)
 
 
 def _parse_cfg_extras(config: configparser.ConfigParser) -> dict[str, list[str]]:

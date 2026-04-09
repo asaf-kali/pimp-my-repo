@@ -320,6 +320,144 @@ def test_parse_output_uncoded_goes_to_uncoded_files_coded_goes_to_violations() -
 
 
 # =============================================================================
+# PARSE MYPY OUTPUT — missing plugins
+# =============================================================================
+
+
+_DJANGO_PLUGIN_ERROR = (
+    "pyproject.toml:1: error: Error importing plugin"
+    " \"mypy_django_plugin.main\": No module named 'mypy_django_plugin'  [misc]\n"
+)
+_DRF_PLUGIN_ERROR = (
+    "pyproject.toml:1: error: Error importing plugin"
+    " \"mypy_drf_plugin.main\": No module named 'mypy_drf_plugin'  [misc]\n"
+)
+
+
+def test_parse_output_plugin_import_error_goes_to_missing_plugins() -> None:
+    result = _parse_mypy_output(output=_DJANGO_PLUGIN_ERROR)
+    assert result.missing_plugins == {"mypy_django_plugin.main"}
+    assert result.violations == {}
+    assert result.unhandled_lines == []
+
+
+def test_parse_output_plugin_import_error_not_in_violations() -> None:
+    """Plugin import errors must not appear in violations (can't be suppressed with # type: ignore)."""
+    output = "pyproject.toml:1: error: Error importing plugin \"pydantic.mypy\": No module named 'pydantic'  [misc]\n"
+    result = _parse_mypy_output(output=output)
+    assert _vl("pyproject.toml", 1) not in result.violations
+
+
+def test_parse_output_plugin_import_error_with_column() -> None:
+    output = (
+        "pyproject.toml:1:1: error: Error importing plugin"
+        " \"sqlalchemy.ext.mypy.plugin\": No module named 'sqlalchemy'  [misc]\n"
+    )
+    result = _parse_mypy_output(output=output)
+    assert result.missing_plugins == {"sqlalchemy.ext.mypy.plugin"}
+
+
+def test_parse_output_multiple_plugin_import_errors() -> None:
+    output = _DJANGO_PLUGIN_ERROR + _DRF_PLUGIN_ERROR
+    result = _parse_mypy_output(output=output)
+    assert result.missing_plugins == {"mypy_django_plugin.main", "mypy_drf_plugin.main"}
+    assert result.violations == {}
+
+
+def test_parse_output_plugin_error_mixed_with_regular_violations() -> None:
+    """Plugin errors go to missing_plugins; regular errors still go to violations."""
+    output = _DJANGO_PLUGIN_ERROR + "src/foo.py:10: error: Incompatible type  [arg-type]\n"
+    result = _parse_mypy_output(output=output)
+    assert result.missing_plugins == {"mypy_django_plugin.main"}
+    assert _vl("src/foo.py", 10) in result.violations
+
+
+# =============================================================================
+# REMOVE MISSING PLUGINS
+# =============================================================================
+
+
+def test_remove_missing_plugins_removes_from_pyproject(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
+    mock_repo.write_file(
+        "pyproject.toml",
+        '[tool.mypy]\nstrict = true\nplugins = ["mypy_django_plugin.main", "mypy_drf_plugin.main"]\n',
+    )
+    result = mypy_boost._remove_missing_plugins({"mypy_django_plugin.main"})  # noqa: SLF001
+    assert result is True
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert "mypy_django_plugin.main" not in content
+    assert "mypy_drf_plugin.main" in content
+
+
+def test_remove_missing_plugins_removes_all_when_all_fail(
+    mock_repo: RepositoryController, mypy_boost: MypyBoost
+) -> None:
+    mock_repo.write_file(
+        "pyproject.toml",
+        '[tool.mypy]\nstrict = true\nplugins = ["mypy_django_plugin.main"]\n',
+    )
+    result = mypy_boost._remove_missing_plugins({"mypy_django_plugin.main"})  # noqa: SLF001
+    assert result is True
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert "plugins" not in content
+
+
+def test_remove_missing_plugins_returns_false_when_not_in_config(
+    mock_repo: RepositoryController, mypy_boost: MypyBoost
+) -> None:
+    mock_repo.write_file("pyproject.toml", "[tool.mypy]\nstrict = true\n")
+    result = mypy_boost._remove_missing_plugins({"mypy_django_plugin.main"})  # noqa: SLF001
+    assert result is False
+
+
+def test_remove_missing_plugins_returns_false_when_set_is_empty(
+    mock_repo: RepositoryController, mypy_boost: MypyBoost
+) -> None:
+    mock_repo.write_file(
+        "pyproject.toml",
+        '[tool.mypy]\nstrict = true\nplugins = ["mypy_django_plugin.main"]\n',
+    )
+    result = mypy_boost._remove_missing_plugins(set())  # noqa: SLF001
+    assert result is False
+
+
+def test_apply_removes_plugin_and_retries_mypy(
+    mock_repo: RepositoryController,
+    patched_mypy_apply: PatchedMypyApply,
+    fail_result: SubprocessResultFactory,
+    ok_result: SubprocessResultFactory,
+) -> None:
+    """When a plugin fails to import, it is removed and mypy is retried."""
+    mock_repo.write_file(
+        "pyproject.toml",
+        "[project]\nname = 'test'\nversion = '0.1.0'\n"
+        '[tool.mypy]\nstrict = true\nplugins = ["mypy_django_plugin.main"]\n',
+    )
+    patched_mypy_apply.mock_mypy.side_effect = [fail_result(_DJANGO_PLUGIN_ERROR), ok_result()]
+    patched_mypy_apply.boost.apply()
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert "mypy_django_plugin.main" not in content
+    assert patched_mypy_apply.mock_mypy.call_count == 2  # noqa: PLR2004
+
+
+def test_apply_stops_after_plugin_removal_makes_no_further_progress(
+    mock_repo: RepositoryController,
+    patched_mypy_apply: PatchedMypyApply,
+    fail_result: SubprocessResultFactory,
+) -> None:
+    """After plugin removal, if the same error recurs (can't be removed twice), stop gracefully."""
+    mock_repo.write_file(
+        "pyproject.toml",
+        "[project]\nname = 'test'\nversion = '0.1.0'\n[tool.mypy]\nstrict = true\n",
+    )
+    # No plugins in config, so removal finds nothing to remove.
+    patched_mypy_apply.mock_mypy.return_value = fail_result(_DJANGO_PLUGIN_ERROR)
+    patched_mypy_apply.boost.apply()
+    # Iteration 1: nothing to remove (plugin not in config) → no progress → stops.
+    patched_mypy_apply.mock_mypy.assert_called_once()
+
+
+# =============================================================================
 # PARSE MYPY OUTPUT — syntax files stripped from violations
 # =============================================================================
 
@@ -425,6 +563,23 @@ def test_type_ignore_placed_before_noqa(mock_repo: RepositoryController, mypy_bo
     type_ignore_pos = content.index("# type: ignore")
     noqa_pos = content.index("# noqa")
     assert type_ignore_pos < noqa_pos
+
+
+def test_type_ignore_placed_after_type_annotation_comment(
+    mock_repo: RepositoryController, mypy_boost: MypyBoost
+) -> None:
+    """# type: ignore must come AFTER a # type: <annotation> comment.
+
+    Mypy only reads the first # type: directive on a line. Placing # type: ignore
+    before a type annotation comment hides the annotation, causing mypy to report
+    different errors on the next run and creating an oscillation loop.
+    """
+    mock_repo.write_file("src/foo.py", "x = {}  # type: dict[int, dict]\n")
+    mypy_boost._apply_type_ignores({_vl("src/foo.py", 1): {"type-arg"}})  # noqa: SLF001
+    content = (mock_repo.path / "src/foo.py").read_text()
+    annotation_pos = content.index("# type: dict")
+    ignore_pos = content.index("# type: ignore")
+    assert annotation_pos < ignore_pos, "annotation must precede # type: ignore"
 
 
 def test_bare_type_ignore_kept_as_is(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
