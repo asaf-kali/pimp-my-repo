@@ -7,6 +7,8 @@ RUN := "uv run"
 
 # Install
 
+install: install-dev lint cover-base
+
 install-run:
     uv sync --no-default-groups
 
@@ -18,8 +20,6 @@ install-all:
 
 install-dev: install-all
     {{ RUN }} pre-commit install
-
-install: install-dev lint cover-base
 
 # Dependencies
 

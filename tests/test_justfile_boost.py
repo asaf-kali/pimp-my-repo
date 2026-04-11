@@ -185,7 +185,18 @@ def test_creates_check_lock_recipe_when_uv_lock_present(
     assert "uv lock --check" in content
 
 
-def test_includes_precommit_in_lint_when_config_present(
+def test_includes_precommit_in_lint_when_pmr_manages_config(
+    mock_repo: RepositoryController,
+    patched_justfile_apply: PatchedJustfileApply,
+) -> None:
+    mock_repo.write_file("pyproject.toml", "[tool.ruff]\n")
+    mock_repo.write_file(".pre-commit-config.yaml", "# pimp-my-repo:pre-commit\nrepos: []\n")
+    patched_justfile_apply.boost.apply()
+    content = (mock_repo.path / "justfile").read_text()
+    assert "pre-commit run --all-files" in content
+
+
+def test_excludes_precommit_from_lint_when_preexisting_config(
     mock_repo: RepositoryController,
     patched_justfile_apply: PatchedJustfileApply,
 ) -> None:
@@ -193,7 +204,7 @@ def test_includes_precommit_in_lint_when_config_present(
     mock_repo.write_file(".pre-commit-config.yaml", "repos: []\n")
     patched_justfile_apply.boost.apply()
     content = (mock_repo.path / "justfile").read_text()
-    assert "pre-commit run --all-files" in content
+    assert "pre-commit run --all-files" not in content
 
 
 def test_excludes_precommit_from_lint_when_no_config(
@@ -203,7 +214,7 @@ def test_excludes_precommit_from_lint_when_no_config(
     mock_repo.write_file("pyproject.toml", "[tool.ruff]\n")
     patched_justfile_apply.boost.apply()
     content = (mock_repo.path / "justfile").read_text()
-    assert "pre-commit" not in content
+    assert "pre-commit run --all-files" not in content
 
 
 def test_skips_when_no_pyproject_and_no_tools(
@@ -238,7 +249,9 @@ def test_skips_when_all_recipes_already_present(
 ) -> None:
     mock_repo.write_file("pyproject.toml", "[tool.ruff]\n")
     existing = (
-        "install:\n    uv sync\n\n"
+        "install: install-dev lint\n\n"
+        "install-all:\n    uv sync --all-groups\n\n"
+        "install-dev: install-all\n\n"
         "format:\n    uv run ruff format\n\n"
         "lint: format\n    uv run ruff check\n\n"
         "check-ruff:\n    uv run ruff check\n"

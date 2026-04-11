@@ -172,7 +172,7 @@ def test_raises_skip_when_no_pyproject(mypy_boost_uv_ok: MypyBoost) -> None:
 
 def _parse(output: str) -> dict:  # type: ignore[type-arg]
     """Run _parse_mypy_output and return violations."""
-    return _parse_mypy_output(output=output).violations
+    return _parse_mypy_output(raw_output=output).violations
 
 
 @pytest.mark.smoke
@@ -230,7 +230,7 @@ def test_parses_note_uncovered_code_with_show_error_end() -> None:
 
 def test_parses_uncoded_error_with_show_error_end() -> None:
     output = "src/foo.py:10:5:10:18: error: Cannot import module\n"
-    result = _parse_mypy_output(output=output)
+    result = _parse_mypy_output(raw_output=output)
     assert result.uncoded_error_files == {"src/foo.py"}
     assert result.violations == {}
 
@@ -281,29 +281,29 @@ def test_success_output() -> None:
 
 def test_parse_output_uncoded_error_goes_to_uncoded_files() -> None:
     output = "src/foo.py:1: error: Cannot import module\n"
-    result = _parse_mypy_output(output=output)
+    result = _parse_mypy_output(raw_output=output)
     assert result.uncoded_error_files == {"src/foo.py"}
     assert result.unhandled_lines == []
 
 
 def test_parse_output_unhandled_ignores_coded_errors() -> None:
     output = "src/foo.py:1: error: Bad type  [assignment]\n"
-    assert _parse_mypy_output(output=output).unhandled_lines == []
+    assert _parse_mypy_output(raw_output=output).unhandled_lines == []
 
 
 def test_parse_output_unhandled_ignores_note_lines() -> None:
     output = "src/foo.py:1: note: See https://mypy.rtfd.io\n"
-    assert _parse_mypy_output(output=output).unhandled_lines == []
+    assert _parse_mypy_output(raw_output=output).unhandled_lines == []
 
 
 def test_parse_output_unhandled_ignores_found_twice() -> None:
     output = 'src/a.py: error: Source file found twice under different module names: "a" and "b"\n'
-    assert _parse_mypy_output(output=output).unhandled_lines == []
+    assert _parse_mypy_output(raw_output=output).unhandled_lines == []
 
 
 def test_parse_output_unhandled_ignores_summary_lines() -> None:
     output = "Found 1 error in 1 file (checked 5 source files)\n"
-    assert _parse_mypy_output(output=output).unhandled_lines == []
+    assert _parse_mypy_output(raw_output=output).unhandled_lines == []
 
 
 def test_parse_output_uncoded_goes_to_uncoded_files_coded_goes_to_violations() -> None:
@@ -313,7 +313,7 @@ def test_parse_output_uncoded_goes_to_uncoded_files_coded_goes_to_violations() -
         "src/foo.py:1: note: See docs\n"
         "Found 2 errors\n"
     )
-    result = _parse_mypy_output(output=output)
+    result = _parse_mypy_output(raw_output=output)
     assert _vl("src/foo.py", 1) in result.violations
     assert result.uncoded_error_files == {"src/bar.py"}
     assert result.unhandled_lines == []
@@ -335,7 +335,7 @@ _DRF_PLUGIN_ERROR = (
 
 
 def test_parse_output_plugin_import_error_goes_to_missing_plugins() -> None:
-    result = _parse_mypy_output(output=_DJANGO_PLUGIN_ERROR)
+    result = _parse_mypy_output(raw_output=_DJANGO_PLUGIN_ERROR)
     assert result.missing_plugins == {"mypy_django_plugin.main"}
     assert result.violations == {}
     assert result.unhandled_lines == []
@@ -344,7 +344,7 @@ def test_parse_output_plugin_import_error_goes_to_missing_plugins() -> None:
 def test_parse_output_plugin_import_error_not_in_violations() -> None:
     """Plugin import errors must not appear in violations (can't be suppressed with # type: ignore)."""
     output = "pyproject.toml:1: error: Error importing plugin \"pydantic.mypy\": No module named 'pydantic'  [misc]\n"
-    result = _parse_mypy_output(output=output)
+    result = _parse_mypy_output(raw_output=output)
     assert _vl("pyproject.toml", 1) not in result.violations
 
 
@@ -353,13 +353,13 @@ def test_parse_output_plugin_import_error_with_column() -> None:
         "pyproject.toml:1:1: error: Error importing plugin"
         " \"sqlalchemy.ext.mypy.plugin\": No module named 'sqlalchemy'  [misc]\n"
     )
-    result = _parse_mypy_output(output=output)
+    result = _parse_mypy_output(raw_output=output)
     assert result.missing_plugins == {"sqlalchemy.ext.mypy.plugin"}
 
 
 def test_parse_output_multiple_plugin_import_errors() -> None:
     output = _DJANGO_PLUGIN_ERROR + _DRF_PLUGIN_ERROR
-    result = _parse_mypy_output(output=output)
+    result = _parse_mypy_output(raw_output=output)
     assert result.missing_plugins == {"mypy_django_plugin.main", "mypy_drf_plugin.main"}
     assert result.violations == {}
 
@@ -367,7 +367,51 @@ def test_parse_output_multiple_plugin_import_errors() -> None:
 def test_parse_output_plugin_error_mixed_with_regular_violations() -> None:
     """Plugin errors go to missing_plugins; regular errors still go to violations."""
     output = _DJANGO_PLUGIN_ERROR + "src/foo.py:10: error: Incompatible type  [arg-type]\n"
-    result = _parse_mypy_output(output=output)
+    result = _parse_mypy_output(raw_output=output)
+    assert result.missing_plugins == {"mypy_django_plugin.main"}
+    assert _vl("src/foo.py", 10) in result.violations
+
+
+# =============================================================================
+# PLUGIN CONSTRUCTOR CRASH (Error constructing plugin instance of X)
+# =============================================================================
+
+_DJANGO_PLUGIN_CRASH_TRACEBACK = """\
+Error constructing plugin instance of NewSemanalDjangoPlugin
+
+Traceback (most recent call last):
+  File "/bla/.venv/bin/mypy", line 10, in <module>
+    sys.exit(console_entry())
+  File "/bla/.venv/lib/python3.11/site-packages/mypy/__main__.py", line 15, in console_entry
+    main()
+  File "/bla/.venv/lib/python3.11/site-packages/mypy_django_plugin/main.py", line 71, in __init__
+    self.django_context = DjangoContext(self.plugin_config.django_settings_module)
+  File "/bla/.venv/lib/python3.11/site-packages/mypy_django_plugin/django/context.py", line 68, in initialize_django
+    settings._setup()
+django.core.exceptions.ImproperlyConfigured: SECRET_KEY is not set.
+"""
+
+
+def test_parse_output_plugin_crash_goes_to_missing_plugins() -> None:
+    """Plugin constructor crash → plugin module extracted from __init__ frame → missing_plugins."""
+    result = _parse_mypy_output(raw_output=_DJANGO_PLUGIN_CRASH_TRACEBACK)
+    assert result.missing_plugins == {"mypy_django_plugin.main"}
+    assert result.violations == {}
+
+
+def test_parse_output_plugin_crash_no_false_positive_without_marker() -> None:
+    """Traceback without 'Error constructing plugin instance' does not add to missing_plugins."""
+    traceback_without_marker = _DJANGO_PLUGIN_CRASH_TRACEBACK.replace(
+        "Error constructing plugin instance of NewSemanalDjangoPlugin\n", ""
+    )
+    result = _parse_mypy_output(raw_output=traceback_without_marker)
+    assert result.missing_plugins == set()
+
+
+def test_parse_output_plugin_crash_mixed_with_regular_violations() -> None:
+    """Plugin crash and regular violations can appear in the same output."""
+    output = _DJANGO_PLUGIN_CRASH_TRACEBACK + "src/foo.py:10: error: Incompatible type  [arg-type]\n"
+    result = _parse_mypy_output(raw_output=output)
     assert result.missing_plugins == {"mypy_django_plugin.main"}
     assert _vl("src/foo.py", 10) in result.violations
 
@@ -469,7 +513,7 @@ def test_parse_output_syntax_file_keeps_all_violations() -> None:
         "src/bad.py:10: error: Some other error  [misc]\n"
         "src/good.py:1: error: Bad type  [assignment]\n"
     )
-    result = _parse_mypy_output(output=output)
+    result = _parse_mypy_output(raw_output=output)
     assert "src/bad.py" in result.syntax_files
     # syntax violation itself is also in violations for inline suppression
     assert _vl("src/bad.py", 5) in result.violations
@@ -702,6 +746,7 @@ def test_adds_mypy_section_when_missing(mock_repo: RepositoryController, mypy_bo
     content = (mock_repo.path / "pyproject.toml").read_text()
     assert "[tool.mypy]" in content
     assert "strict = true" in content
+    assert "pretty" not in content
 
 
 def test_adds_tool_section_when_fully_absent(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
@@ -730,6 +775,7 @@ def test_sets_strict_true_on_existing_mypy_section(mock_repo: RepositoryControll
     mypy_boost.tools.pyproject.write(data)
     content = (mock_repo.path / "pyproject.toml").read_text()
     assert "strict = true" in content
+    assert "pretty" not in content
 
 
 # =============================================================================
@@ -766,7 +812,7 @@ def test_mypy_clears_cache_before_and_after_run(mypy_boost: MypyBoost, ok_result
         mypy_boost._run_type_checker()  # noqa: SLF001
 
     assert call_order == ["clear", "mypy", "clear"], "cache must be cleared before and after mypy"
-    mock_exec.assert_called_once_with("run", "--no-sync", "mypy", ".", check=False, log_on_error=False)
+    mock_exec.assert_called_once_with("run", "--no-sync", "mypy", ".", "--no-pretty", check=False, log_on_error=False)
 
 
 def test_dmypy_clears_cache_before_kill_and_after_run(
