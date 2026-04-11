@@ -365,27 +365,33 @@ class UvBoost(Boost):
             self._migrate_from_setup_cfg()
             return
 
-        if not self._has_migration_source():
-            return
-
-        # Detect and categorize requirements files
+        # Detect grouped requirements files regardless of migration path — even repos that
+        # already have a [project] table may have leftover requirements-dev.txt etc.
         requirements_files = self._detect_requirements_files()
 
-        # Run migrate-to-uv for main migration (handles Pipfile, Poetry, requirements.txt, etc.)
-        logger.info("Detected migration source, using uvx migrate-to-uv...")
-        # --skip-lock: let _lock_with_requires_python() handle locking with proper version detection.
-        # Without this, migrate-to-uv runs `uv lock` internally using the current Python (e.g. 3.14),
-        # which fails for old packages that have no pre-built wheel and can't be built with modern setuptools.
-        self.uv.exec_uvx("migrate-to-uv", "--skip-lock")
-        logger.info("Migration completed successfully")
+        if self._has_migration_source():
+            # Run migrate-to-uv for main migration (handles Pipfile, Poetry, requirements.txt, etc.)
+            logger.info("Detected migration source, using uvx migrate-to-uv...")
+            # --skip-lock: let _lock_with_requires_python() handle locking with proper version detection.
+            # Without this, migrate-to-uv runs `uv lock` internally using the current Python (e.g. 3.14),
+            # which fails for old packages that have no pre-built wheel and can't be built with modern setuptools.
+            self.uv.exec_uvx("migrate-to-uv", "--skip-lock")
+            logger.info("Migration completed successfully")
 
-        # Add grouped requirements files after migration.
-        # migrate-to-uv may already handle some (e.g. requirements-dev.txt → [dependency-groups])
-        # and delete those files, so only add files that still exist.
+        # Add requirements files that migrate-to-uv did not consume (or that were skipped because
+        # the repo already has a [project] table).  Process main first so that group files with
+        # "-r requirements.txt" includes don't pull main deps into the wrong dependency group.
+        if requirements_files.main is not None and requirements_files.main.exists():
+            self.uv.add_from_requirements_file(requirements_files.main)
+            requirements_files.main.unlink()
+            logger.info(f"Added [{requirements_files.main}] to main dependencies and removed the file")
+
         for group, files in requirements_files.groups.items():
             for file_path in files:
                 if file_path.exists():
                     self.uv.add_from_requirements_file(file_path, group=group)
+                    file_path.unlink()
+                    logger.info(f"Added [{file_path}] to uv group [{group}] and removed the file")
 
     def _ensure_pyproject_exists(self) -> None:
         pyproject_path = self.tools.repo_path / "pyproject.toml"

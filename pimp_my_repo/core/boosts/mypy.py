@@ -24,15 +24,11 @@ _MYPY_PACKAGE = "mypy<1.20"  # upper-bound: mypy 1.20 hangs on large codebases; 
 # "path:line:col:endline:endcol: error:" (--show-error-end).  (?::\d+)* matches zero or
 # more additional colon-separated numeric segments so all three formats are captured with
 # the correct path and line number.
-# No $ anchor: allows trailing text after [code] that appears when pretty=true wraps
-# the output and the summary line gets joined onto the last error line.
 # Greedy .* before \[code\] ensures we match the LAST [code] in the line.
 _MYPY_ERROR_RE = re.compile(
     r"^(?P<path>.+?):(?P<line>\d+)(?::\d+)*: error: .*\[(?P<code>[^\]]+)\]",
 )
-# Detects lines that start a new mypy diagnostic (path:line: or path:line:col: or
-# path:line:col:endline:endcol: when --show-error-end is set).
-# Used to distinguish error header lines from pretty=true continuation/context lines.
+# Detects lines that start a mypy diagnostic with a line number (path:line: ...).
 _MYPY_LINE_START_RE = re.compile(r"^\S[^:]*:\d+(?::\d+)*: ")
 # "note: Error code "X" not covered by "type: ignore" comment"
 _MYPY_NOTE_UNCOVERED_RE = re.compile(
@@ -56,36 +52,29 @@ _MYPY_INVALID_PKG_NAME_RE = re.compile(r"^(.+) is not a valid Python package nam
 # Detects "Error importing plugin "X.Y.Z": No module named 'X'" errors — plugin not installed.
 # These appear on pyproject.toml (not a Python file) so they can't be suppressed with # type: ignore.
 _MYPY_PLUGIN_IMPORT_ERROR_RE = re.compile(r'^.+?:\d+(?::\d+)*: error: Error importing plugin "([^"]+)"')
+# Detects "Error constructing plugin instance of X" — plugin is installed but crashes in __init__
+# (e.g. django-stubs when SECRET_KEY env var is missing).  The class name in the error message is
+# not the module path we need, so we extract the module from the __init__ frame in the traceback.
+_MYPY_PLUGIN_CRASH_RE = re.compile(r"^Error constructing plugin instance of \w+", re.MULTILINE)
+_MYPY_PLUGIN_CRASH_INIT_FRAME_RE = re.compile(r'File ".*?site-packages/([^"]+\.py)",.*? in __init__')
 
 
-def _normalize_mypy_output(output: str) -> str:
-    """Normalize mypy output to one logical line per diagnostic.
+def _extract_crashed_plugin_modules(output: str) -> set[str]:
+    """Return plugin module paths (e.g. 'mypy_django_plugin.main') that crashed in __init__.
 
-    With ``pretty = true``, mypy wraps long error lines across multiple lines
-    and adds indented source-context and caret lines below each error.  This
-    function reassembles wrapped lines into a single line and discards the
-    indented context lines so that all downstream regex parsers see a uniform
-    ``path:line: error: message [code]`` format.
-
-    Lines that start a new message (diagnostics with line numbers, errors
-    without line numbers, invalid package names) are preserved as separate
-    entries. Only true continuations (wrapped text from pretty=true) are joined.
+    When a plugin's constructor raises (e.g. django-stubs needing SECRET_KEY), mypy prints
+    "Error constructing plugin instance of X" followed by a Python traceback.  We locate the
+    __init__ frame that belongs to a site-packages plugin and convert the file path to a dotted
+    module name that matches what is written in [tool.mypy] plugins.
     """
-    result: list[str] = []
-    for line in output.splitlines():
-        if not line or line[0] in (" ", "\t"):
-            continue  # skip empty lines and indented context / caret lines
-        if (
-            not result
-            or _MYPY_LINE_START_RE.match(line)
-            or _MYPY_ANY_ERROR_RE.match(line)
-            or _MYPY_INVALID_PKG_NAME_RE.match(line)
-        ):
-            result.append(line)
-        else:
-            # Continuation of previous diagnostic (pretty=true wrapping) or summary
-            result[-1] = result[-1] + " " + line.strip()
-    return "\n".join(result)
+    if not _MYPY_PLUGIN_CRASH_RE.search(output):
+        return set()
+    result: set[str] = set()
+    for m in _MYPY_PLUGIN_CRASH_INIT_FRAME_RE.finditer(output):
+        # 'mypy_django_plugin/main.py' → 'mypy_django_plugin.main'
+        module = m.group(1).replace("/", ".").removesuffix(".py")
+        result.add(module)
+    return result
 
 
 def _apply_note_line(line: str, violations: ViolationsByLocation) -> None:
@@ -148,32 +137,32 @@ def _apply_diagnostic_line(  # noqa: PLR0913
     unhandled_lines.append(line)
 
 
-def _parse_mypy_output(*, output: str) -> ParsedMypyOutput:
-    """Parse all mypy output in a single pass, classifying each line.
+def _parse_mypy_output(*, raw_output: str) -> ParsedMypyOutput:
+    """Parse mypy output in a single pass, classifying each line.
 
-    ``output`` is the normalized output (from _normalize_mypy_output).
+    Requires ``pretty = false`` (PMR sets this) so each diagnostic is one line.
 
     Each line falls into exactly one category:
     - Diagnostic with line number (path:line: ...) → coded error, note, uncoded error, or unhandled
     - Error without line number (path: error: ...)  → found_twice_dirs or uncoded_error_files
     - Invalid package name message                  → invalid_pkg_names
-    - Summary/info line                             → skipped (checked for blocking indicator)
+    - Known summary/info line                       → skipped
+    - Anything else                                 → unhandled_lines (triggers RuntimeError upstream)
     """
     violations: ViolationsByLocation = {}
     syntax_files: set[str] = set()
     uncoded_error_files: set[str] = set()
     found_twice_dirs: set[str] = set()
     invalid_pkg_names: set[str] = set()
-    missing_plugins: set[str] = set()
+    missing_plugins: set[str] = _extract_crashed_plugin_modules(raw_output)
     unhandled_lines: list[str] = []
     has_blocking_error = False
 
-    for raw_line in output.splitlines():
+    for raw_line in raw_output.splitlines():
         line = raw_line.strip()
         if not line:
             continue
 
-        # Check for blocking error indicator in any line (may appear in summary joined to diagnostic)
         if "errors prevented further checking" in line:
             has_blocking_error = True
 
@@ -201,7 +190,11 @@ def _parse_mypy_output(*, output: str) -> ParsedMypyOutput:
             invalid_pkg_names.add(m.group(1))
             continue
 
-        # Category 4: Summary/info line — already checked for blocking indicator above
+        # Category 4: Known summary/info lines — skip silently
+        if line.startswith(("Found ", "Success: ", "note: ")):
+            continue
+
+        unhandled_lines.append(line)
 
     logger.trace(
         f"Parsed mypy output: {len(violations)} violations, "
@@ -297,6 +290,7 @@ class BaseMypyBoost(Boost, abc.ABC):
             tool_section["mypy"] = table()
         mypy_section: Any = tool_section["mypy"]
         mypy_section["strict"] = True
+        mypy_section["pretty"] = False
         return data
 
     def _apply_type_ignores(self, violations: ViolationsByLocation) -> bool:
@@ -350,8 +344,7 @@ class BaseMypyBoost(Boost, abc.ABC):
 
         raw_output = result.stdout + result.stderr
         logger.trace(f"Raw mypy output:\n{raw_output}")
-        output = _normalize_mypy_output(raw_output)
-        parsed = _parse_mypy_output(output=output)
+        parsed = _parse_mypy_output(raw_output=raw_output)
 
         newly_removed_plugins = self._remove_missing_plugins(parsed.missing_plugins)
         newly_excluded_syntax = self._apply_syntax_exclusions(parsed.syntax_files)

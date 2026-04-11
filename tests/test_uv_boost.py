@@ -4,6 +4,7 @@ import configparser
 import re
 import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from unittest import mock
 from unittest.mock import patch
@@ -390,6 +391,34 @@ def test_apply_with_requirements_txt(mock_repo: RepositoryController, patched_uv
     assert (mock_repo.path / "pyproject.toml").exists()
     assert (mock_repo.path / "uv.lock").exists()
     patched_uv_apply.mock_exec_uvx.assert_called_once_with("migrate-to-uv", "--skip-lock")
+
+
+def test_apply_pep621_with_requirements_dev_adds_to_dev_group(
+    mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply
+) -> None:
+    """Repo already has [project] table but still has requirements-dev.txt — should be added to dev group."""
+    mock_repo.write_file("pyproject.toml", '[project]\nname = "myapp"\ndependencies = ["requests"]\n')
+    req_dev = mock_repo.write_file("requirements-dev.txt", "pytest>=7.0.0\n")
+    patched_uv_apply.boost.apply()
+    patched_uv_apply.mock_exec_uvx.assert_not_called()
+    patched_uv_apply.mock_add_from_requirements.assert_called_once_with(req_dev, group="dev")
+    assert not req_dev.exists()
+
+
+def test_apply_pep621_with_requirements_and_requirements_dev(
+    mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply
+) -> None:
+    """Repo with [project] table + requirements.txt + requirements-dev.txt: main first, then dev group."""
+    mock_repo.write_file("pyproject.toml", '[project]\nname = "myapp"\ndependencies = []\n')
+    req_main = mock_repo.write_file("requirements.txt", "requests>=2.0.0\n")
+    req_dev = mock_repo.write_file("requirements-dev.txt", "-r requirements.txt\npytest>=7.0.0\n")
+    patched_uv_apply.boost.apply()
+    patched_uv_apply.mock_exec_uvx.assert_not_called()
+    calls = patched_uv_apply.mock_add_from_requirements.call_args_list
+    assert calls[0] == mock.call(req_main)
+    assert calls[1] == mock.call(req_dev, group="dev")
+    assert not req_main.exists()
+    assert not req_dev.exists()
 
 
 def test_apply_creates_minimal_pyproject_when_no_source(
@@ -911,10 +940,10 @@ def test_apply_with_pipfile_migration(mock_repo: RepositoryController, patched_u
 def test_apply_adds_grouped_requirements_files(
     mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply
 ) -> None:
-    """PMR adds grouped requirements files that migrate-to-uv did not consume."""
-    mock_repo.write_file("requirements.txt", "requests>=2.0.0")
+    """PMR adds requirements files that migrate-to-uv did not consume."""
+    req_main = mock_repo.write_file("requirements.txt", "requests>=2.0.0")
     mock_repo.write_file("requirements-dev.txt", "pytest>=7.0.0")
-    mock_repo.write_file("test-requirements.txt", "pytest-cov>=4.0.0")
+    req_test = mock_repo.write_file("test-requirements.txt", "pytest-cov>=4.0.0")
 
     def simulate_migrate_to_uv(*_args: str, **_kwargs: object) -> None:
         # simulate migrate-to-uv consuming requirements-dev.txt (recognised pattern)
@@ -923,11 +952,9 @@ def test_apply_adds_grouped_requirements_files(
     patched_uv_apply.mock_exec_uvx.side_effect = simulate_migrate_to_uv
     patched_uv_apply.boost.apply()
 
-    # Only test-requirements.txt (unrecognised by migrate-to-uv) should be added by PMR
-    assert patched_uv_apply.mock_add_from_requirements.call_count == 1
-    call = patched_uv_apply.mock_add_from_requirements.call_args_list[0]
-    assert call.kwargs.get("group") == "test"
-    assert call.args[0].name == "test-requirements.txt"
+    # requirements.txt → main deps (no group); test-requirements.txt → test group
+    calls = patched_uv_apply.mock_add_from_requirements.call_args_list
+    assert calls == [mock.call(req_main), mock.call(req_test, group="test")]
 
 
 def test_apply_infers_project_name_from_directory(
@@ -1372,6 +1399,50 @@ def test_migrate_from_setup_cfg_no_setup_py(mock_repo: RepositoryController, uv_
     mock_repo.write_file("setup.cfg", "[metadata]\nname = mylib\nversion = 1.0.0\n")
     uv_boost._migrate_from_setup_cfg()  # noqa: SLF001
     assert not (mock_repo.path / "setup.cfg").exists()
+
+
+# =============================================================================
+# ADD_FROM_REQUIREMENTS_FILE — include stripping
+# =============================================================================
+
+
+def test_add_from_requirements_strips_r_includes(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+    """add_from_requirements_file strips -r/-c lines before calling uv add."""
+    req = mock_repo.write_file(
+        "requirements-dev.txt",
+        "-r requirements.txt\n--requirement base.txt\n-c constraints.txt\npytest>=7.0.0\n",
+    )
+    captured_content: list[str] = []
+
+    def capture_exec(*args: str, **_kwargs: object) -> mock.MagicMock:
+        captured_content.extend(Path(arg).read_text() for arg in args if arg.endswith(".txt"))
+        return mock.MagicMock(returncode=0, stdout="", stderr="")
+
+    with patch.object(uv_boost.tools.uv, "exec", side_effect=capture_exec):
+        uv_boost.tools.uv.add_from_requirements_file(req, group="dev")
+
+    assert len(captured_content) == 1
+    assert "pytest>=7.0.0" in captured_content[0]
+    assert "-r " not in captured_content[0]
+    assert "--requirement" not in captured_content[0]
+    assert "-c " not in captured_content[0]
+
+
+def test_add_from_requirements_no_includes_passes_through(mock_repo: RepositoryController, uv_boost: UvBoost) -> None:
+    """add_from_requirements_file with no includes passes all lines through."""
+    req = mock_repo.write_file("requirements.txt", "requests>=2.0.0\npytest>=7.0.0\n")
+    captured_content: list[str] = []
+
+    def capture_exec(*args: str, **_kwargs: object) -> mock.MagicMock:
+        captured_content.extend(Path(arg).read_text() for arg in args if arg.endswith(".txt"))
+        return mock.MagicMock(returncode=0, stdout="", stderr="")
+
+    with patch.object(uv_boost.tools.uv, "exec", side_effect=capture_exec):
+        uv_boost.tools.uv.add_from_requirements_file(req)
+
+    assert len(captured_content) == 1
+    assert "requests>=2.0.0" in captured_content[0]
+    assert "pytest>=7.0.0" in captured_content[0]
 
 
 # =============================================================================

@@ -1,14 +1,16 @@
 """UV operations controller for boosts."""
 
 import subprocess
-from typing import TYPE_CHECKING
+import tempfile
+from pathlib import Path
 
 from loguru import logger
 
 from pimp_my_repo.core.tools.subprocess import CommandResult, run_command
 
-if TYPE_CHECKING:
-    from pathlib import Path
+# Requirements file line prefixes that reference other files — uv resolves these at parse time,
+# which causes packages from an already-processed (or deleted) file to land in the wrong group.
+_REQUIREMENTS_INCLUDE_PREFIXES = ("-r ", "--requirement ", "-c ", "--constraint ")
 
 
 class UvNotFoundError(Exception):
@@ -42,7 +44,7 @@ class UvController:
 
     def sync_group(self, group: str) -> None:
         """Sync a specific dependency group (additive — does not remove other installed packages)."""
-        logger.debug(f"Syncing dependency group: {group}")
+        logger.debug(f"Syncing dependency group: [{group}]...")
         self.exec("sync", "--group", group, "--inexact")
 
     def add_package(
@@ -52,7 +54,7 @@ class UvController:
         group: str | None = None,
     ) -> None:
         """Add a package using uv add."""
-        logger.info(f"Adding {package} dependency...")
+        logger.info(f"Adding [{package}] dependency...")
         cmd = ["add", "--no-sync"]
         if group:
             cmd.extend(["--group", group])
@@ -65,9 +67,22 @@ class UvController:
         *,
         group: str | None = None,
     ) -> None:
-        """Add dependencies from a requirements file using uv add -r."""
-        logger.info(f"Adding dependencies from {requirements_file.name}...")
-        cmd = ["add", "--no-sync", "-r", str(requirements_file)]
-        if group:
-            cmd.extend(["--group", group])
-        self.exec(*cmd)
+        """Add dependencies from a requirements file using uv add -r.
+
+        Include directives (-r, -c) are stripped before passing the file to uv so that
+        cross-file references (e.g. ``-r requirements.txt`` inside requirements-dev.txt)
+        don't pull packages into the wrong dependency group.
+        """
+        logger.info(f"Adding dependencies from [{requirements_file.name}]...")
+        lines = requirements_file.read_text().splitlines(keepends=True)
+        filtered = [line for line in lines if not line.lstrip().startswith(_REQUIREMENTS_INCLUDE_PREFIXES)]
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tmp:
+            tmp.writelines(filtered)
+            tmp_path = Path(tmp.name)
+        try:
+            cmd = ["add", "--no-sync", "-r", str(tmp_path)]
+            if group:
+                cmd.extend(["--group", group])
+            self.exec(*cmd)
+        finally:
+            tmp_path.unlink()
