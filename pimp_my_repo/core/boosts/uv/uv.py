@@ -125,7 +125,7 @@ class UvBoost(Boost):
         logger.info("Successfully installed UV via official installer")
         return True
 
-    def _ensure_uv_config(self, pyproject_data: TOMLDocument, *, is_native: bool) -> TOMLDocument:
+    def _ensure_uv_config(self, pyproject_data: TOMLDocument) -> TOMLDocument:
         """Ensure [tool.uv] section exists."""
         if "tool" not in pyproject_data:
             pyproject_data["tool"] = table()
@@ -138,23 +138,17 @@ class UvBoost(Boost):
         # After migrate-to-uv runs, setup.py is removed, so this branch applies only to
         # projects that bypass migration (e.g. setup.py-only without migration source).
         if not (self.tools.repo_path / "setup.py").exists():
-            uv_section["package"] = self._is_installable_package(is_native=is_native)
+            uv_section["package"] = self._is_installable_package()
         return pyproject_data
 
-    def _is_installable_package(self, *, is_native: bool) -> bool:
+    def _is_installable_package(self) -> bool:
         """Return True if the project has a real Python package structure.
 
         A project is a package if it has a ``src/`` directory or at least one
         top-level directory containing an ``__init__.py``.  Plain script repos
         and data-science projects typically have neither, so we mark them as
         ``package = false`` to prevent uv from trying to build them.
-
-        Projects using native build backends (meson, scikit-build-core, maturin)
-        are also excluded: uv cannot build them without the native toolchain.
         """
-        if is_native:
-            logger.debug("Native build backend detected; marking as package = false")
-            return False
         repo = self.tools.repo_path
         if (repo / "src").is_dir():
             return True
@@ -389,10 +383,14 @@ class UvBoost(Boost):
         # "-r requirements.txt" includes don't pull main deps into the wrong dependency group.
         if self._has_requirements_to_add(requirements_files) and self._has_native_build_backend():
             # uv add resolves the full dependency graph, which includes building the local package.
-            # For native-build repos (mesonpy, maturin, etc.) this fails without the native toolchain.
-            # Setting package = false tells uv to treat the local package as a non-installable project.
-            logger.info("Native build backend detected; setting package = false before uv add")
-            self._set_uv_package_false()
+            # For native-build repos (mesonpy, maturin, etc.) this invokes the native build backend
+            # (e.g. mesonpy.build_wheel) which fails without a C/C++ compiler.
+            # Strip the [build-system] and other native metadata so uv falls back to hatchling,
+            # which resolves static metadata without compiling anything.
+            logger.info("Native build backend detected; stripping native metadata before uv add")
+            pyproject_data = self.pyproject.read()
+            pyproject_data = self._strip_native_backend_metadata(pyproject_data)
+            self.pyproject.write(pyproject_data)
 
         if requirements_files.main is not None and requirements_files.main.exists():
             self.uv.add_from_requirements_file(requirements_files.main)
@@ -528,18 +526,20 @@ class UvBoost(Boost):
         Projects using native build backends (e.g. mesonpy) cannot be built by uv without
         native toolchains. Two adjustments are needed:
 
-        - ``optional-dependencies``: extras often reference other packages that transitively
-          depend on the project itself (e.g. fastparquet → pandas), creating circular deps
-          that uv cannot resolve.
+        - ``[build-system]``: uv invokes the native build backend to collect PEP 517 metadata.
+          Removing it lets uv fall back to hatchling, which resolves static metadata without
+          compiling any native extensions.
         - ``dynamic = ["version"]``: uv must run the build backend to obtain a dynamic
-          version, which requires the native toolchain. Replace with a static placeholder.
+          version, which requires the native toolchain. Replace with a high static placeholder
+          so that other packages' lower-bound version constraints (e.g. ``fastparquet>=1.5.0``)
+          are satisfied when uv resolves the local project as a dependency.
         """
+        if "build-system" in pyproject_data:
+            logger.info("Removing [build-system] for native build backend (prevents uv from invoking native tools)")
+            del pyproject_data["build-system"]
         project_section: Any = pyproject_data.get("project")
         if not isinstance(project_section, dict):
             return pyproject_data
-        if "optional-dependencies" in project_section:
-            logger.info("Removing optional-dependencies for native build backend (avoids circular dep resolution)")
-            del project_section["optional-dependencies"]
         dynamic = list(project_section.get("dynamic", []))
         if "version" in dynamic:
             logger.info("Replacing dynamic version with static placeholder for native build backend")
@@ -549,15 +549,14 @@ class UvBoost(Boost):
             else:
                 del project_section["dynamic"]
             if not project_section.get("version"):
-                # uv requires a static version to resolve the lockfile without running the build backend
-                project_section["version"] = "0.0.0"
+                # Use a high placeholder so other packages' lower-bound version constraints are satisfied.
+                project_section["version"] = "999.0.0"
         return pyproject_data
 
     def _ensure_uv_config_present(self) -> None:
-        is_native = self._has_native_build_backend()
         pyproject_data = self.pyproject.read()
-        pyproject_data = self._ensure_uv_config(pyproject_data, is_native=is_native)
-        if is_native:
+        pyproject_data = self._ensure_uv_config(pyproject_data)
+        if self._has_native_build_backend():
             pyproject_data = self._strip_native_backend_metadata(pyproject_data)
         self.pyproject.write(pyproject_data)
 

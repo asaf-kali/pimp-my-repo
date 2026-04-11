@@ -290,7 +290,6 @@ class BaseMypyBoost(Boost, abc.ABC):
             tool_section["mypy"] = table()
         mypy_section: Any = tool_section["mypy"]
         mypy_section["strict"] = True
-        mypy_section["pretty"] = False
         return data
 
     def _apply_type_ignores(self, violations: ViolationsByLocation) -> bool:
@@ -331,7 +330,15 @@ class BaseMypyBoost(Boost, abc.ABC):
     def _apply_ignores(self) -> None:
         for iteration in range(1, _MAX_MYPY_ITERATIONS + 1):
             if not self._process_mypy_iteration(iteration):
+                self._enable_mypy_pretty()
                 break
+
+    def _enable_mypy_pretty(self) -> None:
+        """Set pretty = true in [tool.mypy] so end-users get readable mypy output."""
+        pyproject_data = self.pyproject.read()
+        tool_section: Any = pyproject_data["tool"]
+        tool_section["mypy"]["pretty"] = True
+        self.pyproject.write(pyproject_data)
 
     def _process_mypy_iteration(self, iteration: int) -> bool:
         """Run the type checker and apply ignores for one iteration. Returns True if should continue."""
@@ -559,7 +566,7 @@ class MypyBoost(BaseMypyBoost):
 
     def _run_type_checker(self) -> CommandResult:
         self._clear_mypy_cache()
-        result = self.uv.exec("run", "--no-sync", "mypy", ".", check=False, log_on_error=False)
+        result = self.uv.exec("run", "--no-sync", "mypy", ".", "--no-pretty", check=False, log_on_error=False)
         self._clear_mypy_cache()
         return result
 
@@ -578,7 +585,9 @@ class DmypyBoost(BaseMypyBoost):
     def _run_type_checker(self) -> CommandResult:
         self._clear_mypy_cache()
         self.uv.exec("run", "--no-sync", "dmypy", "kill", check=False, log_on_error=False)
-        result = self.uv.exec("run", "--no-sync", "dmypy", "run", ".", check=False, log_on_error=False)
+        result = self.uv.exec(
+            "run", "--no-sync", "dmypy", "run", "--", ".", "--no-pretty", check=False, log_on_error=False
+        )
         self._clear_mypy_cache()
         return result
 

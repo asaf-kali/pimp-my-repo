@@ -746,7 +746,7 @@ def test_adds_mypy_section_when_missing(mock_repo: RepositoryController, mypy_bo
     content = (mock_repo.path / "pyproject.toml").read_text()
     assert "[tool.mypy]" in content
     assert "strict = true" in content
-    assert "pretty = false" in content
+    assert "pretty" not in content
 
 
 def test_adds_tool_section_when_fully_absent(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:
@@ -775,7 +775,7 @@ def test_sets_strict_true_on_existing_mypy_section(mock_repo: RepositoryControll
     mypy_boost.tools.pyproject.write(data)
     content = (mock_repo.path / "pyproject.toml").read_text()
     assert "strict = true" in content
-    assert "pretty = false" in content
+    assert "pretty" not in content
 
 
 # =============================================================================
@@ -812,7 +812,7 @@ def test_mypy_clears_cache_before_and_after_run(mypy_boost: MypyBoost, ok_result
         mypy_boost._run_type_checker()  # noqa: SLF001
 
     assert call_order == ["clear", "mypy", "clear"], "cache must be cleared before and after mypy"
-    mock_exec.assert_called_once_with("run", "--no-sync", "mypy", ".", check=False, log_on_error=False)
+    mock_exec.assert_called_once_with("run", "--no-sync", "mypy", ".", "--no-pretty", check=False, log_on_error=False)
 
 
 def test_dmypy_clears_cache_before_kill_and_after_run(

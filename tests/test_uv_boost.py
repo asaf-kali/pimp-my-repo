@@ -421,22 +421,22 @@ def test_apply_pep621_with_requirements_and_requirements_dev(
     assert not req_dev.exists()
 
 
-def test_apply_native_build_sets_package_false_before_uv_add(
+def test_apply_native_build_strips_build_system_before_uv_add(
     mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply
 ) -> None:
-    """Native build repos get package=false before uv add to avoid source build failures."""
+    """Native build repos have [build-system] removed before uv add so uv falls back to hatchling."""
     mock_repo.write_file(
         "pyproject.toml",
         '[project]\nname = "myapp"\n\n[build-system]\nbuild-backend = "mesonpy"\nrequires = ["meson-python"]\n',
     )
     mock_repo.write_file("requirements-dev.txt", "pytest>=7.0.0\n")
 
-    def assert_package_false_before_add(*_args: object, **_kwargs: object) -> mock.MagicMock:
+    def assert_build_system_removed_before_add(*_args: object, **_kwargs: object) -> mock.MagicMock:
         content = (mock_repo.path / "pyproject.toml").read_text()
-        assert "package = false" in content, "package = false must be set before uv add"
+        assert "[build-system]" not in content, "[build-system] must be removed before uv add"
         return mock.MagicMock()
 
-    patched_uv_apply.mock_add_from_requirements.side_effect = assert_package_false_before_add
+    patched_uv_apply.mock_add_from_requirements.side_effect = assert_build_system_removed_before_add
     patched_uv_apply.boost.apply()
     patched_uv_apply.mock_add_from_requirements.assert_called_once()
 
@@ -491,7 +491,7 @@ def test_ensure_uv_config_adds_section_when_missing(mock_repo: RepositoryControl
     mock_repo.write_file("pyproject.toml", '[project]\nname = "test-project"\n')
 
     pyproject_data = uv_boost.tools.pyproject.read()
-    pyproject_data = uv_boost._ensure_uv_config(pyproject_data, is_native=False)  # noqa: SLF001
+    pyproject_data = uv_boost._ensure_uv_config(pyproject_data)  # noqa: SLF001
     uv_boost.tools.pyproject.write(pyproject_data)
 
     pyproject_content_after = (mock_repo.path / "pyproject.toml").read_text()
@@ -503,7 +503,7 @@ def test_ensure_uv_config_preserves_existing_section(mock_repo: RepositoryContro
     mock_repo.write_file("pyproject.toml", pyproject_content)
 
     pyproject_data = uv_boost.tools.pyproject.read()
-    pyproject_data = uv_boost._ensure_uv_config(pyproject_data, is_native=False)  # noqa: SLF001
+    pyproject_data = uv_boost._ensure_uv_config(pyproject_data)  # noqa: SLF001
     uv_boost.tools.pyproject.write(pyproject_data)
 
     pyproject_content_after = (mock_repo.path / "pyproject.toml").read_text()
@@ -518,7 +518,7 @@ def test_ensure_uv_config_sets_package_true_for_src_layout(mock_repo: Repository
     (mock_repo.path / "src").mkdir()
 
     pyproject_data = uv_boost.tools.pyproject.read()
-    pyproject_data = uv_boost._ensure_uv_config(pyproject_data, is_native=False)  # noqa: SLF001
+    pyproject_data = uv_boost._ensure_uv_config(pyproject_data)  # noqa: SLF001
     uv_boost.tools.pyproject.write(pyproject_data)
 
     assert "package = true" in (mock_repo.path / "pyproject.toml").read_text()
@@ -633,7 +633,7 @@ def test_write_pyproject_preserves_comments(mock_repo: RepositoryController, uv_
     mock_repo.write_file("pyproject.toml", pyproject_content)
 
     pyproject_data = uv_boost.tools.pyproject.read()
-    pyproject_data = uv_boost._ensure_uv_config(pyproject_data, is_native=False)  # noqa: SLF001
+    pyproject_data = uv_boost._ensure_uv_config(pyproject_data)  # noqa: SLF001
     uv_boost.tools.pyproject.write(pyproject_data)
 
     content_after = (mock_repo.path / "pyproject.toml").read_text()
@@ -648,7 +648,7 @@ def test_ensure_uv_config_with_existing_tool_section(mock_repo: RepositoryContro
     mock_repo.write_file("pyproject.toml", pyproject_content)
 
     pyproject_data = uv_boost.tools.pyproject.read()
-    pyproject_data = uv_boost._ensure_uv_config(pyproject_data, is_native=False)  # noqa: SLF001
+    pyproject_data = uv_boost._ensure_uv_config(pyproject_data)  # noqa: SLF001
     uv_boost.tools.pyproject.write(pyproject_data)
 
     content = (mock_repo.path / "pyproject.toml").read_text()
@@ -1230,21 +1230,35 @@ def test_strip_native_backend_metadata_no_project_section(
     mock_repo.write_file("pyproject.toml", '[build-system]\nrequires = ["mesonpy"]\n')
     data = uv_boost.tools.pyproject.read()
     result = uv_boost._strip_native_backend_metadata(data)  # noqa: SLF001
-    assert result is data  # unchanged
+    assert "build-system" not in result
 
 
-def test_strip_native_backend_metadata_removes_optional_deps(
+def test_strip_native_backend_metadata_removes_build_system(
     mock_repo: RepositoryController,
     uv_boost: UvBoost,
 ) -> None:
     mock_repo.write_file(
         "pyproject.toml",
-        '[project]\nname = "x"\n[project.optional-dependencies]\nextra = ["requests"]\n',
+        '[project]\nname = "x"\nversion = "1.0"\n\n[build-system]\nbuild-backend = "mesonpy"\n'
+        'requires = ["meson-python"]\n',
+    )
+    data = uv_boost.tools.pyproject.read()
+    result = uv_boost._strip_native_backend_metadata(data)  # noqa: SLF001
+    assert "build-system" not in result
+
+
+def test_strip_native_backend_metadata_preserves_optional_deps(
+    mock_repo: RepositoryController,
+    uv_boost: UvBoost,
+) -> None:
+    mock_repo.write_file(
+        "pyproject.toml",
+        '[project]\nname = "x"\nversion = "1.0"\n[project.optional-dependencies]\nextra = ["requests"]\n',
     )
     data = uv_boost.tools.pyproject.read()
     result = uv_boost._strip_native_backend_metadata(data)  # noqa: SLF001
     project: Any = result["project"]
-    assert "optional-dependencies" not in project
+    assert "optional-dependencies" in project
 
 
 def test_strip_native_backend_metadata_replaces_dynamic_version(
@@ -1256,7 +1270,7 @@ def test_strip_native_backend_metadata_replaces_dynamic_version(
     result = uv_boost._strip_native_backend_metadata(data)  # noqa: SLF001
     project: Any = result["project"]
     assert "dynamic" not in project
-    assert project["version"] == "0.0.0"
+    assert project["version"] == "999.0.0"
 
 
 def test_strip_native_backend_metadata_preserves_other_dynamic_fields(

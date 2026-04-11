@@ -45,6 +45,8 @@ _RECIPE_LINT_WITH_PRECOMMIT = (
 _RECIPE_CHECK_RUFF = "check-ruff:\n    {{ RUN }} ruff format --check\n    {{ RUN }} ruff check\n"
 _RECIPE_CHECK_MYPY = "check-mypy:\n    {{ RUN }} mypy .\n"
 
+_PRECOMMIT_PMR_MARKER = "# pimp-my-repo:pre-commit"
+
 
 @dataclass
 class _JustfileConfig:
@@ -57,6 +59,7 @@ class _JustfileConfig:
     has_ruff: bool
     has_mypy: bool
     has_precommit: bool
+    pmr_manages_precommit: bool
 
 
 @dataclass
@@ -89,6 +92,7 @@ class JustfileBoost(Boost):
             has_ruff=_is_ruff_configured(self.repo_path),
             has_mypy=_is_mypy_configured(self.repo_path),
             has_precommit=(self.repo_path / ".pre-commit-config.yaml").exists(),
+            pmr_manages_precommit=_pmr_manages_precommit(self.repo_path),
         )
         new_content = _build_content(config=config)
 
@@ -153,6 +157,12 @@ def _is_mypy_configured(repo_path: Path) -> bool:
     return pyproject.exists() and "[tool.mypy" in pyproject.read_text(encoding="utf-8")
 
 
+def _pmr_manages_precommit(repo_path: Path) -> bool:
+    """Return True if .pre-commit-config.yaml was created by PMR (has the marker)."""
+    config = repo_path / ".pre-commit-config.yaml"
+    return config.exists() and _PRECOMMIT_PMR_MARKER in config.read_text(encoding="utf-8")
+
+
 def _install_section(*, config: _JustfileConfig) -> _RecipeSection | None:
     existing = config.existing_recipes
     if not config.has_pyproject:
@@ -185,7 +195,7 @@ def _lint_section(*, config: _JustfileConfig) -> _RecipeSection | None:
     if config.has_ruff and "format" not in existing:
         recipes.append(_RECIPE_FORMAT)
     if config.has_ruff and "lint" not in existing:
-        recipes.append(_RECIPE_LINT_WITH_PRECOMMIT if config.has_precommit else _RECIPE_LINT_NO_PRECOMMIT)
+        recipes.append(_RECIPE_LINT_WITH_PRECOMMIT if config.pmr_manages_precommit else _RECIPE_LINT_NO_PRECOMMIT)
     if config.has_ruff and "check-ruff" not in existing:
         recipes.append(_RECIPE_CHECK_RUFF)
     if config.has_mypy and "check-mypy" not in existing:
