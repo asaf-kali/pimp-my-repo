@@ -1,6 +1,78 @@
 # CHANGELOG
 
 
+## v0.4.10 (2026-04-11)
+
+### Other
+
+- 🔧 justfile, pre-commit, and e2e fixes ([#52](https://github.com/asaf-kali/pimp-my-repo/pull/52),
+  [`822c94f`](https://github.com/asaf-kali/pimp-my-repo/commit/822c94fdfecc045325aa716bb785082da4e5184a))
+
+* 🔧 justfile: --all-groups install, pre-commit steps via precommit boost
+
+- justfile boost: install recipe now uses `uv sync --all-groups` - precommit boost: after creating
+  .pre-commit-config.yaml, patch justfile's install recipe to add `uv run pre-commit install` and
+  lint recipe to add `{{ RUN }} pre-commit run --all-files` - e2e: add assert_just_install_works —
+  removes .venv and runs `just install`
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+* 🧪 e2e: strong assertions for justfile and pre-commit validation
+
+- assert_just_install_works: asserts justfile exists, runs `just install` from clean state (.venv
+  removed), asserts .venv recreated and pre-commit hook installed in .git/hooks/ -
+  assert_just_commands_work: asserts all expected PMR recipes exist (install, check-lock,
+  check-ruff, lint, check-mypy) then runs each - assert_pre_commit_passes: assert config is
+  PMR-managed (no silent skip) - No silent returns — all validations raise on unexpected state
+
+* Test logging format
+
+* 🔧 Skip pre-commit validation when repo has pre-existing config
+
+- pre_commit.py: revert to early BoostSkipped when config already exists; keep justfile patching
+  (pre-commit install + lint recipe) for PMR-created configs - e2e_utils: skip
+  assert_pre_commit_passes, git hook check, and just lint when .pre-commit-config.yaml is not
+  PMR-managed (detected via PMR marker); still run check-lock, check-ruff, check-mypy via just
+
+* Stability fixes to e2e test
+
+* Lower refresh rate
+
+---------
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+### 🐛
+
+- 🐛 Fix uv boost: requirements.txt as main deps, strip -r includes, mypy pretty=false
+  ([#53](https://github.com/asaf-kali/pimp-my-repo/pull/53),
+  [`aa6203d`](https://github.com/asaf-kali/pimp-my-repo/commit/aa6203d0cc2c877c5894673c47a1a0ed44b3c585))
+
+* 🐛 Fix uv boost: process requirements.txt as main deps, strip -r includes from group files
+
+- requirements.txt is now added to [project.dependencies] (not skipped) - requirements-dev.txt -r
+  includes are stripped before `uv add --group` to prevent main deps from landing in the wrong group
+  - mypy: set pretty=false, remove _normalize_mypy_output, parse raw output directly - mypy: detect
+  plugin constructor crashes (Error constructing plugin instance) and remove the crashing plugin
+  from [tool.mypy] plugins - mypy: unmatched non-empty lines now go to unhandled_lines (no more
+  silent Category 4)
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+* 🐛 Fix justfile boost output structure and uv native-build failure
+
+- justfile boost: add install-all/install-dev/lock recipes with section headers - justfile boost:
+  install recipe now depends on install-dev lint - uv boost: set package=false before uv add for
+  native build backends (mesonpy, maturin, etc.) to prevent uv from trying to compile the local
+  package during dependency resolution
+
+* UV and mypy fixes
+
+---------
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+
 ## v0.4.9 (2026-04-09)
 
 ### 🐛
