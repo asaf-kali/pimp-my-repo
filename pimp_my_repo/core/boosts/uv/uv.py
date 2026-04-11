@@ -253,6 +253,12 @@ class UvBoost(Boost):
 
         return result
 
+    def _has_requirements_to_add(self, requirements_files: ProjectRequirements) -> bool:
+        """Return True if there are requirements files that still need to be added via uv add."""
+        if requirements_files.main is not None and requirements_files.main.exists():
+            return True
+        return any(f.exists() for files in requirements_files.groups.values() for f in files)
+
     def _is_setup_cfg_bare(self) -> bool:
         """Return True if setup.cfg is absent or has no [options] section.
 
@@ -381,6 +387,13 @@ class UvBoost(Boost):
         # Add requirements files that migrate-to-uv did not consume (or that were skipped because
         # the repo already has a [project] table).  Process main first so that group files with
         # "-r requirements.txt" includes don't pull main deps into the wrong dependency group.
+        if self._has_requirements_to_add(requirements_files) and self._has_native_build_backend():
+            # uv add resolves the full dependency graph, which includes building the local package.
+            # For native-build repos (mesonpy, maturin, etc.) this fails without the native toolchain.
+            # Setting package = false tells uv to treat the local package as a non-installable project.
+            logger.info("Native build backend detected; setting package = false before uv add")
+            self._set_uv_package_false()
+
         if requirements_files.main is not None and requirements_files.main.exists():
             self.uv.add_from_requirements_file(requirements_files.main)
             requirements_files.main.unlink()

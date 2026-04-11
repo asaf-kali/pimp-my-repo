@@ -421,6 +421,26 @@ def test_apply_pep621_with_requirements_and_requirements_dev(
     assert not req_dev.exists()
 
 
+def test_apply_native_build_sets_package_false_before_uv_add(
+    mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply
+) -> None:
+    """Native build repos get package=false before uv add to avoid source build failures."""
+    mock_repo.write_file(
+        "pyproject.toml",
+        '[project]\nname = "myapp"\n\n[build-system]\nbuild-backend = "mesonpy"\nrequires = ["meson-python"]\n',
+    )
+    mock_repo.write_file("requirements-dev.txt", "pytest>=7.0.0\n")
+
+    def assert_package_false_before_add(*_args: object, **_kwargs: object) -> mock.MagicMock:
+        content = (mock_repo.path / "pyproject.toml").read_text()
+        assert "package = false" in content, "package = false must be set before uv add"
+        return mock.MagicMock()
+
+    patched_uv_apply.mock_add_from_requirements.side_effect = assert_package_false_before_add
+    patched_uv_apply.boost.apply()
+    patched_uv_apply.mock_add_from_requirements.assert_called_once()
+
+
 def test_apply_creates_minimal_pyproject_when_no_source(
     mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply
 ) -> None:

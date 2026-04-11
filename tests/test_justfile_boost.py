@@ -238,7 +238,9 @@ def test_skips_when_all_recipes_already_present(
 ) -> None:
     mock_repo.write_file("pyproject.toml", "[tool.ruff]\n")
     existing = (
-        "install:\n    uv sync\n\n"
+        "install: install-dev lint\n\n"
+        "install-all:\n    uv sync --all-groups\n\n"
+        "install-dev: install-all\n\n"
         "format:\n    uv run ruff format\n\n"
         "lint: format\n    uv run ruff check\n\n"
         "check-ruff:\n    uv run ruff check\n"
