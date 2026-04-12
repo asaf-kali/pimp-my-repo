@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.4.12 (2026-04-12)
+
+### 📝
+
+- 📝 Reduce em-dash overuse and polish README prose
+  ([#55](https://github.com/asaf-kali/pimp-my-repo/pull/55),
+  [`5f7b662`](https://github.com/asaf-kali/pimp-my-repo/commit/5f7b662c0fa80b6c02b2a1ccb0b5319797b0dc70))
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+
 ## v0.4.11 (2026-04-12)
 
 ### 📝
