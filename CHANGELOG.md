@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.4.11 (2026-04-12)
+
+### 📝
+
+- 📝 Rewrite README with sharper value prop and baseline approach explanation
+  ([#54](https://github.com/asaf-kali/pimp-my-repo/pull/54),
+  [`0a8b1ec`](https://github.com/asaf-kali/pimp-my-repo/commit/0a8b1ec42ec4eb23ee0cd96ddef524e94d1d6a1f))
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+
 ## v0.4.10 (2026-04-11)
 
 ### Other
