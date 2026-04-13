@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v0.4.13 (2026-04-13)
+
+### 📜
+
+- 📜 Emphasize local branch without push ([#56](https://github.com/asaf-kali/pimp-my-repo/pull/56),
+  [`43e42e3`](https://github.com/asaf-kali/pimp-my-repo/commit/43e42e3a508a5545e561c8112295b3a1215701fb))
+
+* Add note emphasizing local branch creation in README intro
+
+Rephrase the introductory text to clarify that the branch created by pimp-my-repo is local and not
+  pushed to the remote repository.
+
+---------
+
+Co-authored-by: Claude <noreply@anthropic.com>
+
+
 ## v0.4.12 (2026-04-12)
 
 ### 📝
