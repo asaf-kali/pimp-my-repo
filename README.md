@@ -8,7 +8,7 @@
 
 🧙🏼‍♂️ **One command to modernize them all**.
 
-Strict linting, type checking, and CI for your legacy Python repo, with near-zero manual work. Run it once in your repo root — it creates its own branch, so you can always walk away:
+Strict linting, type checking, and CI for your legacy Python repo, with near-zero manual work. Run it once in your repo root — it creates its own local branch (nothing is pushed), so you can always walk away:
 
 ```bash
 uvx pimp-my-repo
