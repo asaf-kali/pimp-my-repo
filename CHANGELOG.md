@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.4.15 (2026-04-23)
+
+### 🌴
+
+- 🌴 Use ruff-driven deprecation detection
+  ([`9e5a0a4`](https://github.com/asaf-kali/pimp-my-repo/commit/9e5a0a4d12c0c979483cf1014f18a671384ee62d))
+
+The allowlist approach required manual maintenance as ruff evolves. Instead, run ruff and parse its
+  own deprecation warnings ( - 'key' -> 'lint.key') to discover which top-level settings need
+  migration. This is future-proof: ruff tells us exactly what's deprecated, no list to maintain.
+
+Removes _RUFF_LINT_KEYS constant. Adds _RUFF_DEPRECATED_KEY_RE regex and
+  _detect_deprecated_ruff_keys() method. Tests mock _detect_deprecated_ruff_keys directly and add a
+  separate test for the warning-parsing regex.
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+
 ## v0.4.14 (2026-04-23)
 
 ### 🌴
