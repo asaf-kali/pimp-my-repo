@@ -1,6 +1,64 @@
 # CHANGELOG
 
 
+## v0.4.14 (2026-04-23)
+
+### 🌴
+
+- 🌴 Fix uv+ruff+mypy boost failures on Poetry repos with old pinned versions
+  ([#57](https://github.com/asaf-kali/pimp-my-repo/pull/57),
+  [`a25ce0c`](https://github.com/asaf-kali/pimp-my-repo/commit/a25ce0ca93306c7c347a4be378bc0d5f1b4ceb65))
+
+* 🐛 Fix uv+ruff+mypy boost failures on Poetry repos with old pinned versions
+
+Three bugs triggered on repos migrated from Poetry with old tool pins:
+
+1. `uv sync` fails with "Expected a Python module at: src/<name>/__init__.py" when
+  `_is_installable_package()` returns True due to tests/__init__.py, but no matching package
+  directory exists. Fix: catch this error in `_lock_and_sync()` and set `package = false`, same as
+  the existing multi-top-level-packages handler.
+
+2. Ruff boost fails because Poetry-pinned `ruff>=0.0.236,<0.0.237` satisfies the old upper-only
+  constraint `ruff<0.16`, keeping the old binary which uses `--format` instead of `--output-format`.
+  Fix: lower-bound `ruff>=0.1.0`.
+
+3. Mypy boost fails with "typed_ast package is not installed" because Poetry-pinned
+  `mypy>=0.991,<0.992` satisfies `mypy<1.20`. Fix: lower-bound `mypy>=1.0` (1.0 dropped the
+  typed_ast dependency).
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+* 🐛 Migrate deprecated top-level [tool.ruff] lint settings to [tool.ruff.lint]
+
+Ruff 0.1.0 moved lint settings (select, ignore, per-file-ignores, ...) from [tool.ruff] to
+  [tool.ruff.lint]. Repos migrated from Poetry often carry these deprecated keys, causing ruff to
+  emit warnings on every run.
+
+The ruff boost now migrates them automatically (best-effort — never fails the boost): any key not in
+  the known top-level-only set is moved to [tool.ruff.lint], with existing lint-section values
+  taking precedence.
+
+Three unit tests cover: move, no-overwrite, and no-op cases.
+
+* ✅ Add coverage for _MISSING_PYTHON_MODULE_MSG branch in _lock_and_sync
+
+* 🐛 Fix deprecated ruff config migration incorrectly moving top-level-only settings
+
+The previous denylist approach (_RUFF_TOP_LEVEL_KEYS) moved any unknown key to [tool.ruff.lint],
+  which wrongly relocated top-level-only settings like fix, show-fixes, and output-format (seen in
+  pallets/itsdangerous).
+
+Switch to an allowlist (_RUFF_LINT_KEYS) — only keys that are explicitly valid [tool.ruff.lint]
+  settings get migrated. Unknown or ambiguous keys (exclude, preview, fix, output-format, ...) stay
+  at the top level.
+
+Also tighten the test to assert those top-level-only keys are preserved.
+
+---------
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+
 ## v0.4.13 (2026-04-13)
 
 ### 📜
