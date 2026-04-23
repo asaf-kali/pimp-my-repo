@@ -17,31 +17,69 @@ if TYPE_CHECKING:
 _MAX_RUFF_ITERATIONS = 10
 _RUFF_PACKAGE = "ruff>=0.1.0,<0.16"  # 0.1.0+: --output-format; upper-bound: bump after validating new minor
 
-# Keys that legitimately live directly under [tool.ruff] (ruff 0.1+).
-# Every other key found there is a deprecated top-level lint setting and will be
-# migrated to [tool.ruff.lint] automatically.
-_RUFF_TOP_LEVEL_KEYS: frozenset[str] = frozenset(
+# Keys that are valid under [tool.ruff.lint] (ruff 0.1+).
+# Only these are candidates for migration when found at the deprecated [tool.ruff] top level.
+# Using an allowlist (not a denylist) keeps top-level-only settings like fix/show-fixes/output-format safe.
+_RUFF_LINT_KEYS: frozenset[str] = frozenset(
     {
-        "line-length",
-        "indent-width",
-        "target-version",
-        "exclude",
-        "extend-exclude",
-        "extend-include",
-        "force-exclude",
-        "include",
-        "respect-gitignore",
-        "required-version",
-        "unsafe-fixes",
-        "cache-dir",
-        "builtins",
-        "namespace-packages",
-        "preview",
-        "src",
-        # Sub-tables that are not the lint section
-        "lint",
-        "format",
-        "analyze",
+        # Core lint settings
+        "select",
+        "ignore",
+        "extend-select",
+        "extend-ignore",
+        "per-file-ignores",
+        "extend-per-file-ignores",
+        "fixable",
+        "unfixable",
+        "extend-fixable",
+        "extend-unfixable",
+        "extend-safe-fixes",
+        "extend-unsafe-fixes",
+        "allowed-confusables",
+        "dummy-variable-rgx",
+        "task-tags",
+        "logger-objects",
+        "typing-modules",
+        "typing-extensions",
+        "external",
+        "explicit-preview-rules",
+        "ignore-init-module-imports",
+        # Plugin sub-tables that moved to [tool.ruff.lint.*]
+        "flake8-annotations",
+        "flake8-bandit",
+        "flake8-boolean-trap",
+        "flake8-bugbear",
+        "flake8-builtins",
+        "flake8-comprehensions",
+        "flake8-copyright",
+        "flake8-errmsg",
+        "flake8-executable",
+        "flake8-gettext",
+        "flake8-implicit-str-concat",
+        "flake8-import-conventions",
+        "flake8-logging-format",
+        "flake8-pie",
+        "flake8-print",
+        "flake8-pytest-style",
+        "flake8-quotes",
+        "flake8-raise",
+        "flake8-return",
+        "flake8-self",
+        "flake8-simplify",
+        "flake8-tidy-imports",
+        "flake8-type-checking",
+        "flake8-unused-arguments",
+        "flake8-use-pathlib",
+        "isort",
+        "mccabe",
+        "pep8-naming",
+        "pycodestyle",
+        "pydocstyle",
+        "pydoclint",
+        "pyflakes",
+        "pylint",
+        "pyupgrade",
+        "ruff",
     }
 )
 
@@ -118,7 +156,7 @@ class RuffBoost(Boost):
             ruff_section: Any = tool_section.get("ruff")
             if not isinstance(ruff_section, dict):
                 return data
-            keys_to_move = [k for k in ruff_section if k not in _RUFF_TOP_LEVEL_KEYS]
+            keys_to_move = [k for k in ruff_section if k in _RUFF_LINT_KEYS]
             if not keys_to_move:
                 return data
             if "lint" not in ruff_section:

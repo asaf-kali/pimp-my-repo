@@ -244,26 +244,44 @@ def test_ruf100_is_unsuppressible(ruff_boost: RuffBoost) -> None:
 
 
 def test_migrate_deprecated_ruff_config_moves_lint_keys(mock_repo: RepositoryController, ruff_boost: RuffBoost) -> None:
-    """Deprecated top-level lint settings (select, ignore, ...) are moved to [tool.ruff.lint]."""
+    """Deprecated top-level lint settings (select, ignore, ...) are moved to [tool.ruff.lint].
+
+    Top-level-only settings like line-length, fix, output-format, and exclude must NOT be moved
+    because they have different (or broader) semantics than their [tool.ruff.lint] counterparts.
+    """
     mock_repo.write_file(
         "pyproject.toml",
-        '[tool.ruff]\nline-length = 120\nselect = ["B", "C"]\nignore = []\nexclude = ["local"]\n',
+        (
+            "[tool.ruff]\n"
+            "line-length = 120\n"
+            "fix = true\n"
+            'output-format = "full"\n'
+            'exclude = ["local"]\n'
+            'select = ["B", "C"]\n'
+            "ignore = []\n"
+        ),
     )
     data = ruff_boost.tools.pyproject.read()
     data = ruff_boost._migrate_deprecated_ruff_config(data)  # noqa: SLF001
     ruff_boost.tools.pyproject.write(data)
 
     content = (mock_repo.path / "pyproject.toml").read_text()
-    # Lint-level keys appear under [tool.ruff.lint]
     lint_pos = content.index("[tool.ruff.lint]")
-    assert content.index('select = ["B", "C"]') > lint_pos
-    # Top-level keys stay in [tool.ruff]
     ruff_pos = content.index("[tool.ruff]")
-    assert content.index("line-length = 120") > ruff_pos
-    assert content.index('exclude = ["local"]') > ruff_pos
-    # select and ignore must not appear before [tool.ruff.lint]
-    assert 'select = ["B", "C"]' not in content[:lint_pos]
-    assert "ignore = []" not in content[:lint_pos]
+
+    # Lint-level keys appear under [tool.ruff.lint]
+    assert content.index('select = ["B", "C"]') > lint_pos
+    assert content.index("ignore = []") > lint_pos
+
+    # Top-level-only keys stay in [tool.ruff] (before [tool.ruff.lint])
+    assert content.index("line-length = 120") < lint_pos
+    assert content.index("fix = true") < lint_pos
+    assert content.index('output-format = "full"') < lint_pos
+    assert content.index('exclude = ["local"]') < lint_pos
+
+    # Lint keys must not appear before [tool.ruff.lint]
+    assert 'select = ["B", "C"]' not in content[ruff_pos:lint_pos]
+    assert "ignore = []" not in content[ruff_pos:lint_pos]
 
 
 def test_migrate_deprecated_ruff_config_preserves_existing_lint_section(
