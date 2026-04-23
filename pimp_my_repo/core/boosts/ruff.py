@@ -17,71 +17,8 @@ if TYPE_CHECKING:
 _MAX_RUFF_ITERATIONS = 10
 _RUFF_PACKAGE = "ruff>=0.1.0,<0.16"  # 0.1.0+: --output-format; upper-bound: bump after validating new minor
 
-# Keys that are valid under [tool.ruff.lint] (ruff 0.1+).
-# Only these are candidates for migration when found at the deprecated [tool.ruff] top level.
-# Using an allowlist (not a denylist) keeps top-level-only settings like fix/show-fixes/output-format safe.
-_RUFF_LINT_KEYS: frozenset[str] = frozenset(
-    {
-        # Core lint settings
-        "select",
-        "ignore",
-        "extend-select",
-        "extend-ignore",
-        "per-file-ignores",
-        "extend-per-file-ignores",
-        "fixable",
-        "unfixable",
-        "extend-fixable",
-        "extend-unfixable",
-        "extend-safe-fixes",
-        "extend-unsafe-fixes",
-        "allowed-confusables",
-        "dummy-variable-rgx",
-        "task-tags",
-        "logger-objects",
-        "typing-modules",
-        "typing-extensions",
-        "external",
-        "explicit-preview-rules",
-        "ignore-init-module-imports",
-        # Plugin sub-tables that moved to [tool.ruff.lint.*]
-        "flake8-annotations",
-        "flake8-bandit",
-        "flake8-boolean-trap",
-        "flake8-bugbear",
-        "flake8-builtins",
-        "flake8-comprehensions",
-        "flake8-copyright",
-        "flake8-errmsg",
-        "flake8-executable",
-        "flake8-gettext",
-        "flake8-implicit-str-concat",
-        "flake8-import-conventions",
-        "flake8-logging-format",
-        "flake8-pie",
-        "flake8-print",
-        "flake8-pytest-style",
-        "flake8-quotes",
-        "flake8-raise",
-        "flake8-return",
-        "flake8-self",
-        "flake8-simplify",
-        "flake8-tidy-imports",
-        "flake8-type-checking",
-        "flake8-unused-arguments",
-        "flake8-use-pathlib",
-        "isort",
-        "mccabe",
-        "pep8-naming",
-        "pycodestyle",
-        "pydocstyle",
-        "pydoclint",
-        "pyflakes",
-        "pylint",
-        "pyupgrade",
-        "ruff",
-    }
-)
+# Matches ruff's deprecation warning lines, e.g.:  "  - 'select' -> 'lint.select'"
+_RUFF_DEPRECATED_KEY_RE = re.compile(r"^\s+-\s+'([^']+)'\s+->\s+'lint\.[^']+'", re.MULTILINE)
 
 # Rules that must never be suppressed via noqa:
 # - ERA001: treats the noqa comment itself as commented-out code → oscillation loop.
@@ -150,20 +87,27 @@ class RuffBoost(Boost):
                 break
 
     def _migrate_deprecated_ruff_config(self, data: TOMLDocument) -> TOMLDocument:
-        """Move deprecated top-level [tool.ruff] lint settings to [tool.ruff.lint] (best-effort)."""
+        """Move deprecated top-level [tool.ruff] lint settings to [tool.ruff.lint] (best-effort).
+
+        Runs ruff and parses its own deprecation warnings to discover which keys to move —
+        no hardcoded list to maintain, automatically correct for any ruff version.
+        """
         try:
+            result = self._run_ruff_check(output_format=None)
+            keys_to_move = _RUFF_DEPRECATED_KEY_RE.findall(result.stderr or "")
+            if not keys_to_move:
+                return data
             tool_section: Any = data.get("tool", {})
             ruff_section: Any = tool_section.get("ruff")
             if not isinstance(ruff_section, dict):
-                return data
-            keys_to_move = [k for k in ruff_section if k in _RUFF_LINT_KEYS]
-            if not keys_to_move:
                 return data
             if "lint" not in ruff_section:
                 ruff_section["lint"] = table()
             lint_section: Any = ruff_section["lint"]
             moved: list[str] = []
             for key in keys_to_move:
+                if key not in ruff_section:
+                    continue
                 value = ruff_section[key]
                 if key not in lint_section:
                     lint_section[key] = value
@@ -196,11 +140,12 @@ class RuffBoost(Boost):
         logger.debug("Running ruff format...")
         return self.uv.exec("run", "--no-sync", "ruff", "format", ".", check=False, log_on_error=False)
 
-    def _run_ruff_check(self) -> CommandResult:
+    def _run_ruff_check(self, output_format: str | None = "json") -> CommandResult:
         logger.debug("Running ruff check...")
-        return self.uv.exec(
-            "run", "--no-sync", "ruff", "check", ".", "--output-format=json", check=False, log_on_error=False
-        )
+        args = ["run", "--no-sync", "ruff", "check", "."]
+        if output_format:
+            args.extend(["--output-format", output_format])
+        return self.uv.exec(*args, check=False, log_on_error=False)
 
     def _ensure_ruff_config(self, data: TOMLDocument) -> TOMLDocument:
         if "tool" not in data:

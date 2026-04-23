@@ -51,6 +51,7 @@ def patched_ruff_apply(
         patch.object(ruff_boost_with_pyproject.tools.git, "commit") as mock_git,
         patch.object(ruff_boost_with_pyproject, "_run_ruff_format", return_value=ok_result()) as mock_fmt,
         patch.object(ruff_boost_with_pyproject, "_run_ruff_check", return_value=ok_result()) as mock_check,
+        patch.object(ruff_boost_with_pyproject, "_migrate_deprecated_ruff_config", side_effect=lambda data: data),
     ):
         yield PatchedRuffApply(
             boost=ruff_boost_with_pyproject,
@@ -85,6 +86,7 @@ def patched_ruff_apply_with_add_package(
         patch.object(ruff_boost_with_pyproject, "_run_ruff_format", return_value=ok_result()) as mock_fmt,
         patch.object(ruff_boost_with_pyproject, "_run_ruff_check", return_value=ok_result()) as mock_check,
         patch.object(ruff_boost_with_pyproject.tools.uv, "add_package") as mock_add_package,
+        patch.object(ruff_boost_with_pyproject, "_migrate_deprecated_ruff_config", side_effect=lambda data: data),
     ):
         yield PatchedRuffApplyWithAddPackage(
             boost=ruff_boost_with_pyproject,
@@ -243,12 +245,10 @@ def test_ruf100_is_unsuppressible(ruff_boost: RuffBoost) -> None:
     assert result == {ViolationLocation("src/foo.py", 2): {"E501"}}
 
 
-def test_migrate_deprecated_ruff_config_moves_lint_keys(mock_repo: RepositoryController, ruff_boost: RuffBoost) -> None:
-    """Deprecated top-level lint settings (select, ignore, ...) are moved to [tool.ruff.lint].
-
-    Top-level-only settings like line-length, fix, output-format, and exclude must NOT be moved
-    because they have different (or broader) semantics than their [tool.ruff.lint] counterparts.
-    """
+def test_migrate_deprecated_ruff_config_moves_keys_reported_by_ruff(
+    mock_repo: RepositoryController, ruff_boost: RuffBoost
+) -> None:
+    """Keys reported as deprecated by ruff are moved; unreported keys stay at the top level."""
     mock_repo.write_file(
         "pyproject.toml",
         (
@@ -261,19 +261,23 @@ def test_migrate_deprecated_ruff_config_moves_lint_keys(mock_repo: RepositoryCon
             "ignore = []\n"
         ),
     )
-    data = ruff_boost.tools.pyproject.read()
-    data = ruff_boost._migrate_deprecated_ruff_config(data)  # noqa: SLF001
-    ruff_boost.tools.pyproject.write(data)
+    # Simulate ruff warning about select and ignore only (not fix/output-format/exclude)
+    warning_result = MagicMock()
+    warning_result.stderr = "  - 'select' -> 'lint.select'\n  - 'ignore' -> 'lint.ignore'\n"
+    with patch.object(ruff_boost, "_run_ruff_check", return_value=warning_result):
+        data = ruff_boost.tools.pyproject.read()
+        data = ruff_boost._migrate_deprecated_ruff_config(data)  # noqa: SLF001
+        ruff_boost.tools.pyproject.write(data)
 
     content = (mock_repo.path / "pyproject.toml").read_text()
     lint_pos = content.index("[tool.ruff.lint]")
     ruff_pos = content.index("[tool.ruff]")
 
-    # Lint-level keys appear under [tool.ruff.lint]
+    # Reported lint-level keys moved under [tool.ruff.lint]
     assert content.index('select = ["B", "C"]') > lint_pos
     assert content.index("ignore = []") > lint_pos
 
-    # Top-level-only keys stay in [tool.ruff] (before [tool.ruff.lint])
+    # Unreported keys stay in [tool.ruff]
     assert content.index("line-length = 120") < lint_pos
     assert content.index("fix = true") < lint_pos
     assert content.index('output-format = "full"') < lint_pos
@@ -292,9 +296,12 @@ def test_migrate_deprecated_ruff_config_preserves_existing_lint_section(
         "pyproject.toml",
         '[tool.ruff]\nselect = ["B"]\n\n[tool.ruff.lint]\nselect = ["ALL"]\n',
     )
-    data = ruff_boost.tools.pyproject.read()
-    data = ruff_boost._migrate_deprecated_ruff_config(data)  # noqa: SLF001
-    ruff_boost.tools.pyproject.write(data)
+    warning_result = MagicMock()
+    warning_result.stderr = "  - 'select' -> 'lint.select'\n"
+    with patch.object(ruff_boost, "_run_ruff_check", return_value=warning_result):
+        data = ruff_boost.tools.pyproject.read()
+        data = ruff_boost._migrate_deprecated_ruff_config(data)  # noqa: SLF001
+        ruff_boost.tools.pyproject.write(data)
 
     content = (mock_repo.path / "pyproject.toml").read_text()
     # Existing lint value wins
@@ -303,21 +310,35 @@ def test_migrate_deprecated_ruff_config_preserves_existing_lint_section(
     assert 'select = ["B"]' not in content
 
 
-def test_migrate_deprecated_ruff_config_no_op_when_already_clean(
+def test_migrate_deprecated_ruff_config_no_op_when_ruff_reports_nothing(
     mock_repo: RepositoryController, ruff_boost: RuffBoost
 ) -> None:
-    """Migration does nothing when there are no deprecated top-level lint settings."""
+    """Migration does nothing when ruff reports no deprecated settings."""
     original = '[tool.ruff]\nline-length = 100\n\n[tool.ruff.lint]\nselect = ["ALL"]\n'
     mock_repo.write_file("pyproject.toml", original)
-    data = ruff_boost.tools.pyproject.read()
-    data = ruff_boost._migrate_deprecated_ruff_config(data)  # noqa: SLF001
-    ruff_boost.tools.pyproject.write(data)
+    no_warning_result = MagicMock()
+    no_warning_result.stderr = ""
+    with patch.object(ruff_boost, "_run_ruff_check", return_value=no_warning_result):
+        data = ruff_boost.tools.pyproject.read()
+        data = ruff_boost._migrate_deprecated_ruff_config(data)  # noqa: SLF001
+        ruff_boost.tools.pyproject.write(data)
 
     content = (mock_repo.path / "pyproject.toml").read_text()
     assert "line-length = 100" in content
     assert 'select = ["ALL"]' in content
-    # No duplicate or extra lint section created
     assert content.count("[tool.ruff.lint]") == 1
+
+
+def test_deprecated_key_regex_parses_ruff_warning() -> None:
+    """_RUFF_DEPRECATED_KEY_RE extracts key names from ruff's deprecation warning lines."""
+    from pimp_my_repo.core.boosts.ruff import _RUFF_DEPRECATED_KEY_RE  # noqa: PLC0415
+
+    warning_stderr = (
+        "warning: The top-level linter settings are deprecated...\n"
+        "  - 'ignore' -> 'lint.ignore'\n"
+        "  - 'select' -> 'lint.select'\n"
+    )
+    assert set(_RUFF_DEPRECATED_KEY_RE.findall(warning_stderr)) == {"ignore", "select"}
 
 
 def test_ruff_config_ignores_ruf100(mock_repo: RepositoryController, ruff_boost: RuffBoost) -> None:
