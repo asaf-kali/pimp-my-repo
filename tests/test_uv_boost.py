@@ -1198,6 +1198,35 @@ def test_lock_and_sync_retries_with_package_false_on_multi_top_level_error(
     assert sync_call_count == 2  # noqa: PLR2004
 
 
+def test_lock_and_sync_retries_with_package_false_on_missing_module_error(
+    mock_repo: RepositoryController,
+    uv_boost: UvBoost,
+) -> None:
+    """When uv sync fails because the package module is not found, package = false is set and retried."""
+    mock_repo.write_file("pyproject.toml", '[project]\nname = "myapp"\n')
+    missing_module_error = subprocess.CalledProcessError(
+        1,
+        ["uv", "sync"],
+        stderr="Expected a Python module at: src/myapp/__init__.py",
+    )
+    sync_call_count = 0
+
+    def fake_exec(*args: object, **_kwargs: object) -> CommandResult:
+        nonlocal sync_call_count
+        if "sync" in args:
+            sync_call_count += 1
+            if sync_call_count == 1:
+                raise missing_module_error
+        return CommandResult(cmd=["uv", *[str(a) for a in args]], returncode=0, stdout="", stderr="")
+
+    with mock.patch.object(uv_boost.tools.uv, "exec", side_effect=fake_exec):
+        uv_boost._lock_and_sync()  # noqa: SLF001
+
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert "package = false" in content
+    assert sync_call_count == 2  # noqa: PLR2004
+
+
 def test_lock_and_sync_reraises_unrelated_uv_sync_errors(
     mock_repo: RepositoryController,
     uv_boost: UvBoost,

@@ -27,6 +27,7 @@ _MIN_PYTHON_MINOR: int = 8
 # Projects using these cannot be built by uv without external toolchains,
 # so we set package = false to skip the local-build step.
 _MULTI_TOP_LEVEL_PACKAGES_MSG = "Multiple top-level packages discovered in a flat-layout"
+_MISSING_PYTHON_MODULE_MSG = "Expected a Python module at:"
 
 _NATIVE_BUILD_BACKEND_PREFIXES: tuple[str, ...] = (
     "mesonpy",
@@ -637,9 +638,13 @@ class UvBoost(Boost):
         try:
             self.uv.exec("sync", "--all-groups")
         except subprocess.CalledProcessError as e:
-            if _MULTI_TOP_LEVEL_PACKAGES_MSG not in (e.stderr or ""):
+            stderr = e.stderr or ""
+            if _MULTI_TOP_LEVEL_PACKAGES_MSG in stderr:
+                logger.info("Multiple top-level packages detected; setting [tool.uv] package = false and retrying")
+            elif _MISSING_PYTHON_MODULE_MSG in stderr:
+                logger.info("Package module not found; setting [tool.uv] package = false and retrying")
+            else:
                 raise
-            logger.info("Multiple top-level packages detected; setting [tool.uv] package = false and retrying")
             self._set_uv_package_false()
             self.uv.exec("sync", "--all-groups")
         logger.debug("uv lock and sync completed successfully")

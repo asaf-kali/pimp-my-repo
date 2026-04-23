@@ -875,7 +875,7 @@ def test_add_dmypy_adds_newline_before_entry(mock_repo: RepositoryController, dm
 @pytest.mark.smoke
 def test_apply_calls_uv_add_mypy(patched_mypy_apply_with_add_package: PatchedMypyApplyWithAddPackage) -> None:
     patched_mypy_apply_with_add_package.boost.apply()
-    patched_mypy_apply_with_add_package.mock_add_package.assert_called_once_with("mypy<1.20", group="lint")
+    patched_mypy_apply_with_add_package.mock_add_package.assert_called_once_with("mypy>=1.0,<1.20", group="lint")
 
 
 def test_apply_writes_strict_config_to_pyproject(

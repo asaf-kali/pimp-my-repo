@@ -243,6 +243,83 @@ def test_ruf100_is_unsuppressible(ruff_boost: RuffBoost) -> None:
     assert result == {ViolationLocation("src/foo.py", 2): {"E501"}}
 
 
+def test_migrate_deprecated_ruff_config_moves_lint_keys(mock_repo: RepositoryController, ruff_boost: RuffBoost) -> None:
+    """Deprecated top-level lint settings (select, ignore, ...) are moved to [tool.ruff.lint].
+
+    Top-level-only settings like line-length, fix, output-format, and exclude must NOT be moved
+    because they have different (or broader) semantics than their [tool.ruff.lint] counterparts.
+    """
+    mock_repo.write_file(
+        "pyproject.toml",
+        (
+            "[tool.ruff]\n"
+            "line-length = 120\n"
+            "fix = true\n"
+            'output-format = "full"\n'
+            'exclude = ["local"]\n'
+            'select = ["B", "C"]\n'
+            "ignore = []\n"
+        ),
+    )
+    data = ruff_boost.tools.pyproject.read()
+    data = ruff_boost._migrate_deprecated_ruff_config(data)  # noqa: SLF001
+    ruff_boost.tools.pyproject.write(data)
+
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    lint_pos = content.index("[tool.ruff.lint]")
+    ruff_pos = content.index("[tool.ruff]")
+
+    # Lint-level keys appear under [tool.ruff.lint]
+    assert content.index('select = ["B", "C"]') > lint_pos
+    assert content.index("ignore = []") > lint_pos
+
+    # Top-level-only keys stay in [tool.ruff] (before [tool.ruff.lint])
+    assert content.index("line-length = 120") < lint_pos
+    assert content.index("fix = true") < lint_pos
+    assert content.index('output-format = "full"') < lint_pos
+    assert content.index('exclude = ["local"]') < lint_pos
+
+    # Lint keys must not appear before [tool.ruff.lint]
+    assert 'select = ["B", "C"]' not in content[ruff_pos:lint_pos]
+    assert "ignore = []" not in content[ruff_pos:lint_pos]
+
+
+def test_migrate_deprecated_ruff_config_preserves_existing_lint_section(
+    mock_repo: RepositoryController, ruff_boost: RuffBoost
+) -> None:
+    """Existing [tool.ruff.lint] values are not overwritten during migration."""
+    mock_repo.write_file(
+        "pyproject.toml",
+        '[tool.ruff]\nselect = ["B"]\n\n[tool.ruff.lint]\nselect = ["ALL"]\n',
+    )
+    data = ruff_boost.tools.pyproject.read()
+    data = ruff_boost._migrate_deprecated_ruff_config(data)  # noqa: SLF001
+    ruff_boost.tools.pyproject.write(data)
+
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    # Existing lint value wins
+    assert 'select = ["ALL"]' in content
+    # Deprecated top-level value is dropped entirely
+    assert 'select = ["B"]' not in content
+
+
+def test_migrate_deprecated_ruff_config_no_op_when_already_clean(
+    mock_repo: RepositoryController, ruff_boost: RuffBoost
+) -> None:
+    """Migration does nothing when there are no deprecated top-level lint settings."""
+    original = '[tool.ruff]\nline-length = 100\n\n[tool.ruff.lint]\nselect = ["ALL"]\n'
+    mock_repo.write_file("pyproject.toml", original)
+    data = ruff_boost.tools.pyproject.read()
+    data = ruff_boost._migrate_deprecated_ruff_config(data)  # noqa: SLF001
+    ruff_boost.tools.pyproject.write(data)
+
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert "line-length = 100" in content
+    assert 'select = ["ALL"]' in content
+    # No duplicate or extra lint section created
+    assert content.count("[tool.ruff.lint]") == 1
+
+
 def test_ruff_config_ignores_ruf100(mock_repo: RepositoryController, ruff_boost: RuffBoost) -> None:
     """RUF100 must be in the ignore list to prevent oscillation on file-level noqa directives."""
     mock_repo.write_file("pyproject.toml", "[project]\nname = 'test'\n")
@@ -420,7 +497,7 @@ def test_ruff_config_preserves_existing_content(mock_repo: RepositoryController,
 @pytest.mark.smoke
 def test_apply_calls_uv_add_ruff(patched_ruff_apply_with_add_package: PatchedRuffApplyWithAddPackage) -> None:
     patched_ruff_apply_with_add_package.boost.apply()
-    patched_ruff_apply_with_add_package.mock_add_package.assert_called_once_with("ruff<0.16", group="lint")
+    patched_ruff_apply_with_add_package.mock_add_package.assert_called_once_with("ruff>=0.1.0,<0.16", group="lint")
 
 
 def test_apply_writes_ruff_config_to_pyproject(

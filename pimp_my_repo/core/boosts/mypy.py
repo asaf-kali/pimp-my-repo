@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from pimp_my_repo.core.tools.subprocess import CommandResult
 
 _MAX_MYPY_ITERATIONS = 10
-_MYPY_PACKAGE = "mypy<1.20"  # upper-bound: mypy 1.20 hangs on large codebases; bump after validating new minor
+_MYPY_PACKAGE = "mypy>=1.0,<1.20"  # lower-bound: 1.0 dropped typed_ast; upper-bound: bump after validating new minor
 
 # Supports "path:line: error:", "path:line:col: error:" (--show-column-numbers), and
 # "path:line:col:endline:endcol: error:" (--show-error-end).  (?::\d+)* matches zero or
