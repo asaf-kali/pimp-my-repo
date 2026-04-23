@@ -243,6 +243,65 @@ def test_ruf100_is_unsuppressible(ruff_boost: RuffBoost) -> None:
     assert result == {ViolationLocation("src/foo.py", 2): {"E501"}}
 
 
+def test_migrate_deprecated_ruff_config_moves_lint_keys(mock_repo: RepositoryController, ruff_boost: RuffBoost) -> None:
+    """Deprecated top-level lint settings (select, ignore, ...) are moved to [tool.ruff.lint]."""
+    mock_repo.write_file(
+        "pyproject.toml",
+        '[tool.ruff]\nline-length = 120\nselect = ["B", "C"]\nignore = []\nexclude = ["local"]\n',
+    )
+    data = ruff_boost.tools.pyproject.read()
+    data = ruff_boost._migrate_deprecated_ruff_config(data)  # noqa: SLF001
+    ruff_boost.tools.pyproject.write(data)
+
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    # Lint-level keys appear under [tool.ruff.lint]
+    lint_pos = content.index("[tool.ruff.lint]")
+    assert content.index('select = ["B", "C"]') > lint_pos
+    # Top-level keys stay in [tool.ruff]
+    ruff_pos = content.index("[tool.ruff]")
+    assert content.index("line-length = 120") > ruff_pos
+    assert content.index('exclude = ["local"]') > ruff_pos
+    # select and ignore must not appear before [tool.ruff.lint]
+    assert 'select = ["B", "C"]' not in content[:lint_pos]
+    assert "ignore = []" not in content[:lint_pos]
+
+
+def test_migrate_deprecated_ruff_config_preserves_existing_lint_section(
+    mock_repo: RepositoryController, ruff_boost: RuffBoost
+) -> None:
+    """Existing [tool.ruff.lint] values are not overwritten during migration."""
+    mock_repo.write_file(
+        "pyproject.toml",
+        '[tool.ruff]\nselect = ["B"]\n\n[tool.ruff.lint]\nselect = ["ALL"]\n',
+    )
+    data = ruff_boost.tools.pyproject.read()
+    data = ruff_boost._migrate_deprecated_ruff_config(data)  # noqa: SLF001
+    ruff_boost.tools.pyproject.write(data)
+
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    # Existing lint value wins
+    assert 'select = ["ALL"]' in content
+    # Deprecated top-level value is dropped entirely
+    assert 'select = ["B"]' not in content
+
+
+def test_migrate_deprecated_ruff_config_no_op_when_already_clean(
+    mock_repo: RepositoryController, ruff_boost: RuffBoost
+) -> None:
+    """Migration does nothing when there are no deprecated top-level lint settings."""
+    original = '[tool.ruff]\nline-length = 100\n\n[tool.ruff.lint]\nselect = ["ALL"]\n'
+    mock_repo.write_file("pyproject.toml", original)
+    data = ruff_boost.tools.pyproject.read()
+    data = ruff_boost._migrate_deprecated_ruff_config(data)  # noqa: SLF001
+    ruff_boost.tools.pyproject.write(data)
+
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert "line-length = 100" in content
+    assert 'select = ["ALL"]' in content
+    # No duplicate or extra lint section created
+    assert content.count("[tool.ruff.lint]") == 1
+
+
 def test_ruff_config_ignores_ruf100(mock_repo: RepositoryController, ruff_boost: RuffBoost) -> None:
     """RUF100 must be in the ignore list to prevent oscillation on file-level noqa directives."""
     mock_repo.write_file("pyproject.toml", "[project]\nname = 'test'\n")

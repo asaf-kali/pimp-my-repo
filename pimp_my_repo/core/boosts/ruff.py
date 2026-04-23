@@ -17,6 +17,34 @@ if TYPE_CHECKING:
 _MAX_RUFF_ITERATIONS = 10
 _RUFF_PACKAGE = "ruff>=0.1.0,<0.16"  # 0.1.0+: --output-format; upper-bound: bump after validating new minor
 
+# Keys that legitimately live directly under [tool.ruff] (ruff 0.1+).
+# Every other key found there is a deprecated top-level lint setting and will be
+# migrated to [tool.ruff.lint] automatically.
+_RUFF_TOP_LEVEL_KEYS: frozenset[str] = frozenset(
+    {
+        "line-length",
+        "indent-width",
+        "target-version",
+        "exclude",
+        "extend-exclude",
+        "extend-include",
+        "force-exclude",
+        "include",
+        "respect-gitignore",
+        "required-version",
+        "unsafe-fixes",
+        "cache-dir",
+        "builtins",
+        "namespace-packages",
+        "preview",
+        "src",
+        # Sub-tables that are not the lint section
+        "lint",
+        "format",
+        "analyze",
+    }
+)
+
 # Rules that must never be suppressed via noqa:
 # - ERA001: treats the noqa comment itself as commented-out code → oscillation loop.
 # - RUF100: "unused noqa directive" — fired on file-level `# ruff: no-qa: CODE` lines.
@@ -60,6 +88,7 @@ class RuffBoost(Boost):
 
         logger.info("Configuring [tool.ruff.lint] select = ['ALL'] in pyproject.toml...")
         pyproject_data = self.pyproject.read()
+        pyproject_data = self._migrate_deprecated_ruff_config(pyproject_data)
         pyproject_data = self._ensure_ruff_config(pyproject_data)
         self.pyproject.write(pyproject_data)
 
@@ -81,6 +110,32 @@ class RuffBoost(Boost):
             self._run_ruff_format()
             if not self._suppress_violations_iteration():
                 break
+
+    def _migrate_deprecated_ruff_config(self, data: TOMLDocument) -> TOMLDocument:
+        """Move deprecated top-level [tool.ruff] lint settings to [tool.ruff.lint] (best-effort)."""
+        try:
+            tool_section: Any = data.get("tool", {})
+            ruff_section: Any = tool_section.get("ruff")
+            if not isinstance(ruff_section, dict):
+                return data
+            keys_to_move = [k for k in ruff_section if k not in _RUFF_TOP_LEVEL_KEYS]
+            if not keys_to_move:
+                return data
+            if "lint" not in ruff_section:
+                ruff_section["lint"] = table()
+            lint_section: Any = ruff_section["lint"]
+            moved: list[str] = []
+            for key in keys_to_move:
+                value = ruff_section[key]
+                if key not in lint_section:
+                    lint_section[key] = value
+                    moved.append(key)
+                del ruff_section[key]
+            if moved:
+                logger.info(f"Migrated deprecated ruff config to [tool.ruff.lint]: {moved}")
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Could not migrate deprecated ruff config, continuing: {e}")
+        return data
 
     def _verify_uv_present(self) -> None:
         try:
