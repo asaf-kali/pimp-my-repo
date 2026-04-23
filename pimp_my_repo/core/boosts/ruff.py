@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from pimp_my_repo.core.tools.subprocess import CommandResult
 
 _MAX_RUFF_ITERATIONS = 10
-_RUFF_PACKAGE = "ruff<0.16"  # upper-bound: output format is parsed; bump after validating new minor
+_RUFF_PACKAGE = "ruff>=0.1.0,<0.16"  # 0.1.0+: --output-format; upper-bound: bump after validating new minor
 
 # Rules that must never be suppressed via noqa:
 # - ERA001: treats the noqa comment itself as commented-out code → oscillation loop.
