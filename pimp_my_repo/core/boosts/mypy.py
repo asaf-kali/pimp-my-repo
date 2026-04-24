@@ -385,7 +385,8 @@ class BaseMypyBoost(Boost, abc.ABC):
             files_changed = self._apply_type_ignores(violations)
             if files_changed:
                 made_progress = True
-                self._run_ruff()
+                if self._run_ruff():
+                    made_progress = True
 
         if not made_progress:
             logger.warning("No progress made (violations exist but files unchanged); stable state reached, stopping")
@@ -528,15 +529,15 @@ class BaseMypyBoost(Boost, abc.ABC):
         logger.debug(f"Blocking uncoded errors in {len(files)} file(s): {files}")
         return self._exclude_mypy_files(files)
 
-    def _run_ruff(self) -> None:
-        """Run ruff suppress iterations if ruff is configured in the repo."""
+    def _run_ruff(self) -> bool:
+        """Run ruff suppress iterations if ruff is configured. Returns True if ruff found violations."""
         data = self.pyproject.read()
         tool_section = data.get("tool")
         if not tool_section or "ruff" not in tool_section:
             logger.debug("Ruff not configured; skipping ruff suppress pass")
-            return
+            return False
         logger.debug("Running ruff suppress pass after mypy edits")
-        RuffBoost(tools=self.tools).run_suppress_iterations()
+        return RuffBoost(tools=self.tools).run_suppress_iterations()
 
     def _configure_mypy(self) -> None:
         self._add_mypy()

@@ -37,6 +37,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption("--e2e-url", default=None, help="Git URL for remote e2e test")
     parser.addoption("--e2e-rev", default=None, help="Git revision for remote e2e test")
     parser.addoption("--fixture-name", default=None, help="Fixture name for manual local e2e test")
+    parser.addoption("--ty", action="store_true", default=False, help="Use ty instead of mypy in e2e tests")
 
 
 @pytest.fixture
@@ -51,6 +52,11 @@ def e2e_url(request: pytest.FixtureRequest) -> str:
 def e2e_rev(request: pytest.FixtureRequest) -> str | None:
     rev = request.config.getoption("--e2e-rev")
     return str(rev) or None
+
+
+@pytest.fixture
+def e2e_ty(request: pytest.FixtureRequest) -> bool:
+    return bool(request.config.getoption("--ty"))
 
 
 @pytest.fixture

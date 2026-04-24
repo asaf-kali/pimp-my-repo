@@ -225,6 +225,17 @@ def test_patch_justfile_content_returns_none_when_no_install_recipe() -> None:
 # --- Metadata ---
 
 
+def test_includes_check_ty_when_recipe_present(
+    mock_repo: RepositoryController,
+    patched_pre_commit_apply: PatchedPreCommitApply,
+) -> None:
+    mock_repo.write_file("justfile", "check-ty:\n    uv run ty check .\n")
+    patched_pre_commit_apply.boost.apply()
+    content = (mock_repo.path / ".pre-commit-config.yaml").read_text()
+    assert "just check-ty" in content
+    assert "check-mypy" not in content
+
+
 def test_commit_message(pre_commit_boost: PreCommitBoost) -> None:
     assert pre_commit_boost.commit_message() == "✨ Add pre-commit hooks"
 

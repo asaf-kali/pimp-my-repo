@@ -334,6 +334,18 @@ def test_does_not_parse_variable_assignment_as_recipe(mock_repo: RepositoryContr
 # =============================================================================
 
 
+def test_creates_justfile_with_ty_recipe(
+    mock_repo: RepositoryController,
+    patched_justfile_apply: PatchedJustfileApply,
+) -> None:
+    mock_repo.write_file("pyproject.toml", "[project]\n[tool.ty]\n")
+    patched_justfile_apply.boost.apply()
+    content = (mock_repo.path / "justfile").read_text()
+    assert "check-ty:" in content
+    assert "ty check ." in content
+    assert "check-mypy:" not in content
+
+
 def test_commit_message(justfile_boost: JustfileBoost) -> None:
     assert justfile_boost.commit_message() == "✨ Add justfile with common commands"
 

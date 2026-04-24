@@ -59,6 +59,14 @@ _HOOK_CHECK_MYPY = (
     "        pass_filenames: false\n"
 )
 
+_HOOK_CHECK_TY = (
+    "      - id: check-ty\n"
+    "        name: check ty typing\n"
+    '        entry: "just check-ty"\n'
+    "        language: system\n"
+    "        pass_filenames: false\n"
+)
+
 
 class PreCommitBoost(Boost):
     """Boost for integrating pre-commit hooks."""
@@ -170,6 +178,8 @@ def _build_config(*, justfile_recipes: set[str]) -> str:
         local_hooks.append(_HOOK_CHECK_RUFF)
     if "check-mypy" in justfile_recipes:
         local_hooks.append(_HOOK_CHECK_MYPY)
+    if "check-ty" in justfile_recipes:
+        local_hooks.append(_HOOK_CHECK_TY)
 
     content = _STANDARD_HOOKS
     if local_hooks:
