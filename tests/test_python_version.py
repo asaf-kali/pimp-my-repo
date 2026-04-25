@@ -41,6 +41,12 @@ def mock_run_command() -> Generator[mock.MagicMock]:
         yield m
 
 
+@pytest.fixture
+def mock_path_read_text_error() -> Generator[mock.MagicMock]:
+    with mock.patch("pathlib.Path.read_text", side_effect=OSError("permission denied")) as m:
+        yield m
+
+
 # =============================================================================
 # resolve_requires_python TESTS
 # =============================================================================
@@ -243,6 +249,88 @@ def test_detect_vermin_returns_none_when_no_py3(
     result_mock.stdout = "Minimum required versions: 2.7"
     result_mock.stderr = ""
     mock_run_command.return_value = result_mock
+
+    result = resolve_requires_python(repo_path=tmp_path)
+
+    assert result is None
+
+
+def test_detect_venv_no_python_exe(
+    mock_detect_uv_lock: mock.MagicMock,
+    mock_detect_vermin: mock.MagicMock,
+    tmp_path: Path,
+) -> None:
+    mock_detect_uv_lock.return_value = None
+    mock_detect_vermin.return_value = None
+    (tmp_path / ".venv").mkdir()  # dir exists but contains no python executable
+
+    result = resolve_requires_python(repo_path=tmp_path)
+
+    assert result is None
+
+
+def test_detect_venv_python_oserror(
+    mock_run_command: mock.MagicMock,
+    mock_detect_uv_lock: mock.MagicMock,
+    mock_detect_vermin: mock.MagicMock,
+    tmp_path: Path,
+) -> None:
+    mock_detect_uv_lock.return_value = None
+    mock_detect_vermin.return_value = None
+    venv_bin = tmp_path / ".venv" / "bin"
+    venv_bin.mkdir(parents=True)
+    (venv_bin / "python").touch()
+    mock_run_command.side_effect = OSError("cannot execute")
+
+    result = resolve_requires_python(repo_path=tmp_path)
+
+    assert result is None
+
+
+def test_detect_venv_python_unexpected_output(
+    mock_run_command: mock.MagicMock,
+    mock_detect_uv_lock: mock.MagicMock,
+    mock_detect_vermin: mock.MagicMock,
+    tmp_path: Path,
+) -> None:
+    mock_detect_uv_lock.return_value = None
+    mock_detect_vermin.return_value = None
+    venv_bin = tmp_path / ".venv" / "bin"
+    venv_bin.mkdir(parents=True)
+    (venv_bin / "python").touch()
+    result_mock = mock.MagicMock()
+    result_mock.stdout = "not python version output"
+    mock_run_command.return_value = result_mock
+
+    result = resolve_requires_python(repo_path=tmp_path)
+
+    assert result is None
+
+
+def test_detect_from_uv_lock_read_error(
+    mock_detect_venv: mock.MagicMock,
+    mock_detect_vermin: mock.MagicMock,
+    mock_path_read_text_error: mock.MagicMock,
+    tmp_path: Path,
+) -> None:
+    mock_detect_venv.return_value = None
+    mock_detect_vermin.return_value = None
+    (tmp_path / "uv.lock").touch()
+
+    result = resolve_requires_python(repo_path=tmp_path)
+
+    assert result is None
+    mock_path_read_text_error.assert_called()
+
+
+def test_detect_from_uv_lock_no_match_in_content(
+    mock_detect_venv: mock.MagicMock,
+    mock_detect_vermin: mock.MagicMock,
+    tmp_path: Path,
+) -> None:
+    mock_detect_venv.return_value = None
+    mock_detect_vermin.return_value = None
+    (tmp_path / "uv.lock").write_text("version = 1\n# no requires-python here\n")
 
     result = resolve_requires_python(repo_path=tmp_path)
 
