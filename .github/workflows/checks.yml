@@ -47,34 +47,35 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - repo: https://github.com/django/django.git
-            rev: edd89978
-          - repo: https://github.com/bottlepy/bottle.git
-            rev: 2a743a30
-          - repo: https://github.com/psf/requests.git
-            rev: bc04dfd6
-          - repo: https://github.com/simplejson/simplejson.git
-            rev: f7122a4f
-          - repo: https://github.com/docopt/docopt.git
-            rev: 8fea867d
-          - repo: https://github.com/pwaller/pyfiglet.git
-            rev: e7590f2b
-          - repo: https://github.com/pallets/itsdangerous.git
-            rev: 672971d6
-          - repo: https://github.com/mkali-weizmann/cavity-design.git
-            rev: ea21f1c7
-          - repo: https://github.com/pandas-dev/pandas.git
-            rev: 92796356
-          - repo: https://github.com/scikit-learn/scikit-learn.git
-            rev: cc4843ad
-          - repo: https://github.com/httpie/httpie.git
-            rev: 5b604c37
+          - name: bottle
+            args: https://github.com/bottlepy/bottle.git 2a743a30
+          - name: requests
+            args: https://github.com/psf/requests.git bc04dfd6
+          - name: simplejson
+            args: https://github.com/simplejson/simplejson.git f7122a4f
+          - name: docopt
+            args: https://github.com/docopt/docopt.git 8fea867d
+          - name: pyfiglet
+            args: https://github.com/pwaller/pyfiglet.git e7590f2b
+          - name: itsdangerous
+            args: https://github.com/pallets/itsdangerous.git 672971d6
+          - name: httpie
+            args: https://github.com/httpie/httpie.git 5b604c37
+          - name: django
+            args: https://github.com/django/django.git edd89978
+          - name: scikit-learn
+            args: https://github.com/scikit-learn/scikit-learn.git cc4843ad
+          - name: cavity-design
+            args: https://github.com/mkali-weizmann/cavity-design.git ea21f1c7
+          # ty cases
+          - name: pandas
+            args: https://github.com/pandas-dev/pandas.git 92796356 --ty
     steps:
     - uses: actions/checkout@v6
     - uses: ./.github/actions/setup
     - run: just install-test
-    - name: Run E2E test - ${{ matrix.repo }}
-      run: just test-e2e ${{ matrix.repo }} ${{ matrix.rev }}
+    - name: Run E2E test - ${{ matrix.name }}
+      run: just test-e2e ${{ matrix.args }}
     - name: Upload PMR logs
       if: always()
       uses: actions/upload-artifact@v4

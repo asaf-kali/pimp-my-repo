@@ -28,6 +28,7 @@ _BRANCH_ARG = typer.Option(None, "--branch", "-b", help="Git branch name to crea
 _LIST_ARG = typer.Option(False, "--list", help="List available boosts and exit")  # noqa: FBT003
 _NO_LOG_FILE_ARG = typer.Option(False, "--no-log-file", help="Disable writing logs to file")  # noqa: FBT003
 _SHOW_NOTE_ARG = typer.Option(False, "--show-note", help="Print the post-run note and exit")  # noqa: FBT003
+_TY_ARG = typer.Option(False, "--ty", help="Use ty instead of mypy for type checking")  # noqa: FBT003
 
 
 @app.command()
@@ -39,6 +40,7 @@ def run(  # noqa: PLR0913
     list_boosts: bool = _LIST_ARG,  # noqa: FBT001
     no_log_file: bool = _NO_LOG_FILE_ARG,  # noqa: FBT001
     show_note: bool = _SHOW_NOTE_ARG,  # noqa: FBT001
+    ty: bool = _TY_ARG,  # noqa: FBT001
 ) -> None:
     """Apply PMR boosts to a repository."""
     console = Console()
@@ -47,7 +49,7 @@ def run(  # noqa: PLR0913
         _print_baseline_note(console, show_bug_section=True)
         raise Exit(0)
 
-    boost_classes = _resolve_boosts(only=only, skip=skip, list_boosts=list_boosts, console=console)
+    boost_classes = _resolve_boosts(only=only, skip=skip, list_boosts=list_boosts, console=console, ty=ty)
 
     repo_path = Path(path).resolve()
     console.print(f"[bold]Boosting repository at:[/bold] [cyan]{repo_path}[/cyan]")
@@ -69,6 +71,7 @@ def _resolve_boosts(
     skip: list[str],
     list_boosts: bool,  # noqa: FBT001
     console: Console,
+    ty: bool = False,  # noqa: FBT001, FBT002
 ) -> list[type[Boost]]:
     default_boosts = get_all_boosts()
     opt_in_boosts = get_opt_in_boosts()
@@ -94,11 +97,20 @@ def _resolve_boosts(
         raise Exit(1)
 
     if only:
-        return [name_to_boost[n] for n in only]
-    if skip:
+        boosts: list[type[Boost]] = [name_to_boost[n] for n in only]
+    elif skip:
         skip_set = set(skip)
-        return [bc for bc in default_boosts if bc.get_name() not in skip_set]
-    return default_boosts
+        boosts = [bc for bc in default_boosts if bc.get_name() not in skip_set]
+    else:
+        boosts = default_boosts
+
+    if ty:
+        ty_boost = name_to_boost["ty"]
+        boosts = [ty_boost if bc.get_name() == "mypy" else bc for bc in boosts]
+        if ty_boost not in boosts:
+            boosts.append(ty_boost)
+
+    return boosts
 
 
 def _validate_path(repo_path: Path, console: Console) -> None:

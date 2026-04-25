@@ -9,6 +9,7 @@ from pimp_my_repo.core.boosts.justfile import JustfileBoost
 from pimp_my_repo.core.boosts.mypy import DmypyBoost, MypyBoost
 from pimp_my_repo.core.boosts.pre_commit import PreCommitBoost
 from pimp_my_repo.core.boosts.ruff import RuffBoost
+from pimp_my_repo.core.boosts.ty import TyBoost
 from pimp_my_repo.core.boosts.uv import UvBoost
 
 if TYPE_CHECKING:
@@ -27,6 +28,7 @@ _DEFAULT_BOOSTS: list[type[Boost]] = [
 # Boosts that must be explicitly requested via --only.
 _OPT_IN_BOOSTS: list[type[Boost]] = [
     DmypyBoost,
+    TyBoost,
 ]
 
 

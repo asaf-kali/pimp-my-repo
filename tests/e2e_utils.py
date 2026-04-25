@@ -13,11 +13,11 @@ from pimp_my_repo.core.tools.subprocess import run_command
 _PMR_ROOT = Path(__file__).parent.parent
 _TMP_BASE = Path("/tmp/pmr")  # noqa: S108
 
-# Recipes PMR always creates (uv+ruff+mypy boosts always run on Python repos)
-_EXPECTED_JUST_RECIPES = {"install", "check-lock", "check-ruff", "lint", "check-mypy"}
+# Recipes PMR always creates (uv+ruff boosts always run; type checker varies)
+_EXPECTED_JUST_RECIPES_BASE = {"install", "check-lock", "check-ruff", "lint"}
 # lint runs pre-commit; skipped when repo had a pre-existing config PMR doesn't manage
-_JUST_RECIPES_TO_RUN_WITH_PRECOMMIT = ("check-lock", "check-ruff", "check-mypy", "lint")
-_JUST_RECIPES_TO_RUN_WITHOUT_PRECOMMIT = ("check-lock", "check-ruff", "check-mypy")
+_JUST_RECIPES_TO_RUN_BASE_WITH_PRECOMMIT = ("check-lock", "check-ruff", "lint")
+_JUST_RECIPES_TO_RUN_BASE_WITHOUT_PRECOMMIT = ("check-lock", "check-ruff")
 
 
 # ── Setup helpers ─────────────────────────────────────────────────────────────
@@ -58,29 +58,31 @@ def setup_remote_repo(*, url: str, rev: str | None) -> Path:
 # ── Test entry point ──────────────────────────────────────────────────────────
 
 
-def run_e2e_test(repo_path: Path) -> None:
-    run_pmr(repo_path)
+def run_e2e_test(repo_path: Path, *, ty: bool = False) -> None:
+    run_pmr(repo_path, ty=ty)
     logger.info("=========================================================")
     logger.info("PMR run complete, verifying results...")
     assert_git_clean(repo_path)
     assert_just_install_works(repo_path)
-    assert_just_commands_work(repo_path)
+    assert_just_commands_work(repo_path, ty=ty)
     assert_ruff_passes(repo_path)
-    assert_mypy_passes(repo_path)
+    if ty:
+        assert_ty_passes(repo_path)
+    else:
+        assert_mypy_passes(repo_path)
     assert_pre_commit_passes(repo_path)
 
 
 # ── PMR runner ────────────────────────────────────────────────────────────────
 
 
-def run_pmr(repo_path: Path) -> None:
+def run_pmr(repo_path: Path, *, ty: bool = False) -> None:
     uv = shutil.which("uv")
     assert uv is not None, "uv not found on PATH"
-    result = subprocess.run(  # noqa: S603
-        [uv, "run", "pmr", "-p", str(repo_path)],
-        cwd=_PMR_ROOT,
-        check=False,
-    )
+    cmd = [uv, "run", "pmr", "-p", str(repo_path)]
+    if ty:
+        cmd.append("--ty")
+    result = subprocess.run(cmd, cwd=_PMR_ROOT, check=False)  # noqa: S603
     assert result.returncode == 0, f"pmr failed (exit {result.returncode})"
 
 
@@ -100,6 +102,10 @@ def assert_ruff_passes(repo_path: Path) -> None:
 
 def assert_mypy_passes(repo_path: Path) -> None:
     run_command([str(_venv_exe(repo_path, "mypy")), "."], cwd=repo_path)
+
+
+def assert_ty_passes(repo_path: Path) -> None:
+    run_command([str(_venv_exe(repo_path, "ty")), "check", "."], cwd=repo_path)
 
 
 def assert_just_install_works(repo_path: Path) -> None:
@@ -126,18 +132,21 @@ def assert_just_install_works(repo_path: Path) -> None:
         assert hook_path.exists(), "pre-commit hook not installed in .git/hooks/ after `just install`"
 
 
-def assert_just_commands_work(repo_path: Path) -> None:
+def assert_just_commands_work(repo_path: Path, *, ty: bool = False) -> None:
     """Assert all PMR-generated just recipes exist and pass."""
     just = _require_exe("just")
     justfile_path = repo_path / "justfile"
     assert justfile_path.exists(), "justfile not created after pmr"
     recipes = _get_just_recipes(justfile_path)
-    missing = _EXPECTED_JUST_RECIPES - recipes
+    checker_recipe = "check-ty" if ty else "check-mypy"
+    expected = _EXPECTED_JUST_RECIPES_BASE | {checker_recipe}
+    missing = expected - recipes
     assert not missing, f"justfile missing expected recipes: {sorted(missing)}"
+    extra_recipes = (checker_recipe,)
     recipes_to_run = (
-        _JUST_RECIPES_TO_RUN_WITH_PRECOMMIT
+        _JUST_RECIPES_TO_RUN_BASE_WITH_PRECOMMIT + extra_recipes
         if _pmr_manages_pre_commit(repo_path)
-        else _JUST_RECIPES_TO_RUN_WITHOUT_PRECOMMIT
+        else _JUST_RECIPES_TO_RUN_BASE_WITHOUT_PRECOMMIT + extra_recipes
     )
     for recipe in recipes_to_run:
         run_command([just, recipe], cwd=repo_path)

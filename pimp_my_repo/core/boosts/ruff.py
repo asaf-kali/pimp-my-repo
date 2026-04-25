@@ -75,16 +75,20 @@ class RuffBoost(Boost):
         """Generate commit message for Ruff boost."""
         return "✅ Silence ruff violations"
 
-    def run_suppress_iterations(self) -> None:
+    def run_suppress_iterations(self) -> bool:
         """Run ruff check + noqa suppression iterations, re-formatting after each.
 
+        Returns True if any violations were found and suppressed.
         Called by other boosts after modifying files, to restore ruff stability.
         """
+        had_violations = False
         for iteration in range(1, _MAX_RUFF_ITERATIONS + 1):
             logger.info(f"Running ruff (iteration {iteration}/{_MAX_RUFF_ITERATIONS})...")
             self._run_ruff_format()
             if not self._suppress_violations_iteration():
                 break
+            had_violations = True
+        return had_violations
 
     def _migrate_deprecated_ruff_config(self, data: TOMLDocument) -> TOMLDocument:
         """Move deprecated top-level [tool.ruff] lint settings to [tool.ruff.lint] (best-effort).
