@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v0.5.0 (2026-04-25)
+
+### 🔥
+
+- 🔥 Add TyBoost — opt-in ty type checker integration
+  ([#59](https://github.com/asaf-kali/pimp-my-repo/pull/59),
+  [`fbe3664`](https://github.com/asaf-kali/pimp-my-repo/commit/fbe3664ec1d871329b80135ef2f59aec1030d015))
+
+- TyBoost: add ty package, configure [tool.ty], suppress violations with # ty: ignore[rule] comments
+  - Per-iteration ty+ruff loop: ruff reformatting can move # ty: ignore comments (multi-line
+  expressions); running ruff inside each ty iteration then re-checking ty ensures stable convergence
+  - Handle error[io] (unreadable notebooks): excluded via [tool.ty.src] - Handle
+  unused-ignore-comment: removes stale # ty: ignore directives - JustfileBoost: adds check-ty recipe
+  when [tool.ty] present - PreCommitBoost: adds check-ty hook when check-ty recipe exists - CLI:
+  --ty flag replaces MypyBoost with TyBoost in the boost sequence - CI: pandas e2e test runs with
+  --ty - ruff.run_suppress_iterations() now returns bool (had violations) - mypy._run_ruff() returns
+  bool; forces another loop if ruff changed files
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+
 ## v0.4.15 (2026-04-23)
 
 ### 🌴
