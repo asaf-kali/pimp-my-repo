@@ -81,6 +81,20 @@ def ty_boost_uv_ok(
         yield ty_boost
 
 
+@pytest.fixture
+def mock_ruff_boost_noop() -> Generator[MagicMock]:
+    with patch("pimp_my_repo.core.boosts.ty.RuffBoost") as mock_cls:
+        mock_cls.return_value.run_suppress_iterations.return_value = False
+        yield mock_cls.return_value
+
+
+@pytest.fixture
+def mock_ruff_boost_with_violations() -> Generator[MagicMock]:
+    with patch("pimp_my_repo.core.boosts.ty.RuffBoost") as mock_cls:
+        mock_cls.return_value.run_suppress_iterations.return_value = True
+        yield mock_cls.return_value
+
+
 # =============================================================================
 # PRECONDITIONS
 # =============================================================================
@@ -311,6 +325,118 @@ def test_apply_stops_when_output_unparseable(
     patched_ty_apply.mock_check.return_value = fail_result("fatal: some config error\n")
     patched_ty_apply.boost.apply()
     patched_ty_apply.mock_check.assert_called_once()
+
+
+# =============================================================================
+# RUN TY CHECK
+# =============================================================================
+
+
+def test_run_ty_check_calls_uv_exec(ty_boost: TyBoost, ok_result: SubprocessResultFactory) -> None:
+    with patch.object(ty_boost.tools.uv, "exec", return_value=ok_result()) as mock_uv:
+        ty_boost._run_ty_check()  # noqa: SLF001
+    mock_uv.assert_called_once_with(
+        "run",
+        "--no-sync",
+        "ty",
+        "check",
+        ".",
+        "--output-format",
+        "concise",
+        check=False,
+        log_on_error=False,
+    )
+
+
+# =============================================================================
+# IO ERROR HANDLING
+# =============================================================================
+
+
+def test_apply_excludes_io_error_files(
+    mock_repo: RepositoryController,
+    patched_ty_apply: PatchedTyApply,
+    fail_result: SubprocessResultFactory,
+    ok_result: SubprocessResultFactory,
+) -> None:
+    patched_ty_apply.mock_check.side_effect = [
+        fail_result("doc/notebook.ipynb: error[io] Cannot read file\n"),
+        ok_result(),
+    ]
+    patched_ty_apply.boost.apply()
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert "doc/notebook.ipynb" in content
+    assert "exclude" in content
+
+
+# =============================================================================
+# RUFF INTEGRATION
+# =============================================================================
+
+
+def test_run_ruff_runs_when_ruff_configured(
+    mock_repo: RepositoryController,
+    patched_ty_apply: PatchedTyApply,
+    fail_result: SubprocessResultFactory,
+    ok_result: SubprocessResultFactory,
+    mock_ruff_boost_noop: MagicMock,
+) -> None:
+    mock_repo.write_file(
+        "pyproject.toml", "[project]\nname = 'test'\nversion = '0.1.0'\n\n[tool.ruff.lint]\nselect = ['ALL']\n"
+    )
+    mock_repo.write_file("src/foo.py", "x = foo()\n")
+    patched_ty_apply.mock_check.side_effect = [
+        fail_result("src/foo.py:1:1: error[unresolved-import] ...\n"),
+        ok_result(),
+    ]
+    patched_ty_apply.boost.apply()
+    mock_ruff_boost_noop.run_suppress_iterations.assert_called()
+
+
+def test_ruff_violations_continue_iteration(
+    mock_repo: RepositoryController,
+    patched_ty_apply: PatchedTyApply,
+    fail_result: SubprocessResultFactory,
+    ok_result: SubprocessResultFactory,
+    mock_ruff_boost_with_violations: MagicMock,
+) -> None:
+    """When ruff finds violations, the loop runs another iteration."""
+    mock_repo.write_file(
+        "pyproject.toml", "[project]\nname = 'test'\nversion = '0.1.0'\n\n[tool.ruff.lint]\nselect = ['ALL']\n"
+    )
+    mock_repo.write_file("src/foo.py", "x = foo()\n")
+    patched_ty_apply.mock_check.side_effect = [
+        fail_result("src/foo.py:1:1: error[unresolved-import] ...\n"),
+        ok_result(),
+    ]
+    patched_ty_apply.boost.apply()
+    assert patched_ty_apply.mock_check.call_count == 2  # noqa: PLR2004
+    mock_ruff_boost_with_violations.run_suppress_iterations.assert_called()
+
+
+# =============================================================================
+# EDGE CASES
+# =============================================================================
+
+
+def test_apply_ignores_skips_lineno_zero(mock_repo: RepositoryController, ty_boost: TyBoost) -> None:
+    mock_repo.write_file("src/foo.py", "x = foo()\n")
+    ty_boost._apply_ty_ignores({ViolationLocation("src/foo.py", 0): {"unresolved-import"}})  # noqa: SLF001
+    assert "ty: ignore" not in (mock_repo.path / "src/foo.py").read_text()
+
+
+def test_merge_unused_ignore_code_no_existing_ignore() -> None:
+    result = _merge_ty_ignore(raw_line="x = foo()\n", codes={"unused-ignore-comment"})
+    assert result == "x = foo()\n"
+
+
+def test_merge_unused_ignore_code_removes_existing() -> None:
+    result = _merge_ty_ignore(
+        raw_line="x = foo()  # ty: ignore[unresolved-import]\n",
+        codes={"unused-ignore-comment"},
+    )
+    assert "ty: ignore" not in result
+    assert result.startswith("x = foo()")
 
 
 # =============================================================================

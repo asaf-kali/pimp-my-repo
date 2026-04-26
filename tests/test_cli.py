@@ -1,6 +1,6 @@
 import sys
 from typing import TYPE_CHECKING
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 _cli_runner = CliRunner()
 
 ALL_BOOST_NAMES = ["gitignore", "uv", "ruff", "mypy", "precommit", "justfile"]
-ALL_OPT_IN_NAMES = ["dmypy"]
+ALL_OPT_IN_NAMES = ["dmypy", "ty"]
 
 
 def test_cli_is_working(mock_repo: RepositoryController) -> None:
@@ -196,6 +196,81 @@ def test_branch_flag_passed_to_run_boosts(mock_repo: RepositoryController) -> No
     mock_rb.assert_called_once()
     _, kwargs = mock_rb.call_args
     assert kwargs["branch"] == "my-branch"
+
+
+@pytest.fixture
+def patched_run_boosts_skipped() -> Generator[MagicMock]:
+    run_result = BoostRunResult(
+        results=[BoostResult(name="gitignore", status=BoostResultStatus.SKIPPED, message="ok")],
+        log_path=None,
+    )
+    with patch("pimp_my_repo.cli.main.run_boosts", return_value=run_result) as mock_rb:
+        yield mock_rb
+
+
+# =============================================================================
+# _resolve_boosts coverage (CliRunner variants of subprocess-based tests)
+# =============================================================================
+
+
+def test_list_flag_via_cli_runner() -> None:
+    result = _cli_runner.invoke(app, ["--list"])
+    assert result.exit_code == 0
+    assert "ty" in result.output
+    assert "mypy" in result.output
+
+
+def test_only_and_skip_exclusive_via_cli_runner(mock_repo: RepositoryController) -> None:
+    result = _cli_runner.invoke(app, ["--path", str(mock_repo.path), "--only", "ruff", "--skip", "mypy"])
+    assert result.exit_code == 1
+    assert "mutually exclusive" in result.output
+
+
+def test_unknown_boost_via_cli_runner(mock_repo: RepositoryController) -> None:
+    result = _cli_runner.invoke(app, ["--path", str(mock_repo.path), "--only", "no-such-boost"])
+    assert result.exit_code == 1
+    assert "no-such-boost" in result.output
+    assert "Valid boosts" in result.output
+
+
+def test_only_flag_via_cli_runner(
+    mock_repo: RepositoryController,
+    patched_run_boosts_skipped: MagicMock,
+) -> None:
+    _cli_runner.invoke(app, ["--path", str(mock_repo.path), "--only", "ruff"])
+    _, kwargs = patched_run_boosts_skipped.call_args
+    assert [bc.get_name() for bc in kwargs["boost_classes"]] == ["ruff"]
+
+
+def test_skip_flag_via_cli_runner(
+    mock_repo: RepositoryController,
+    patched_run_boosts_skipped: MagicMock,
+) -> None:
+    _cli_runner.invoke(app, ["--path", str(mock_repo.path), "--skip", "ruff"])
+    _, kwargs = patched_run_boosts_skipped.call_args
+    assert "ruff" not in [bc.get_name() for bc in kwargs["boost_classes"]]
+
+
+def test_ty_flag_replaces_mypy(
+    mock_repo: RepositoryController,
+    patched_run_boosts_skipped: MagicMock,
+) -> None:
+    _cli_runner.invoke(app, ["--path", str(mock_repo.path), "--ty"])
+    _, kwargs = patched_run_boosts_skipped.call_args
+    names = [bc.get_name() for bc in kwargs["boost_classes"]]
+    assert "ty" in names
+    assert "mypy" not in names
+
+
+def test_ty_flag_appends_when_mypy_not_selected(
+    mock_repo: RepositoryController,
+    patched_run_boosts_skipped: MagicMock,
+) -> None:
+    """--ty with --only ruff: ty is appended since mypy isn't in the list."""
+    _cli_runner.invoke(app, ["--path", str(mock_repo.path), "--only", "ruff", "--ty"])
+    _, kwargs = patched_run_boosts_skipped.call_args
+    names = [bc.get_name() for bc in kwargs["boost_classes"]]
+    assert "ty" in names
 
 
 def test_branch_flag_defaults_to_none(mock_repo: RepositoryController) -> None:
