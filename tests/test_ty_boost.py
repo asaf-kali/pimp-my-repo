@@ -415,6 +415,94 @@ def test_ruff_violations_continue_iteration(
 
 
 # =============================================================================
+# INVALID SYNTAX EXCLUSION
+# =============================================================================
+
+
+def test_apply_excludes_invalid_syntax_files(
+    mock_repo: RepositoryController,
+    patched_ty_apply: PatchedTyApply,
+    fail_result: SubprocessResultFactory,
+    ok_result: SubprocessResultFactory,
+) -> None:
+    mock_repo.write_file("src/broken.py", "def broken(\n")
+    patched_ty_apply.mock_check.side_effect = [
+        fail_result("src/broken.py:1:2: error[invalid-syntax] unexpected token\n"),
+        ok_result(),
+    ]
+    patched_ty_apply.boost.apply()
+    content = (mock_repo.path / "pyproject.toml").read_text()
+    assert "src/broken.py" in content
+    assert "exclude" in content
+
+
+def test_apply_excludes_syntax_file_but_suppresses_other_violations(
+    mock_repo: RepositoryController,
+    patched_ty_apply: PatchedTyApply,
+    fail_result: SubprocessResultFactory,
+    ok_result: SubprocessResultFactory,
+) -> None:
+    mock_repo.write_file("src/broken.py", "def broken(\n")
+    mock_repo.write_file("src/ok.py", "x = foo()\n")
+    patched_ty_apply.mock_check.side_effect = [
+        fail_result(
+            "src/broken.py:1:2: error[invalid-syntax] unexpected token\n"
+            "src/ok.py:1:1: error[unresolved-import] Cannot resolve 'foo'\n"
+        ),
+        ok_result(),
+    ]
+    patched_ty_apply.boost.apply()
+    assert "# ty: ignore[unresolved-import]" in (mock_repo.path / "src/ok.py").read_text()
+    pyproject = (mock_repo.path / "pyproject.toml").read_text()
+    assert "src/broken.py" in pyproject
+
+
+# =============================================================================
+# TRIPLE-QUOTE HANDLING
+# =============================================================================
+
+
+def test_apply_ignores_line_with_closed_triple_quote(mock_repo: RepositoryController, ty_boost: TyBoost) -> None:
+    # Closed """...""" pair on the violation line: _find_unclosed_triple_quote_pos returns None
+    # so _merge_ty_ignore is called normally.
+    mock_repo.write_file("src/foo.py", 'x = """hello""" + foo()\n')
+    ty_boost._apply_ty_ignores({ViolationLocation("src/foo.py", 1): {"unresolved-import"}})  # noqa: SLF001
+    content = (mock_repo.path / "src/foo.py").read_text()
+    assert "# ty: ignore[unresolved-import]" in content
+
+
+def test_apply_ignores_line_with_single_quoted_string_and_backslash(
+    mock_repo: RepositoryController, ty_boost: TyBoost
+) -> None:
+    # Single-quoted string with a backslash escape: exercises the single-char skip loop
+    # including the i+=2 backslash branch.
+    mock_repo.write_file("src/foo.py", 'x = "hel\\"lo" + foo()\n')
+    ty_boost._apply_ty_ignores({ViolationLocation("src/foo.py", 1): {"unresolved-import"}})  # noqa: SLF001
+    content = (mock_repo.path / "src/foo.py").read_text()
+    assert "# ty: ignore[unresolved-import]" in content
+
+
+def test_apply_ignores_function_call_opens_triple_quote(mock_repo: RepositoryController, ty_boost: TyBoost) -> None:
+    # func(""" pattern: comment placed after (, triple-quote moved to next line.
+    mock_repo.write_file("src/foo.py", 'result = func("""\ncontent\n""")\n')
+    ty_boost._apply_ty_ignores({ViolationLocation("src/foo.py", 1): {"unresolved-import"}})  # noqa: SLF001
+    lines = (mock_repo.path / "src/foo.py").read_text().splitlines()
+    assert "# ty: ignore[unresolved-import]" in lines[0]
+    assert lines[0].endswith("# ty: ignore[unresolved-import]")
+    assert '"""' in lines[1]
+
+
+def test_apply_ignores_assignment_opens_triple_quote_falls_back(
+    mock_repo: RepositoryController, ty_boost: TyBoost
+) -> None:
+    # x = """ pattern: no ( before the triple-quote; falls back to _merge_ty_ignore.
+    mock_repo.write_file("src/foo.py", 'x = """\ncontent\n"""\n')
+    ty_boost._apply_ty_ignores({ViolationLocation("src/foo.py", 1): {"unresolved-import"}})  # noqa: SLF001
+    content = (mock_repo.path / "src/foo.py").read_text()
+    assert "ty: ignore" in content
+
+
+# =============================================================================
 # EDGE CASES
 # =============================================================================
 

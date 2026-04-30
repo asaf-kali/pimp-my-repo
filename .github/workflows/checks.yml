@@ -65,14 +65,14 @@ jobs:
             args: https://github.com/django/django.git edd89978
           - name: scikit-learn
             args: https://github.com/scikit-learn/scikit-learn.git cc4843ad
-          - name: cavity-design
-            args: https://github.com/mkali-weizmann/cavity-design.git ea21f1c7
           # ty cases
+          - name: cavity-design
+            args: https://github.com/mkali-weizmann/cavity-design.git ea21f1c7 --ty
           - name: django-ty
             args: https://github.com/django/django.git edd89978 --ty
           - name: scikit-learn-ty
             args: https://github.com/scikit-learn/scikit-learn.git cc4843ad --ty
-          - name: pandas
+          - name: pandas-ty
             args: https://github.com/pandas-dev/pandas.git 92796356 --ty
     steps:
     - uses: actions/checkout@v6
