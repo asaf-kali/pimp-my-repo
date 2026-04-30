@@ -50,26 +50,30 @@ jobs:
           - name: bottle
             args: https://github.com/bottlepy/bottle.git 2a743a30
           - name: requests
-            args: https://github.com/psf/requests.git bc04dfd6
+            args: https://github.com/psf/requests.git bc04dfd6 --skip gitignore
           - name: simplejson
-            args: https://github.com/simplejson/simplejson.git f7122a4f
+            args: https://github.com/simplejson/simplejson.git f7122a4f --skip gitignore
           - name: docopt
-            args: https://github.com/docopt/docopt.git 8fea867d
+            args: https://github.com/docopt/docopt.git 8fea867d --skip gitignore
           - name: pyfiglet
-            args: https://github.com/pwaller/pyfiglet.git e7590f2b
+            args: https://github.com/pwaller/pyfiglet.git e7590f2b --skip gitignore
           - name: itsdangerous
-            args: https://github.com/pallets/itsdangerous.git 672971d6
+            args: https://github.com/pallets/itsdangerous.git 672971d6 --skip gitignore
           - name: httpie
-            args: https://github.com/httpie/httpie.git 5b604c37
+            args: https://github.com/httpie/httpie.git 5b604c37 --skip gitignore
           - name: django
-            args: https://github.com/django/django.git edd89978
+            args: https://github.com/django/django.git edd89978 --skip gitignore
           - name: scikit-learn
-            args: https://github.com/scikit-learn/scikit-learn.git cc4843ad
-          - name: cavity-design
-            args: https://github.com/mkali-weizmann/cavity-design.git ea21f1c7
+            args: https://github.com/scikit-learn/scikit-learn.git cc4843ad --skip gitignore
           # ty cases
-          - name: pandas
-            args: https://github.com/pandas-dev/pandas.git 92796356 --ty
+          - name: cavity-design
+            args: https://github.com/mkali-weizmann/cavity-design.git ea21f1c7 --ty --skip gitignore
+          - name: django-ty
+            args: https://github.com/django/django.git edd89978 --ty --skip gitignore
+          - name: scikit-learn-ty
+            args: https://github.com/scikit-learn/scikit-learn.git cc4843ad --ty --skip gitignore
+          - name: pandas-ty
+            args: https://github.com/pandas-dev/pandas.git 92796356 --ty --skip gitignore
     steps:
     - uses: actions/checkout@v6
     - uses: ./.github/actions/setup

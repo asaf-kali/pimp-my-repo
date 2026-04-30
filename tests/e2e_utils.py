@@ -58,8 +58,10 @@ def setup_remote_repo(*, url: str, rev: str | None) -> Path:
 # ── Test entry point ──────────────────────────────────────────────────────────
 
 
-def run_e2e_test(repo_path: Path, *, ty: bool = False) -> None:
-    run_pmr(repo_path, ty=ty)
+def run_e2e_test(repo_path: Path, *, pmr_args: list[str] | None = None) -> None:
+    pmr_args = pmr_args or []
+    ty = "--ty" in pmr_args
+    run_pmr(repo_path, pmr_args=pmr_args)
     logger.info("=========================================================")
     logger.info("PMR run complete, verifying results...")
     assert_git_clean(repo_path)
@@ -76,12 +78,10 @@ def run_e2e_test(repo_path: Path, *, ty: bool = False) -> None:
 # ── PMR runner ────────────────────────────────────────────────────────────────
 
 
-def run_pmr(repo_path: Path, *, ty: bool = False) -> None:
+def run_pmr(repo_path: Path, *, pmr_args: list[str] | None = None) -> None:
     uv = shutil.which("uv")
     assert uv is not None, "uv not found on PATH"
-    cmd = [uv, "run", "pmr", "-p", str(repo_path)]
-    if ty:
-        cmd.append("--ty")
+    cmd = [uv, "run", "pmr", "-p", str(repo_path), *(pmr_args or [])]
     result = subprocess.run(cmd, cwd=_PMR_ROOT, check=False)  # noqa: S603
     assert result.returncode == 0, f"pmr failed (exit {result.returncode})"
 
