@@ -1,5 +1,6 @@
 """Pytest configuration and shared fixtures."""
 
+import shlex
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -37,7 +38,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption("--e2e-url", default=None, help="Git URL for remote e2e test")
     parser.addoption("--e2e-rev", default=None, help="Git revision for remote e2e test")
     parser.addoption("--fixture-name", default=None, help="Fixture name for manual local e2e test")
-    parser.addoption("--ty", action="store_true", default=False, help="Use ty instead of mypy in e2e tests")
+    parser.addoption("--pmr-args", default="", help="Extra arguments passed as-is to pmr")
 
 
 @pytest.fixture
@@ -55,8 +56,9 @@ def e2e_rev(request: pytest.FixtureRequest) -> str | None:
 
 
 @pytest.fixture
-def e2e_ty(request: pytest.FixtureRequest) -> bool:
-    return bool(request.config.getoption("--ty"))
+def e2e_pmr_args(request: pytest.FixtureRequest) -> list[str]:
+    raw = str(request.config.getoption("--pmr-args") or "")
+    return shlex.split(raw)
 
 
 @pytest.fixture
