@@ -68,6 +68,10 @@ jobs:
           - name: cavity-design
             args: https://github.com/mkali-weizmann/cavity-design.git ea21f1c7
           # ty cases
+          - name: django-ty
+            args: https://github.com/django/django.git edd89978 --ty
+          - name: scikit-learn-ty
+            args: https://github.com/scikit-learn/scikit-learn.git cc4843ad --ty
           - name: pandas
             args: https://github.com/pandas-dev/pandas.git 92796356 --ty
     steps:
