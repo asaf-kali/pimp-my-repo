@@ -261,35 +261,21 @@ class TyBoost(Boost):
         return RuffBoost(tools=self.tools).run_suppress_iterations()
 
     def _run_suppress_iterations(self) -> None:
-        """Run ty+ruff check+suppress iterations until stable."""
-        for iteration in range(1, _MAX_TY_ITERATIONS + 1):
-            logger.info(f"Running ty (iteration {iteration}/{_MAX_TY_ITERATIONS})...")
-            if not self._suppress_violations_iteration():
-                break
-        self._run_stability_checks()
+        """Run ty+ruff check+suppress iterations until stable.
 
-    def _run_stability_checks(self) -> None:
-        """Run extra ty checks to suppress nondeterministic violations.
-
-        ty sometimes reports violations intermittently due to type-inference
-        nondeterminism. Run a few extra passes so that any such violations are
-        suppressed before the final commit.
+        Requires _TY_STABILITY_RUNS consecutive no-action passes before stopping,
+        to handle ty's nondeterministic type-inference (violations that appear
+        intermittently across runs).
         """
-        for stability_run in range(1, _TY_STABILITY_RUNS + 1):
-            result = self._run_ty_check()
-            if result.returncode == 0:
+        consecutive_passes = 0
+        for iteration in range(1, _MAX_TY_ITERATIONS + _TY_STABILITY_RUNS + 1):
+            logger.info(f"Running ty (iteration {iteration})...")
+            if self._suppress_violations_iteration():
+                consecutive_passes = 0
                 continue
-            stdout = result.stdout or ""
-            violations = self._parse_ty_output(stdout)
-            io_paths = self._parse_io_errors(stdout)
-            if not violations and not io_paths:
+            consecutive_passes += 1
+            if consecutive_passes >= _TY_STABILITY_RUNS:
                 break
-            logger.info(f"ty found violations in stability run {stability_run}/{_TY_STABILITY_RUNS}; suppressing...")
-            if violations:
-                self._apply_ty_ignores(violations)
-                self._run_ruff()
-            if io_paths:
-                self._add_ty_excludes(io_paths)
 
 
 def _escape_ty_glob(path: str) -> str:
