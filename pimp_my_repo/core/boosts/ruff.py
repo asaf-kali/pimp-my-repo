@@ -58,8 +58,9 @@ class RuffBoost(Boost):
         self._verify_uv_present()
         self._verify_pyproject_present()
 
-        self.uv.add_package(_RUFF_PACKAGE, group="lint")
-        self.uv.sync_group("lint")
+        if not self.pyproject.is_package_in_deps("ruff"):
+            self.uv.add_package(_RUFF_PACKAGE, group="lint")
+            self.uv.sync_group("lint")
 
         logger.info("Configuring [tool.ruff.lint] select = ['ALL'] in pyproject.toml...")
         pyproject_data = self.pyproject.read()

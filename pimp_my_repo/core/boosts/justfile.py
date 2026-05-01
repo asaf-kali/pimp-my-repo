@@ -32,7 +32,7 @@ _RUN_VAR = 'RUN := "uv run"'
 
 _RECIPE_INSTALL = "install: install-dev lint\n"
 _RECIPE_INSTALL_NO_LINT = "install: install-dev\n"
-_RECIPE_INSTALL_ALL = "install-all:\n    uv sync --all-groups\n"
+_RECIPE_INSTALL_ALL = "install-all:\n    uv sync --all-groups --all-extras\n"
 _RECIPE_INSTALL_DEV = "install-dev: install-all\n    {{ RUN }} pre-commit install\n"
 _RECIPE_INSTALL_DEV_NO_PRECOMMIT = "install-dev: install-all\n"
 _RECIPE_LOCK = "lock:\n    uv lock\n"
@@ -121,8 +121,10 @@ def _try_install_just() -> bool:
     Returns True if installation succeeded, False otherwise.
     """
     system = platform.system()
-    commands = _INSTALL_COMMANDS_BY_OS.get(system, [])
-    for cmd in commands:
+    # uv is always available in a PMR environment and rust-just is a universal fallback
+    uv_cmd = ["uv", "tool", "install", "rust-just"]
+    platform_commands = _INSTALL_COMMANDS_BY_OS.get(system, [])
+    for cmd in [uv_cmd, *platform_commands]:
         tool = next((c for c in cmd if c != "sudo"), None)
         if tool and not shutil.which(tool):
             logger.debug(f"Skipping {tool}: not in PATH")

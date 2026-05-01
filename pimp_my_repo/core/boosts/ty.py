@@ -60,8 +60,9 @@ class TyBoost(Boost):
         self._verify_uv_present()
         self._verify_pyproject_present()
 
-        self.uv.add_package(_TY_PACKAGE, group="lint")
-        self.uv.sync_group("lint")
+        if not self.pyproject.is_package_in_deps("ty"):
+            self.uv.add_package(_TY_PACKAGE, group="lint")
+            self.uv.sync_group("lint")
 
         logger.info("Configuring [tool.ty] in pyproject.toml...")
         pyproject_data = self.pyproject.read()

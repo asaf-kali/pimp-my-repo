@@ -42,6 +42,11 @@ class UvController:
             msg = f"uv is not available: {e}"
             raise UvNotFoundError(msg) from e
 
+    def sync_all(self) -> None:
+        """Sync all dependency groups and extras."""
+        logger.info("Running uv sync --all-groups --all-extras...")
+        self.exec("sync", "--all-groups", "--all-extras")
+
     def sync_group(self, group: str) -> None:
         """Sync a specific dependency group (additive — does not remove other installed packages)."""
         logger.debug(f"Syncing dependency group: [{group}]...")

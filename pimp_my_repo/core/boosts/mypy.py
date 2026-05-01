@@ -550,8 +550,9 @@ class BaseMypyBoost(Boost, abc.ABC):
         logger.info("Committed mypy configuration")
 
     def _add_mypy(self) -> None:
-        self.uv.add_package(_MYPY_PACKAGE, group="lint")
-        self.uv.sync_group("lint")
+        if not self.pyproject.is_package_in_deps("mypy"):
+            self.uv.add_package(_MYPY_PACKAGE, group="lint")
+            self.uv.sync_group("lint")
 
     def _clear_mypy_cache(self) -> None:
         """Clear mypy cache to ensure changes take effect immediately."""

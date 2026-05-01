@@ -60,8 +60,7 @@ class UvBoost(Boost):
         self._ensure_pyproject_exists()
         self._ensure_uv_config_present()
         self._lock_with_requires_python()
-        logger.info("Running final uv sync --all-groups...")
-        self.uv.exec("sync", "--all-groups")
+        self.uv.sync_all()
         logger.info("Venv fully synced")
 
     def commit_message(self) -> str:
@@ -634,9 +633,8 @@ class UvBoost(Boost):
     def _lock_and_sync(self) -> None:
         logger.debug("Running uv lock...")
         self.uv.exec("lock")
-        logger.debug("Running uv sync --all-groups...")
         try:
-            self.uv.exec("sync", "--all-groups")
+            self.uv.sync_all()
         except subprocess.CalledProcessError as e:
             stderr = e.stderr or ""
             if _MULTI_TOP_LEVEL_PACKAGES_MSG in stderr:
@@ -646,7 +644,7 @@ class UvBoost(Boost):
             else:
                 raise
             self._set_uv_package_false()
-            self.uv.exec("sync", "--all-groups")
+            self.uv.sync_all()
         logger.debug("uv lock and sync completed successfully")
 
     def _set_uv_package_false(self) -> None:

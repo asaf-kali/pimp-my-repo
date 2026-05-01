@@ -12,6 +12,7 @@ _FIXTURES = [
     "minimal-package",
     "setup-cfg-package",
     "pre-commit",
+    "with-extras",
 ]
 
 
