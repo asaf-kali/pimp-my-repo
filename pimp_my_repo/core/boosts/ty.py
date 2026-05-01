@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from pimp_my_repo.core.tools.subprocess import CommandResult
 
 _MAX_TY_ITERATIONS = 10
+_TY_STABILITY_RUNS = 3  # extra runs after iterations to catch nondeterministic ty violations
 _TY_PACKAGE = "ty>=0.0.1,<0.1"  # upper-bound: bump after validating new minor
 
 # Parses concise output: "path:line:col: error[rule-name] message"
@@ -260,10 +261,20 @@ class TyBoost(Boost):
         return RuffBoost(tools=self.tools).run_suppress_iterations()
 
     def _run_suppress_iterations(self) -> None:
-        """Run ty+ruff check+suppress iterations until stable."""
-        for iteration in range(1, _MAX_TY_ITERATIONS + 1):
-            logger.info(f"Running ty (iteration {iteration}/{_MAX_TY_ITERATIONS})...")
-            if not self._suppress_violations_iteration():
+        """Run ty+ruff check+suppress iterations until stable.
+
+        Requires _TY_STABILITY_RUNS consecutive no-action passes before stopping,
+        to handle ty's nondeterministic type-inference (violations that appear
+        intermittently across runs).
+        """
+        consecutive_passes = 0
+        for iteration in range(1, _MAX_TY_ITERATIONS + _TY_STABILITY_RUNS + 1):
+            logger.info(f"Running ty (iteration {iteration})...")
+            if self._suppress_violations_iteration():
+                consecutive_passes = 0
+                continue
+            consecutive_passes += 1
+            if consecutive_passes >= _TY_STABILITY_RUNS:
                 break
 
 

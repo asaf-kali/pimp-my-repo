@@ -7,7 +7,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pimp_my_repo.core.boosts.base import BoostSkipped
-from pimp_my_repo.core.boosts.ty import _MAX_TY_ITERATIONS, TyBoost, ViolationLocation, _merge_ty_ignore
+from pimp_my_repo.core.boosts.ty import (
+    _MAX_TY_ITERATIONS,
+    _TY_STABILITY_RUNS,
+    TyBoost,
+    ViolationLocation,
+    _merge_ty_ignore,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -272,7 +278,7 @@ def test_apply_makes_configure_ty_commit(patched_ty_apply: PatchedTyApply) -> No
 
 def test_apply_stops_when_check_passes(patched_ty_apply: PatchedTyApply) -> None:
     patched_ty_apply.boost.apply()
-    patched_ty_apply.mock_check.assert_called_once()
+    assert patched_ty_apply.mock_check.call_count == _TY_STABILITY_RUNS
 
 
 @pytest.mark.smoke
@@ -285,7 +291,7 @@ def test_apply_inserts_ty_ignore_on_violation(
     mock_repo.write_file("src/foo.py", "x = foo()\n")
     patched_ty_apply.mock_check.side_effect = [
         fail_result("src/foo.py:1:1: error[unresolved-import] Cannot resolve import 'foo'\n"),
-        ok_result(),
+        *([ok_result()] * _TY_STABILITY_RUNS),
     ]
     patched_ty_apply.boost.apply()
     assert "# ty: ignore[unresolved-import]" in (mock_repo.path / "src/foo.py").read_text()
@@ -301,10 +307,10 @@ def test_apply_iterates_until_check_passes(
     patched_ty_apply.mock_check.side_effect = [
         fail_result("src/foo.py:1:1: error[unresolved-import] ...\n"),
         fail_result("src/foo.py:1:1: error[invalid-assignment] ...\n"),
-        ok_result(),
+        *([ok_result()] * _TY_STABILITY_RUNS),
     ]
     patched_ty_apply.boost.apply()
-    assert patched_ty_apply.mock_check.call_count == 3  # noqa: PLR2004
+    assert patched_ty_apply.mock_check.call_count == 2 + _TY_STABILITY_RUNS
 
 
 def test_apply_stops_after_max_iterations(
@@ -313,9 +319,18 @@ def test_apply_stops_after_max_iterations(
     fail_result: SubprocessResultFactory,
 ) -> None:
     mock_repo.write_file("src/foo.py", "x = foo()\n")
-    patched_ty_apply.mock_check.return_value = fail_result("src/foo.py:1:1: error[unresolved-import] ...\n")
+    # Each iteration reports a violation on a new line so _apply_ty_ignores always changes
+    # the file → acted=True → consecutive_passes stays 0 → loop runs to range end.
+    call_num = 0
+
+    def new_violation_each_call() -> object:
+        nonlocal call_num
+        call_num += 1
+        return fail_result(f"src/foo.py:{call_num}:1: error[unresolved-import] ...\n")
+
+    patched_ty_apply.mock_check.side_effect = new_violation_each_call
     patched_ty_apply.boost.apply()
-    assert patched_ty_apply.mock_check.call_count == _MAX_TY_ITERATIONS
+    assert patched_ty_apply.mock_check.call_count == _MAX_TY_ITERATIONS + _TY_STABILITY_RUNS
 
 
 def test_apply_stops_when_output_unparseable(
@@ -324,7 +339,31 @@ def test_apply_stops_when_output_unparseable(
 ) -> None:
     patched_ty_apply.mock_check.return_value = fail_result("fatal: some config error\n")
     patched_ty_apply.boost.apply()
-    patched_ty_apply.mock_check.assert_called_once()
+    assert patched_ty_apply.mock_check.call_count == _TY_STABILITY_RUNS
+
+
+# =============================================================================
+# STABILITY (consecutive-passes counter)
+# =============================================================================
+
+
+def test_stability_suppresses_nondeterministic_violation(
+    mock_repo: RepositoryController,
+    ty_boost_with_pyproject: TyBoost,
+    fail_result: SubprocessResultFactory,
+    ok_result: SubprocessResultFactory,
+) -> None:
+    """Violation found mid-stability resets the counter and is suppressed."""
+    mock_repo.write_file("src/foo.py", "x = foo()\n")
+    with patch.object(ty_boost_with_pyproject, "_run_ty_check") as mock_check:
+        mock_check.side_effect = [
+            ok_result(),
+            fail_result("src/foo.py:1:1: error[unresolved-import] ...\n"),
+            *([ok_result()] * _TY_STABILITY_RUNS),
+        ]
+        ty_boost_with_pyproject._run_suppress_iterations()  # noqa: SLF001
+    assert "# ty: ignore[unresolved-import]" in (mock_repo.path / "src/foo.py").read_text()
+    assert mock_check.call_count == 1 + 1 + _TY_STABILITY_RUNS
 
 
 # =============================================================================
@@ -361,7 +400,7 @@ def test_apply_excludes_io_error_files(
 ) -> None:
     patched_ty_apply.mock_check.side_effect = [
         fail_result("doc/notebook.ipynb: error[io] Cannot read file\n"),
-        ok_result(),
+        *([ok_result()] * _TY_STABILITY_RUNS),
     ]
     patched_ty_apply.boost.apply()
     content = (mock_repo.path / "pyproject.toml").read_text()
@@ -387,7 +426,7 @@ def test_run_ruff_runs_when_ruff_configured(
     mock_repo.write_file("src/foo.py", "x = foo()\n")
     patched_ty_apply.mock_check.side_effect = [
         fail_result("src/foo.py:1:1: error[unresolved-import] ...\n"),
-        ok_result(),
+        *([ok_result()] * _TY_STABILITY_RUNS),
     ]
     patched_ty_apply.boost.apply()
     mock_ruff_boost_noop.run_suppress_iterations.assert_called()
@@ -407,10 +446,10 @@ def test_ruff_violations_continue_iteration(
     mock_repo.write_file("src/foo.py", "x = foo()\n")
     patched_ty_apply.mock_check.side_effect = [
         fail_result("src/foo.py:1:1: error[unresolved-import] ...\n"),
-        ok_result(),
+        *([ok_result()] * _TY_STABILITY_RUNS),
     ]
     patched_ty_apply.boost.apply()
-    assert patched_ty_apply.mock_check.call_count == 2  # noqa: PLR2004
+    assert patched_ty_apply.mock_check.call_count == 1 + _TY_STABILITY_RUNS
     mock_ruff_boost_with_violations.run_suppress_iterations.assert_called()
 
 
@@ -428,7 +467,7 @@ def test_apply_excludes_invalid_syntax_files(
     mock_repo.write_file("src/broken.py", "def broken(\n")
     patched_ty_apply.mock_check.side_effect = [
         fail_result("src/broken.py:1:2: error[invalid-syntax] unexpected token\n"),
-        ok_result(),
+        *([ok_result()] * _TY_STABILITY_RUNS),
     ]
     patched_ty_apply.boost.apply()
     content = (mock_repo.path / "pyproject.toml").read_text()
@@ -449,7 +488,7 @@ def test_apply_excludes_syntax_file_but_suppresses_other_violations(
             "src/broken.py:1:2: error[invalid-syntax] unexpected token\n"
             "src/ok.py:1:1: error[unresolved-import] Cannot resolve 'foo'\n"
         ),
-        ok_result(),
+        *([ok_result()] * _TY_STABILITY_RUNS),
     ]
     patched_ty_apply.boost.apply()
     assert "# ty: ignore[unresolved-import]" in (mock_repo.path / "src/ok.py").read_text()
