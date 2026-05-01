@@ -1,6 +1,112 @@
 # CHANGELOG
 
 
+## v0.5.1 (2026-05-01)
+
+### Other
+
+- Ty boost fixes ([#60](https://github.com/asaf-kali/pimp-my-repo/pull/60),
+  [`187e399`](https://github.com/asaf-kali/pimp-my-repo/commit/187e3999ff845a36b6ada29b9a8f62434b3fc4e1))
+
+* 🧪 Increase coverage for ty boost, CLI, and python_version
+
+- ty.py: 85% → 99% (io error path, ruff integration, edge cases) - main.py: 80% → 99% (--list,
+  --only, --skip, --ty via CliRunner) - python_version.py: 85% → 100% (venv exe not found, OSError
+  paths) - Add "ty" to ALL_OPT_IN_NAMES in test_cli.py
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+* Auto commit
+
+* ✅ Add django and scikit-learn to ty e2e CI matrix
+
+Both repos verified locally with --ty flag after the bug fixes on this branch.
+
+* 🧪 Boost coverage to 99% and move cavity-design to --ty CI
+
+- Add tests for invalid-syntax exclusion, triple-quote placement (function-call and assignment
+  fallback), and single-quoted string scanning with backslash escapes; coverage goes from ~62% to
+  99% - cavity-design e2e passes with --ty; move it to the ty CI matrix and drop the plain (no --ty)
+  entry
+
+* ♻️ Pass pmr args as-is in e2e tests; skip gitignore by default in CI
+
+- Replace --ty pytest flag with --pmr-args (raw string split with shlex), passed through justfile
+  and forwarded directly to pmr - Remove rev="HEAD" default from just test-e2e to avoid ambiguity -
+  Skip gitignore boost in all CI repos except bottle
+
+* 🐛 Fix pmr-args quoting via env var instead of pytest flag
+
+just's {{ args }} substitution doesn't re-quote values with spaces, so --pmr-args="--skip gitignore"
+  was split into two separate pytest tokens. Use PMR_ARGS env var instead; shlex.split handles the
+  rest.
+
+---------
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+### 🌴
+
+- 🌴 Add stability runs to TyBoost for nondeterministic ty violations
+  ([#63](https://github.com/asaf-kali/pimp-my-repo/pull/63),
+  [`4ba1ee2`](https://github.com/asaf-kali/pimp-my-repo/commit/4ba1ee27fdc70d7ce5676f83f65886310766660b))
+
+* 🐛 Add stability runs to TyBoost to suppress nondeterministic violations
+
+ty has a known nondeterminism bug where some violations (e.g. unresolved-attribute on
+  Protocol-narrowed types) appear intermittently — some runs find them, others don't.
+
+TyBoost's main iterations could miss these violations, leaving them unsuppressed after PMR. Add
+  _run_stability_checks() which runs ty _TY_STABILITY_RUNS (3) extra times after the main iterations
+  complete; any violations found are suppressed before the final commit.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+* ♻️ Fold stability runs into main suppress loop (DRY)
+
+Remove `_run_stability_checks` and instead use a consecutive-passes counter in
+  `_run_suppress_iterations`: the loop continues until `_TY_STABILITY_RUNS` passes complete without
+  acting, reusing `_suppress_violations_iteration` for both the main work and stability.
+
+---------
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+### 🐛
+
+- 🐛 Skip existing ruff/mypy config; add --all-extras to uv sync
+  ([#62](https://github.com/asaf-kali/pimp-my-repo/pull/62),
+  [`7ad7ba9`](https://github.com/asaf-kali/pimp-my-repo/commit/7ad7ba9c56defaabf746bb377dfaa63fbf0e55ae))
+
+* 🐛 Skip existing ruff/mypy config and support --all-extras in uv sync
+
+- Ruff and mypy boosts now check pyproject.toml before writing config: skip add_package/sync_group
+  if the tool is already in deps, and skip _ensure_*_config() + intermediate commit if
+  [tool.ruff]/[tool.mypy] already exists — preserving hand-tuned settings. - Add `--all-extras` to
+  every `uv sync --all-groups` call so repos that declare deps via [project.optional-dependencies]
+  are fully installed. - New e2e fixture `with-extras` covers both cases end-to-end.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+* 🔧 Apply same skip-if-exists checks to TyBoost; extract sync_all()
+
+- TyBoost.apply(): skip uv add/sync_group if ty already in deps, skip config write/commit if
+  [tool.ty] already exists — same pattern as ruff and mypy boosts. - Extract UvController.sync_all()
+  for the repeated `uv sync --all-groups --all-extras` call in UvBoost._lock_and_sync().
+
+* 🔧 Skip uv add if package already in deps; fallback just install via uv tool
+
+- Ruff, mypy, and ty boosts: skip uv add + sync_group if the package is already declared in deps
+  (groups or extras). Config is always written so strict settings (select=ALL, strict=true,
+  error-on-warning) are always enforced regardless of prior state. - JustfileBoost: try `uv tool
+  install rust-just` first when `just` is not found, before falling back to platform-specific
+  package managers.
+
+---------
+
+Co-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+
 ## v0.5.0 (2026-04-25)
 
 ### 🔥
