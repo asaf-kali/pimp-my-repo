@@ -7,7 +7,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pimp_my_repo.core.boosts.base import BoostSkipped
-from pimp_my_repo.core.boosts.ty import _MAX_TY_ITERATIONS, TyBoost, ViolationLocation, _merge_ty_ignore
+from pimp_my_repo.core.boosts.ty import (
+    _MAX_TY_ITERATIONS,
+    _TY_STABILITY_RUNS,
+    TyBoost,
+    ViolationLocation,
+    _merge_ty_ignore,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -48,6 +54,7 @@ def patched_ty_apply(
         patch.object(ty_boost_with_pyproject.tools.uv, "exec", return_value=ok_result()) as mock_uv,
         patch.object(ty_boost_with_pyproject.tools.git, "commit") as mock_git,
         patch.object(ty_boost_with_pyproject, "_run_ty_check", return_value=ok_result()) as mock_check,
+        patch.object(ty_boost_with_pyproject, "_run_stability_checks"),
     ):
         yield PatchedTyApply(
             boost=ty_boost_with_pyproject,
@@ -325,6 +332,58 @@ def test_apply_stops_when_output_unparseable(
     patched_ty_apply.mock_check.return_value = fail_result("fatal: some config error\n")
     patched_ty_apply.boost.apply()
     patched_ty_apply.mock_check.assert_called_once()
+
+
+# =============================================================================
+# STABILITY CHECKS
+# =============================================================================
+
+
+def test_stability_checks_called_from_suppress_iterations(
+    patched_ty_apply: PatchedTyApply,
+) -> None:
+    """_run_stability_checks is called once after the main suppress loop."""
+    with patch.object(patched_ty_apply.boost, "_run_stability_checks") as mock_stability:
+        patched_ty_apply.boost._run_suppress_iterations()  # noqa: SLF001
+    mock_stability.assert_called_once()
+
+
+def test_stability_suppresses_nondeterministic_violation(
+    mock_repo: RepositoryController,
+    ty_boost_with_pyproject: TyBoost,
+    fail_result: SubprocessResultFactory,
+    ok_result: SubprocessResultFactory,
+) -> None:
+    """Violations found in stability runs are suppressed."""
+    mock_repo.write_file("src/foo.py", "x = foo()\n")
+    with patch.object(ty_boost_with_pyproject, "_run_ty_check") as mock_check:
+        mock_check.side_effect = [
+            fail_result("src/foo.py:1:1: error[unresolved-import] ...\n"),
+            *([ok_result()] * (_TY_STABILITY_RUNS - 1)),
+        ]
+        ty_boost_with_pyproject._run_stability_checks()  # noqa: SLF001
+    assert "# ty: ignore[unresolved-import]" in (mock_repo.path / "src/foo.py").read_text()
+
+
+def test_stability_stops_on_unparseable_failure(
+    ty_boost_with_pyproject: TyBoost,
+    fail_result: SubprocessResultFactory,
+) -> None:
+    """Stability runs stop early when failure output has no parseable violations."""
+    with patch.object(ty_boost_with_pyproject, "_run_ty_check") as mock_check:
+        mock_check.return_value = fail_result("fatal: some config error\n")
+        ty_boost_with_pyproject._run_stability_checks()  # noqa: SLF001
+    assert mock_check.call_count == 1
+
+
+def test_stability_runs_up_to_stability_count_on_all_pass(
+    ty_boost_with_pyproject: TyBoost,
+    ok_result: SubprocessResultFactory,
+) -> None:
+    """All _TY_STABILITY_RUNS checks run when ty always passes."""
+    with patch.object(ty_boost_with_pyproject, "_run_ty_check", return_value=ok_result()) as mock_check:
+        ty_boost_with_pyproject._run_stability_checks()  # noqa: SLF001
+    assert mock_check.call_count == _TY_STABILITY_RUNS
 
 
 # =============================================================================
