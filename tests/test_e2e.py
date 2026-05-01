@@ -60,10 +60,10 @@ def test_e2e_boosts_applied_then_idempotent(mock_repo: RepositoryController) -> 
 
 def _assert_venv_fully_synced(repo_path: Path) -> None:
     logger.info(f"Checking venv sync state in {repo_path}...")
-    result = run_command(["uv", "sync", "--all-groups", "--check"], cwd=repo_path, check=False)
+    result = run_command(["uv", "sync", "--all-groups", "--all-extras", "--check"], cwd=repo_path, check=False)
     logger.debug(f"uv sync --check stdout: {result.stdout!r}")
     logger.debug(f"uv sync --check stderr: {result.stderr!r}")
     assert result.returncode == 0, (
-        f"uv sync --all-groups --check failed — venv is not fully installed.\n"
+        f"uv sync --all-groups --all-extras --check failed — venv is not fully installed.\n"
         f"stdout: {result.stdout}\nstderr: {result.stderr}"
     )

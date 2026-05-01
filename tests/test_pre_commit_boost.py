@@ -175,10 +175,10 @@ def test_patches_justfile_install_recipe_with_precommit_install(
     mock_repo: RepositoryController,
     patched_pre_commit_apply: PatchedPreCommitApply,
 ) -> None:
-    mock_repo.write_file("justfile", "install:\n    uv sync --all-groups\n")
+    mock_repo.write_file("justfile", "install:\n    uv sync --all-groups --all-extras\n")
     patched_pre_commit_apply.boost.apply()
     content = (mock_repo.path / "justfile").read_text()
-    assert "uv sync --all-groups" in content
+    assert "uv sync --all-groups --all-extras" in content
     assert "uv run pre-commit install" in content
 
 
@@ -213,7 +213,7 @@ def test_does_not_patch_justfile_when_absent(
 
 
 def test_patch_justfile_content_returns_none_when_already_patched() -> None:
-    content = "install:\n    uv sync --all-groups\n    uv run pre-commit install\n"
+    content = "install:\n    uv sync --all-groups --all-extras\n    uv run pre-commit install\n"
     assert _patch_justfile_content(content) is None
 
 

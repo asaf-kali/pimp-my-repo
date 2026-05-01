@@ -32,7 +32,7 @@ _RUN_VAR = 'RUN := "uv run"'
 
 _RECIPE_INSTALL = "install: install-dev lint\n"
 _RECIPE_INSTALL_NO_LINT = "install: install-dev\n"
-_RECIPE_INSTALL_ALL = "install-all:\n    uv sync --all-groups\n"
+_RECIPE_INSTALL_ALL = "install-all:\n    uv sync --all-groups --all-extras\n"
 _RECIPE_INSTALL_DEV = "install-dev: install-all\n    {{ RUN }} pre-commit install\n"
 _RECIPE_INSTALL_DEV_NO_PRECOMMIT = "install-dev: install-all\n"
 _RECIPE_LOCK = "lock:\n    uv lock\n"

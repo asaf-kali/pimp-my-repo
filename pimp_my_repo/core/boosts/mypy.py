@@ -11,7 +11,7 @@ from loguru import logger
 from tomlkit import TOMLDocument, array, table
 
 from pimp_my_repo.core.boosts.base import Boost, BoostSkipped
-from pimp_my_repo.core.boosts.ruff import RuffBoost
+from pimp_my_repo.core.boosts.ruff import RuffBoost, _is_tool_configured
 from pimp_my_repo.core.tools.pyproject import PyProjectNotFoundError
 
 if TYPE_CHECKING:
@@ -541,8 +541,11 @@ class BaseMypyBoost(Boost, abc.ABC):
 
     def _configure_mypy(self) -> None:
         self._add_mypy()
-        logger.info("Configuring [tool.mypy] strict = true in pyproject.toml...")
         pyproject_data = self.pyproject.read()
+        if _is_tool_configured(pyproject_data, "mypy"):
+            logger.info("Mypy already configured in pyproject.toml, skipping config setup")
+            return
+        logger.info("Configuring [tool.mypy] strict = true in pyproject.toml...")
         pyproject_data = self._ensure_mypy_config(pyproject_data)
         self.pyproject.write(pyproject_data)
         self._configure_extras()
@@ -550,8 +553,9 @@ class BaseMypyBoost(Boost, abc.ABC):
         logger.info("Committed mypy configuration")
 
     def _add_mypy(self) -> None:
-        self.uv.add_package(_MYPY_PACKAGE, group="lint")
-        self.uv.sync_group("lint")
+        if not self.pyproject.is_package_in_deps("mypy"):
+            self.uv.add_package(_MYPY_PACKAGE, group="lint")
+            self.uv.sync_group("lint")
 
     def _clear_mypy_cache(self) -> None:
         """Clear mypy cache to ensure changes take effect immediately."""
