@@ -7,7 +7,7 @@ from loguru import logger
 from tomlkit import TOMLDocument, array, table
 
 from pimp_my_repo.core.boosts.base import Boost, BoostSkipped
-from pimp_my_repo.core.boosts.ruff import RuffBoost, _is_tool_configured
+from pimp_my_repo.core.boosts.ruff import RuffBoost
 from pimp_my_repo.core.tools.pyproject import PyProjectNotFoundError
 
 if TYPE_CHECKING:
@@ -64,14 +64,12 @@ class TyBoost(Boost):
             self.uv.add_package(_TY_PACKAGE, group="lint")
             self.uv.sync_group("lint")
 
+        logger.info("Configuring [tool.ty] in pyproject.toml...")
         pyproject_data = self.pyproject.read()
-        if not _is_tool_configured(pyproject_data, "ty"):
-            logger.info("Configuring [tool.ty] in pyproject.toml...")
-            pyproject_data = self._ensure_ty_config(pyproject_data)
-            self.pyproject.write(pyproject_data)
-            self.git.commit("🔧 Configure ty", no_verify=True)
-        else:
-            logger.info("Ty already configured in pyproject.toml, skipping config setup")
+        pyproject_data = self._ensure_ty_config(pyproject_data)
+        self.pyproject.write(pyproject_data)
+
+        self.git.commit("🔧 Configure ty", no_verify=True)
 
         self._run_suppress_iterations()
 

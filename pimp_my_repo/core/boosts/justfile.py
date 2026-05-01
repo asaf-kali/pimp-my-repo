@@ -121,8 +121,10 @@ def _try_install_just() -> bool:
     Returns True if installation succeeded, False otherwise.
     """
     system = platform.system()
-    commands = _INSTALL_COMMANDS_BY_OS.get(system, [])
-    for cmd in commands:
+    # uv is always available in a PMR environment and rust-just is a universal fallback
+    uv_cmd = ["uv", "tool", "install", "rust-just"]
+    platform_commands = _INSTALL_COMMANDS_BY_OS.get(system, [])
+    for cmd in [uv_cmd, *platform_commands]:
         tool = next((c for c in cmd if c != "sudo"), None)
         if tool and not shutil.which(tool):
             logger.debug(f"Skipping {tool}: not in PATH")

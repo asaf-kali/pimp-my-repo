@@ -50,11 +50,6 @@ _RUFF_CODE_RE = re.compile(r"\b([A-Z]{1,4}\d+)\b")
 _TYPE_IGNORE_RE = re.compile(r"# type: ignore(?:\[([^\]]*)\])?")
 
 
-def _is_tool_configured(data: TOMLDocument, tool_name: str) -> bool:
-    """Return True if [tool.<tool_name>] section already exists in pyproject.toml."""
-    return bool(data.get("tool", {}).get(tool_name))
-
-
 class RuffBoost(Boost):
     """Boost for integrating Ruff linter and formatter."""
 
@@ -67,15 +62,13 @@ class RuffBoost(Boost):
             self.uv.add_package(_RUFF_PACKAGE, group="lint")
             self.uv.sync_group("lint")
 
+        logger.info("Configuring [tool.ruff.lint] select = ['ALL'] in pyproject.toml...")
         pyproject_data = self.pyproject.read()
         pyproject_data = self._migrate_deprecated_ruff_config(pyproject_data)
-        if not _is_tool_configured(pyproject_data, "ruff"):
-            logger.info("Configuring [tool.ruff.lint] select = ['ALL'] in pyproject.toml...")
-            pyproject_data = self._ensure_ruff_config(pyproject_data)
-            self.pyproject.write(pyproject_data)
-            self.git.commit("🔧 Configure ruff", no_verify=True)
-        else:
-            logger.info("Ruff already configured in pyproject.toml, skipping config setup")
+        pyproject_data = self._ensure_ruff_config(pyproject_data)
+        self.pyproject.write(pyproject_data)
+
+        self.git.commit("🔧 Configure ruff", no_verify=True)
 
         self.run_suppress_iterations()
 
