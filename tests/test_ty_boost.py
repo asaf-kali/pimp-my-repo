@@ -14,6 +14,7 @@ from pimp_my_repo.core.boosts.ty import (
     ViolationLocation,
     _merge_ty_ignore,
 )
+from pimp_my_repo.core.run_config import RunConfig
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -564,6 +565,54 @@ def test_merge_unused_ignore_code_removes_existing() -> None:
     )
     assert "ty: ignore" not in result
     assert result.startswith("x = foo()")
+
+
+# =============================================================================
+# SKIP CONFIG
+# =============================================================================
+
+
+@dataclass
+class PatchedTyApplySkipConfig:
+    """Pre-patched TyBoost (skip_config=True) with configure and suppress mocks."""
+
+    boost: TyBoost
+    mock_uv: MagicMock
+    mock_git: MagicMock
+    mock_check: MagicMock
+    mock_configure: MagicMock
+
+
+@pytest.fixture
+def patched_ty_apply_skip_config(
+    ty_boost_with_pyproject: TyBoost,
+    ok_result: SubprocessResultFactory,
+) -> Generator[PatchedTyApplySkipConfig]:
+    """Yield a TyBoost with skip_config=True and all subprocess calls pre-mocked."""
+    ty_boost_with_pyproject.run_config = RunConfig(skip_config=True)
+    with (
+        patch.object(ty_boost_with_pyproject.tools.uv, "exec", return_value=ok_result()) as mock_uv,
+        patch.object(ty_boost_with_pyproject.tools.git, "commit") as mock_git,
+        patch.object(ty_boost_with_pyproject, "_run_ty_check", return_value=ok_result()) as mock_check,
+        patch.object(ty_boost_with_pyproject, "_configure_ty") as mock_configure,
+    ):
+        yield PatchedTyApplySkipConfig(
+            boost=ty_boost_with_pyproject,
+            mock_uv=mock_uv,
+            mock_git=mock_git,
+            mock_check=mock_check,
+            mock_configure=mock_configure,
+        )
+
+
+def test_skip_config_skips_configure_ty(patched_ty_apply_skip_config: PatchedTyApplySkipConfig) -> None:
+    patched_ty_apply_skip_config.boost.apply()
+    patched_ty_apply_skip_config.mock_configure.assert_not_called()
+
+
+def test_skip_config_still_runs_suppress_iterations(patched_ty_apply_skip_config: PatchedTyApplySkipConfig) -> None:
+    patched_ty_apply_skip_config.boost.apply()
+    assert patched_ty_apply_skip_config.mock_check.call_count >= 1
 
 
 # =============================================================================

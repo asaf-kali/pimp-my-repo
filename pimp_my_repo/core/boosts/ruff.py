@@ -57,20 +57,20 @@ class RuffBoost(Boost):
         """Add ruff, configure it, auto-format, then suppress all check violations."""
         self._verify_uv_present()
         self._verify_pyproject_present()
+        if not self.skip_config:
+            self._configure_ruff()
+        self.run_suppress_iterations()
 
+    def _configure_ruff(self) -> None:
         if not self.pyproject.is_package_in_deps("ruff"):
             self.uv.add_package(_RUFF_PACKAGE, group="lint")
             self.uv.sync_group("lint")
-
         logger.info("Configuring [tool.ruff.lint] select = ['ALL'] in pyproject.toml...")
         pyproject_data = self.pyproject.read()
         pyproject_data = self._migrate_deprecated_ruff_config(pyproject_data)
         pyproject_data = self._ensure_ruff_config(pyproject_data)
         self.pyproject.write(pyproject_data)
-
         self.git.commit("🔧 Configure ruff", no_verify=True)
-
-        self.run_suppress_iterations()
 
     def commit_message(self) -> str:
         """Generate commit message for Ruff boost."""

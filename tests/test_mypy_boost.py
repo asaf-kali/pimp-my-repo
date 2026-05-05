@@ -14,6 +14,7 @@ from pimp_my_repo.core.boosts.mypy import (
     ViolationLocation,
     _parse_mypy_output,
 )
+from pimp_my_repo.core.run_config import RunConfig
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -499,6 +500,54 @@ def test_apply_stops_after_plugin_removal_makes_no_further_progress(
     patched_mypy_apply.boost.apply()
     # Iteration 1: nothing to remove (plugin not in config) → no progress → stops.
     patched_mypy_apply.mock_mypy.assert_called_once()
+
+
+# =============================================================================
+# SKIP CONFIG
+# =============================================================================
+
+
+@dataclass
+class PatchedMypyApplySkipConfig:
+    """Pre-patched MypyBoost (skip_config=True) with configure and suppress mocks."""
+
+    boost: MypyBoost
+    mock_uv: MagicMock
+    mock_git: MagicMock
+    mock_mypy: MagicMock
+    mock_configure: MagicMock
+
+
+@pytest.fixture
+def patched_mypy_apply_skip_config(
+    mypy_boost_with_pyproject: MypyBoost,
+    ok_result: SubprocessResultFactory,
+) -> Generator[PatchedMypyApplySkipConfig]:
+    """Yield a MypyBoost with skip_config=True and all subprocess calls pre-mocked."""
+    mypy_boost_with_pyproject.run_config = RunConfig(skip_config=True)
+    with (
+        patch.object(mypy_boost_with_pyproject.tools.uv, "exec", return_value=ok_result()) as mock_uv,
+        patch.object(mypy_boost_with_pyproject.tools.git, "commit") as mock_git,
+        patch.object(mypy_boost_with_pyproject, "_run_type_checker", return_value=ok_result()) as mock_mypy,
+        patch.object(mypy_boost_with_pyproject, "_configure_mypy") as mock_configure,
+    ):
+        yield PatchedMypyApplySkipConfig(
+            boost=mypy_boost_with_pyproject,
+            mock_uv=mock_uv,
+            mock_git=mock_git,
+            mock_mypy=mock_mypy,
+            mock_configure=mock_configure,
+        )
+
+
+def test_skip_config_skips_configure_mypy(patched_mypy_apply_skip_config: PatchedMypyApplySkipConfig) -> None:
+    patched_mypy_apply_skip_config.boost.apply()
+    patched_mypy_apply_skip_config.mock_configure.assert_not_called()
+
+
+def test_skip_config_still_runs_apply_ignores(patched_mypy_apply_skip_config: PatchedMypyApplySkipConfig) -> None:
+    patched_mypy_apply_skip_config.boost.apply()
+    patched_mypy_apply_skip_config.mock_mypy.assert_called()
 
 
 # =============================================================================

@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from collections.abc import Generator, Iterator
     from pathlib import Path
 
+    from pimp_my_repo.core.run_config import RunConfig
     from pimp_my_repo.core.tools.repo import RepositoryController
 
 
@@ -60,10 +61,11 @@ def _run_boost_class(
     boost_class: type[Boost],
     boost_tools: BoostTools,
     repo_controller: RepositoryController,
+    run_config: RunConfig | None = None,
 ) -> BoostResult:
     boost_name = boost_class.get_name()
     try:
-        boost = boost_class(boost_tools)
+        boost = boost_class(boost_tools, run_config=run_config)
         return _run_boost(boost=boost, boost_name=boost_name, repo_controller=repo_controller)
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error applying '{boost_name}' boost: {e}")
@@ -76,6 +78,7 @@ def execute_boosts(
     boost_classes: list[type[Boost]],
     on_boost_start: BoostStartCallback | None = None,
     branch: str | None = None,
+    run_config: RunConfig | None = None,
 ) -> Iterator[BoostResult]:
     """Execute all boosts and yield results as they complete."""
     logger.info(f"Running PMR [v{__version__}] boosts on repository: [{repo_path}]")
@@ -86,5 +89,7 @@ def execute_boosts(
     for bc in boost_classes:
         if on_boost_start:
             on_boost_start(bc.get_name())
-        yield _run_boost_class(boost_class=bc, boost_tools=boost_tools, repo_controller=boost_tools.git)
+        yield _run_boost_class(
+            boost_class=bc, boost_tools=boost_tools, repo_controller=boost_tools.git, run_config=run_config
+        )
     logger.info("Finished running PMR boosts")

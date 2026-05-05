@@ -251,7 +251,8 @@ class BaseMypyBoost(Boost, abc.ABC):
     def apply(self) -> None:
         """Add mypy, configure strict mode, commit, then suppress all violations."""
         self._verify_preconditions()
-        self._configure_mypy()
+        if not self.skip_config:
+            self._configure_mypy()
         self._apply_ignores()
 
     @abstractmethod

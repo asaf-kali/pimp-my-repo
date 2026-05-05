@@ -6,6 +6,8 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from pimp_my_repo.core.run_config import RunConfig
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -33,9 +35,14 @@ class BoostSkipped(Exception):  # noqa: N818
 class Boost(ABC):
     """Abstract base class for all boosts."""
 
-    def __init__(self, tools: BoostTools) -> None:
+    def __init__(self, tools: BoostTools, run_config: RunConfig | None = None) -> None:
         """Initialize boost with repository path."""
         self.tools = tools
+        self.run_config = run_config or RunConfig()
+
+    @property
+    def skip_config(self) -> bool:
+        return self.run_config.skip_config
 
     @property
     def repo_path(self) -> Path:

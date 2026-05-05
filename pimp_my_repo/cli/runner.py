@@ -16,6 +16,7 @@ from pimp_my_repo.core.registry import get_all_boosts
 if TYPE_CHECKING:
     from pimp_my_repo.core.boosts.base import Boost
     from pimp_my_repo.core.result import BoostResult
+    from pimp_my_repo.core.run_config import RunConfig
 
 
 @dataclass
@@ -26,12 +27,13 @@ class BoostRunResult:
     log_path: Path | None
 
 
-def run_boosts(
+def run_boosts(  # noqa: PLR0913
     repo_path: Path,
     console: Console | None = None,
     boost_classes: list[type[Boost]] | None = None,
     log_to_file: bool = True,  # noqa: FBT001, FBT002
     branch: str | None = None,
+    run_config: RunConfig | None = None,
 ) -> BoostRunResult:
     """Run boosts on a repository and return results and the log file path (if any)."""
     if console is None:
@@ -44,15 +46,17 @@ def run_boosts(
         console=console,
         log_to_file=log_to_file,
         branch=branch,
+        run_config=run_config,
     )
 
 
-def _run_boosts_with_dashboard(
+def _run_boosts_with_dashboard(  # noqa: PLR0913
     repo_path: Path,
     boost_classes: list[type[Boost]],
     console: Console,
     log_to_file: bool,  # noqa: FBT001
     branch: str | None = None,
+    run_config: RunConfig | None = None,
 ) -> BoostRunResult:
     boost_names = [bc.get_name() for bc in boost_classes]
     dashboard = LiveDashboard(boost_names)
@@ -79,6 +83,7 @@ def _run_boosts_with_dashboard(
             boost_classes=boost_classes,
             on_boost_start=dashboard.set_running,
             branch=branch,
+            run_config=run_config,
         ):
             dashboard.set_result(result)
             results.append(result)
