@@ -8,6 +8,7 @@ import pytest
 
 from pimp_my_repo.core.boosts.base import BoostSkipped
 from pimp_my_repo.core.boosts.pre_commit import PreCommitBoost, _patch_justfile_content
+from pimp_my_repo.core.run_config import RunConfig
 from pimp_my_repo.core.tools.uv import UvNotFoundError
 
 if TYPE_CHECKING:
@@ -20,7 +21,7 @@ if TYPE_CHECKING:
 
 @pytest.fixture
 def pre_commit_boost(boost_tools: BoostTools) -> PreCommitBoost:
-    return PreCommitBoost(boost_tools)
+    return PreCommitBoost(boost_tools, RunConfig())
 
 
 @pytest.fixture
@@ -29,7 +30,7 @@ def pre_commit_boost_with_pyproject(
     mock_repo: RepositoryController,
 ) -> PreCommitBoost:
     mock_repo.write_file("pyproject.toml", "[project]\nname = 'test'\n")
-    return PreCommitBoost(boost_tools)
+    return PreCommitBoost(boost_tools, RunConfig())
 
 
 @dataclass

@@ -60,19 +60,19 @@ class TyBoost(Boost):
         """Add ty, configure it, then suppress all violations."""
         self._verify_uv_present()
         self._verify_pyproject_present()
+        if not self.skip_config:
+            self._configure_ty()
+        self._run_suppress_iterations()
 
+    def _configure_ty(self) -> None:
         if not self.pyproject.is_package_in_deps("ty"):
             self.uv.add_package(_TY_PACKAGE, group="lint")
             self.uv.sync_group("lint")
-
         logger.info("Configuring [tool.ty] in pyproject.toml...")
         pyproject_data = self.pyproject.read()
         pyproject_data = self._ensure_ty_config(pyproject_data)
         self.pyproject.write(pyproject_data)
-
         self.git.commit("🔧 Configure ty", no_verify=True)
-
-        self._run_suppress_iterations()
 
     def commit_message(self) -> str:
         """Generate commit message for ty boost."""
@@ -258,7 +258,7 @@ class TyBoost(Boost):
         if not tool_section or "ruff" not in tool_section:
             return False
         logger.debug("Running ruff suppress pass after ty edits")
-        return RuffBoost(tools=self.tools).run_suppress_iterations()
+        return RuffBoost(tools=self.tools, run_config=self.run_config).run_suppress_iterations()
 
     def _run_suppress_iterations(self) -> None:
         """Run ty+ruff check+suppress iterations until stable.

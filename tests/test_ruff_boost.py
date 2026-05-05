@@ -9,6 +9,7 @@ import pytest
 
 from pimp_my_repo.core.boosts.base import BoostSkipped
 from pimp_my_repo.core.boosts.ruff import _MAX_RUFF_ITERATIONS, RuffBoost, ViolationLocation
+from pimp_my_repo.core.run_config import RunConfig
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -20,13 +21,13 @@ if TYPE_CHECKING:
 
 @pytest.fixture
 def ruff_boost(boost_tools: BoostTools) -> RuffBoost:
-    return RuffBoost(boost_tools)
+    return RuffBoost(boost_tools, RunConfig())
 
 
 @pytest.fixture
 def ruff_boost_with_pyproject(boost_tools: BoostTools, repo_controller: RepositoryController) -> RuffBoost:
     repo_controller.write_file("pyproject.toml", "[project]\nname = 'test'\nversion = '0.1.0'\n")
-    return RuffBoost(boost_tools)
+    return RuffBoost(boost_tools, RunConfig())
 
 
 @dataclass
@@ -613,6 +614,50 @@ def test_excludes_syntax_error_file_in_pyproject(
     patched_ruff_apply.boost.apply()
     content = (mock_repo.path / "pyproject.toml").read_text()
     assert "src/bad.py" in content
+
+
+# =============================================================================
+# SKIP CONFIG
+# =============================================================================
+
+
+@dataclass
+class PatchedRuffApplySkipConfig:
+    """Pre-patched RuffBoost (skip_config=True) with configure and suppress mocks."""
+
+    boost: RuffBoost
+    mock_uv: MagicMock
+    mock_git: MagicMock
+    mock_format: MagicMock
+    mock_check: MagicMock
+    mock_configure: MagicMock
+
+
+@pytest.fixture
+def patched_ruff_apply_skip_config(
+    patched_ruff_apply: PatchedRuffApply,
+) -> Generator[PatchedRuffApplySkipConfig]:
+    """Yield a RuffBoost with skip_config=True, reusing patched_ruff_apply mocks."""
+    patched_ruff_apply.boost.run_config = RunConfig(skip_config=True)
+    with patch.object(patched_ruff_apply.boost, "_configure_ruff") as mock_configure:
+        yield PatchedRuffApplySkipConfig(
+            boost=patched_ruff_apply.boost,
+            mock_uv=patched_ruff_apply.mock_uv,
+            mock_git=patched_ruff_apply.mock_git,
+            mock_format=patched_ruff_apply.mock_format,
+            mock_check=patched_ruff_apply.mock_check,
+            mock_configure=mock_configure,
+        )
+
+
+def test_skip_config_skips_configure_ruff(patched_ruff_apply_skip_config: PatchedRuffApplySkipConfig) -> None:
+    patched_ruff_apply_skip_config.boost.apply()
+    patched_ruff_apply_skip_config.mock_configure.assert_not_called()
+
+
+def test_skip_config_still_runs_suppress_iterations(patched_ruff_apply_skip_config: PatchedRuffApplySkipConfig) -> None:
+    patched_ruff_apply_skip_config.boost.apply()
+    assert patched_ruff_apply_skip_config.mock_format.call_count >= 1
 
 
 # =============================================================================

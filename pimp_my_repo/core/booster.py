@@ -10,8 +10,8 @@ from pimp_my_repo.core.tools.boost_tools import BoostTools
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Iterator
-    from pathlib import Path
 
+    from pimp_my_repo.core.run_config import RunConfig
     from pimp_my_repo.core.tools.repo import RepositoryController
 
 
@@ -60,10 +60,11 @@ def _run_boost_class(
     boost_class: type[Boost],
     boost_tools: BoostTools,
     repo_controller: RepositoryController,
+    run_config: RunConfig,
 ) -> BoostResult:
     boost_name = boost_class.get_name()
     try:
-        boost = boost_class(boost_tools)
+        boost = boost_class(boost_tools, run_config=run_config)
         return _run_boost(boost=boost, boost_name=boost_name, repo_controller=repo_controller)
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error applying '{boost_name}' boost: {e}")
@@ -72,19 +73,22 @@ def _run_boost_class(
 
 
 def execute_boosts(
-    repo_path: Path,
     boost_classes: list[type[Boost]],
+    run_config: RunConfig,
     on_boost_start: BoostStartCallback | None = None,
-    branch: str | None = None,
 ) -> Iterator[BoostResult]:
     """Execute all boosts and yield results as they complete."""
+    repo_path = run_config.repo_path
+    assert repo_path is not None, "run_config.repo_path must be set before calling execute_boosts"
     logger.info(f"Running PMR [v{__version__}] boosts on repository: [{repo_path}]")
     boost_tools = BoostTools.create(repo_path=repo_path)
-    init_kwargs = {"branch_name": branch} if branch is not None else {}
+    init_kwargs = {"branch_name": run_config.branch} if run_config.branch is not None else {}
     boost_tools.git.init_pmr(**init_kwargs)
     logger.info(f"Found {len(boost_classes)} boosts to run: {[bc.get_name() for bc in boost_classes]}")
     for bc in boost_classes:
         if on_boost_start:
             on_boost_start(bc.get_name())
-        yield _run_boost_class(boost_class=bc, boost_tools=boost_tools, repo_controller=boost_tools.git)
+        yield _run_boost_class(
+            boost_class=bc, boost_tools=boost_tools, repo_controller=boost_tools.git, run_config=run_config
+        )
     logger.info("Finished running PMR boosts")
