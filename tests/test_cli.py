@@ -6,8 +6,9 @@ import pytest
 from typer.testing import CliRunner
 
 from pimp_my_repo.cli.main import app, main
-from pimp_my_repo.cli.runner import BoostRunResult
+from pimp_my_repo.cli.runner import BoostRunResult, ExecutionContext, run_boosts
 from pimp_my_repo.core.result import BoostResult, BoostResultStatus
+from pimp_my_repo.core.run_config import RunConfig
 from pimp_my_repo.core.tools.subprocess import run_command
 
 if TYPE_CHECKING:
@@ -284,3 +285,32 @@ def test_branch_flag_defaults_to_none(mock_repo: RepositoryController) -> None:
     mock_rb.assert_called_once()
     _, kwargs = mock_rb.call_args
     assert kwargs["run_config"].branch is None
+
+
+def test_skip_config_flag_via_cli_runner(
+    mock_repo: RepositoryController,
+    patched_run_boosts_skipped: MagicMock,
+) -> None:
+    """--skip-config is forwarded to run_config.skip_config."""
+    _cli_runner.invoke(app, ["--path", str(mock_repo.path), "--skip-config"])
+    _, kwargs = patched_run_boosts_skipped.call_args
+    assert kwargs["run_config"].skip_config is True
+
+
+def test_skip_config_defaults_to_false(
+    mock_repo: RepositoryController,
+    patched_run_boosts_skipped: MagicMock,
+) -> None:
+    """Without --skip-config, run_config.skip_config is False."""
+    _cli_runner.invoke(app, ["--path", str(mock_repo.path)])
+    _, kwargs = patched_run_boosts_skipped.call_args
+    assert kwargs["run_config"].skip_config is False
+
+
+def test_run_boosts_default_context(mock_repo: RepositoryController) -> None:
+    """run_boosts creates a default ExecutionContext when none is provided."""
+    with patch("pimp_my_repo.cli.runner._run_boosts_with_dashboard") as mock_dash:
+        mock_dash.return_value = BoostRunResult(results=[], log_path=None)
+        run_boosts(RunConfig(repo_path=mock_repo.path))
+    _, kwargs = mock_dash.call_args
+    assert isinstance(kwargs["context"], ExecutionContext)
