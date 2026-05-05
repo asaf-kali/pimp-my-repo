@@ -8,7 +8,7 @@ from rich.console import Console
 from rich.panel import Panel
 from typer import Exit
 
-from pimp_my_repo.cli.runner import run_boosts
+from pimp_my_repo.cli.runner import ExecutionContext, run_boosts
 from pimp_my_repo.core.registry import get_all_boosts, get_opt_in_boosts
 from pimp_my_repo.core.result import BoostResultStatus
 from pimp_my_repo.core.run_config import RunConfig
@@ -66,12 +66,8 @@ def run(  # noqa: PLR0913
     _validate_path(repo_path, console)
 
     run_result = run_boosts(
-        repo_path=repo_path,
-        console=console,
-        boost_classes=boost_classes,
-        log_to_file=not no_log_file,
-        branch=branch,
-        run_config=RunConfig(skip_config=skip_config),
+        run_config=RunConfig(repo_path=repo_path, branch=branch, skip_config=skip_config),
+        context=ExecutionContext(boost_classes=boost_classes, console=console, log_to_file=not no_log_file),
     )
     had_failures = _print_summary(run_result.results, console)
     if any(r.status == BoostResultStatus.APPLIED for r in run_result.results):

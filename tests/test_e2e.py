@@ -5,8 +5,10 @@ from typing import TYPE_CHECKING
 from loguru import logger
 from rich.console import Console
 
-from pimp_my_repo.cli.runner import run_boosts
+from pimp_my_repo.cli.runner import ExecutionContext, run_boosts
+from pimp_my_repo.core.registry import get_all_boosts
 from pimp_my_repo.core.result import BoostResultStatus
+from pimp_my_repo.core.run_config import RunConfig
 from pimp_my_repo.core.tools.subprocess import run_command
 
 if TYPE_CHECKING:
@@ -28,7 +30,10 @@ def test_e2e_boosts_applied_then_idempotent(mock_repo: RepositoryController) -> 
 
     # --- Run 1: apply all boosts ---
     logger.info("E2E run 1: applying boosts...")
-    run_result1 = run_boosts(mock_repo.path, console=console, log_to_file=False)
+    run_result1 = run_boosts(
+        run_config=RunConfig(repo_path=mock_repo.path),
+        context=ExecutionContext(boost_classes=get_all_boosts(), console=console, log_to_file=False),
+    )
 
     # No boost should fail
     failed1 = [r for r in run_result1.results if r.status == "failed"]
@@ -44,7 +49,10 @@ def test_e2e_boosts_applied_then_idempotent(mock_repo: RepositoryController) -> 
 
     # --- Run 2: no changes should be made ---
     logger.info("E2E run 2: verifying idempotency...")
-    run_result2 = run_boosts(mock_repo.path, console=console, log_to_file=False)
+    run_result2 = run_boosts(
+        run_config=RunConfig(repo_path=mock_repo.path),
+        context=ExecutionContext(boost_classes=get_all_boosts(), console=console, log_to_file=False),
+    )
 
     failed2 = [r for r in run_result2.results if r.status == "failed"]
     assert not failed2, f"Boosts failed on second run: {failed2}"

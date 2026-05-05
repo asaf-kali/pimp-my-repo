@@ -195,7 +195,7 @@ def test_branch_flag_passed_to_run_boosts(mock_repo: RepositoryController) -> No
         _cli_runner.invoke(app, ["--path", str(mock_repo.path), "--branch", "my-branch"])
     mock_rb.assert_called_once()
     _, kwargs = mock_rb.call_args
-    assert kwargs["branch"] == "my-branch"
+    assert kwargs["run_config"].branch == "my-branch"
 
 
 @pytest.fixture
@@ -239,7 +239,7 @@ def test_only_flag_via_cli_runner(
 ) -> None:
     _cli_runner.invoke(app, ["--path", str(mock_repo.path), "--only", "ruff"])
     _, kwargs = patched_run_boosts_skipped.call_args
-    assert [bc.get_name() for bc in kwargs["boost_classes"]] == ["ruff"]
+    assert [bc.get_name() for bc in kwargs["context"].boost_classes] == ["ruff"]
 
 
 def test_skip_flag_via_cli_runner(
@@ -248,7 +248,7 @@ def test_skip_flag_via_cli_runner(
 ) -> None:
     _cli_runner.invoke(app, ["--path", str(mock_repo.path), "--skip", "ruff"])
     _, kwargs = patched_run_boosts_skipped.call_args
-    assert "ruff" not in [bc.get_name() for bc in kwargs["boost_classes"]]
+    assert "ruff" not in [bc.get_name() for bc in kwargs["context"].boost_classes]
 
 
 def test_ty_flag_replaces_mypy(
@@ -257,7 +257,7 @@ def test_ty_flag_replaces_mypy(
 ) -> None:
     _cli_runner.invoke(app, ["--path", str(mock_repo.path), "--ty"])
     _, kwargs = patched_run_boosts_skipped.call_args
-    names = [bc.get_name() for bc in kwargs["boost_classes"]]
+    names = [bc.get_name() for bc in kwargs["context"].boost_classes]
     assert "ty" in names
     assert "mypy" not in names
 
@@ -269,7 +269,7 @@ def test_ty_flag_appends_when_mypy_not_selected(
     """--ty with --only ruff: ty is appended since mypy isn't in the list."""
     _cli_runner.invoke(app, ["--path", str(mock_repo.path), "--only", "ruff", "--ty"])
     _, kwargs = patched_run_boosts_skipped.call_args
-    names = [bc.get_name() for bc in kwargs["boost_classes"]]
+    names = [bc.get_name() for bc in kwargs["context"].boost_classes]
     assert "ty" in names
 
 
@@ -283,4 +283,4 @@ def test_branch_flag_defaults_to_none(mock_repo: RepositoryController) -> None:
         _cli_runner.invoke(app, ["--path", str(mock_repo.path)])
     mock_rb.assert_called_once()
     _, kwargs = mock_rb.call_args
-    assert kwargs["branch"] is None
+    assert kwargs["run_config"].branch is None

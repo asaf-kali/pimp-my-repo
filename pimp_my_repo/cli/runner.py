@@ -1,6 +1,6 @@
 """Run boosts with the live dashboard and log routing."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -27,45 +27,31 @@ class BoostRunResult:
     log_path: Path | None
 
 
-def run_boosts(  # noqa: PLR0913
-    repo_path: Path,
-    console: Console | None = None,
-    boost_classes: list[type[Boost]] | None = None,
-    log_to_file: bool = True,  # noqa: FBT001, FBT002
-    branch: str | None = None,
-    run_config: RunConfig | None = None,
-) -> BoostRunResult:
+@dataclass
+class ExecutionContext:
+    """Internal PMR execution parameters — not user-facing, not passed to individual boosts."""
+
+    boost_classes: list[type[Boost]] = field(default_factory=get_all_boosts)
+    console: Console = field(default_factory=Console)
+    log_to_file: bool = True
+
+
+def run_boosts(run_config: RunConfig, context: ExecutionContext | None = None) -> BoostRunResult:
     """Run boosts on a repository and return results and the log file path (if any)."""
-    if console is None:
-        console = Console()
-    if boost_classes is None:
-        boost_classes = get_all_boosts()
-    return _run_boosts_with_dashboard(
-        repo_path=repo_path,
-        boost_classes=boost_classes,
-        console=console,
-        log_to_file=log_to_file,
-        branch=branch,
-        run_config=run_config,
-    )
+    if context is None:
+        context = ExecutionContext()
+    return _run_boosts_with_dashboard(run_config=run_config, context=context)
 
 
-def _run_boosts_with_dashboard(  # noqa: PLR0913
-    repo_path: Path,
-    boost_classes: list[type[Boost]],
-    console: Console,
-    log_to_file: bool,  # noqa: FBT001
-    branch: str | None = None,
-    run_config: RunConfig | None = None,
-) -> BoostRunResult:
-    boost_names = [bc.get_name() for bc in boost_classes]
+def _run_boosts_with_dashboard(run_config: RunConfig, context: ExecutionContext) -> BoostRunResult:
+    boost_names = [bc.get_name() for bc in context.boost_classes]
     dashboard = LiveDashboard(boost_names)
 
     logger.remove()
     logger.add(dashboard.add_log, level="INFO", format="<level>{level:<8}</level> {message}", colorize=True)
 
     log_path: Path | None = None
-    if log_to_file:
+    if context.log_to_file:
         log_path = _log_file_path()
         logger.add(
             log_path,
@@ -73,17 +59,15 @@ def _run_boosts_with_dashboard(  # noqa: PLR0913
             format="[{time:YYYY-MM-DD HH:mm:ss.SSS}] [{level:<4.4}] {message} [{name}] [{file}:{line}]",
             colorize=False,
         )
-        console.print(f"[dim]Full log:[/dim] [cyan]{log_path}[/cyan]")
+        context.console.print(f"[dim]Full log:[/dim] [cyan]{log_path}[/cyan]")
 
     results: list[BoostResult] = []
 
-    with Live(dashboard, console=console, refresh_per_second=4):
+    with Live(dashboard, console=context.console, refresh_per_second=4):
         for result in execute_boosts(
-            repo_path=repo_path,
-            boost_classes=boost_classes,
-            on_boost_start=dashboard.set_running,
-            branch=branch,
+            boost_classes=context.boost_classes,
             run_config=run_config,
+            on_boost_start=dashboard.set_running,
         ):
             dashboard.set_result(result)
             results.append(result)
