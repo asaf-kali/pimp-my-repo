@@ -337,7 +337,9 @@ class BaseMypyBoost(Boost, abc.ABC):
     def _enable_mypy_pretty(self) -> None:
         """Set pretty = true in [tool.mypy] so end-users get readable mypy output."""
         pyproject_data = self.pyproject.read()
-        tool_section: Any = pyproject_data["tool"]
+        tool_section: Any = pyproject_data.get("tool")
+        if tool_section is None or "mypy" not in tool_section:
+            return
         tool_section["mypy"]["pretty"] = True
         self.pyproject.write(pyproject_data)
 
@@ -538,7 +540,7 @@ class BaseMypyBoost(Boost, abc.ABC):
             logger.debug("Ruff not configured; skipping ruff suppress pass")
             return False
         logger.debug("Running ruff suppress pass after mypy edits")
-        return RuffBoost(tools=self.tools).run_suppress_iterations()
+        return RuffBoost(tools=self.tools, run_config=self.run_config).run_suppress_iterations()
 
     def _configure_mypy(self) -> None:
         self._add_mypy()

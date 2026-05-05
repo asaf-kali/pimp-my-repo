@@ -21,13 +21,13 @@ if TYPE_CHECKING:
 
 @pytest.fixture
 def ruff_boost(boost_tools: BoostTools) -> RuffBoost:
-    return RuffBoost(boost_tools)
+    return RuffBoost(boost_tools, RunConfig())
 
 
 @pytest.fixture
 def ruff_boost_with_pyproject(boost_tools: BoostTools, repo_controller: RepositoryController) -> RuffBoost:
     repo_controller.write_file("pyproject.toml", "[project]\nname = 'test'\nversion = '0.1.0'\n")
-    return RuffBoost(boost_tools)
+    return RuffBoost(boost_tools, RunConfig())
 
 
 @dataclass
@@ -635,24 +635,17 @@ class PatchedRuffApplySkipConfig:
 
 @pytest.fixture
 def patched_ruff_apply_skip_config(
-    ruff_boost_with_pyproject: RuffBoost,
-    ok_result: SubprocessResultFactory,
+    patched_ruff_apply: PatchedRuffApply,
 ) -> Generator[PatchedRuffApplySkipConfig]:
-    """Yield a RuffBoost with skip_config=True and all subprocess calls pre-mocked."""
-    ruff_boost_with_pyproject.run_config = RunConfig(skip_config=True)
-    with (
-        patch.object(ruff_boost_with_pyproject.tools.uv, "exec", return_value=ok_result()) as mock_uv,
-        patch.object(ruff_boost_with_pyproject.tools.git, "commit") as mock_git,
-        patch.object(ruff_boost_with_pyproject, "_run_ruff_format", return_value=ok_result()) as mock_fmt,
-        patch.object(ruff_boost_with_pyproject, "_run_ruff_check", return_value=ok_result()) as mock_check,
-        patch.object(ruff_boost_with_pyproject, "_configure_ruff") as mock_configure,
-    ):
+    """Yield a RuffBoost with skip_config=True, reusing patched_ruff_apply mocks."""
+    patched_ruff_apply.boost.run_config = RunConfig(skip_config=True)
+    with patch.object(patched_ruff_apply.boost, "_configure_ruff") as mock_configure:
         yield PatchedRuffApplySkipConfig(
-            boost=ruff_boost_with_pyproject,
-            mock_uv=mock_uv,
-            mock_git=mock_git,
-            mock_format=mock_fmt,
-            mock_check=mock_check,
+            boost=patched_ruff_apply.boost,
+            mock_uv=patched_ruff_apply.mock_uv,
+            mock_git=patched_ruff_apply.mock_git,
+            mock_format=patched_ruff_apply.mock_format,
+            mock_check=patched_ruff_apply.mock_check,
             mock_configure=mock_configure,
         )
 

@@ -258,7 +258,7 @@ class TyBoost(Boost):
         if not tool_section or "ruff" not in tool_section:
             return False
         logger.debug("Running ruff suppress pass after ty edits")
-        return RuffBoost(tools=self.tools).run_suppress_iterations()
+        return RuffBoost(tools=self.tools, run_config=self.run_config).run_suppress_iterations()
 
     def _run_suppress_iterations(self) -> None:
         """Run ty+ruff check+suppress iterations until stable.

@@ -29,20 +29,20 @@ _vl = ViolationLocation
 @pytest.fixture
 def mypy_boost(boost_tools: BoostTools) -> MypyBoost:
     """Create a MypyBoost instance without pyproject.toml."""
-    return MypyBoost(boost_tools)
+    return MypyBoost(boost_tools, RunConfig())
 
 
 @pytest.fixture
 def dmypy_boost(boost_tools: BoostTools) -> DmypyBoost:
     """Create a DmypyBoost instance without pyproject.toml."""
-    return DmypyBoost(boost_tools)
+    return DmypyBoost(boost_tools, RunConfig())
 
 
 @pytest.fixture
 def mypy_boost_with_pyproject(repo_controller: RepositoryController, boost_tools: BoostTools) -> MypyBoost:
     """Create a MypyBoost instance with a minimal pyproject.toml."""
     repo_controller.write_file("pyproject.toml", "[project]\nname = 'test'\nversion = '0.1.0'\n")
-    return MypyBoost(boost_tools)
+    return MypyBoost(boost_tools, RunConfig())
 
 
 @dataclass
@@ -520,22 +520,16 @@ class PatchedMypyApplySkipConfig:
 
 @pytest.fixture
 def patched_mypy_apply_skip_config(
-    mypy_boost_with_pyproject: MypyBoost,
-    ok_result: SubprocessResultFactory,
+    patched_mypy_apply: PatchedMypyApply,
 ) -> Generator[PatchedMypyApplySkipConfig]:
-    """Yield a MypyBoost with skip_config=True and all subprocess calls pre-mocked."""
-    mypy_boost_with_pyproject.run_config = RunConfig(skip_config=True)
-    with (
-        patch.object(mypy_boost_with_pyproject.tools.uv, "exec", return_value=ok_result()) as mock_uv,
-        patch.object(mypy_boost_with_pyproject.tools.git, "commit") as mock_git,
-        patch.object(mypy_boost_with_pyproject, "_run_type_checker", return_value=ok_result()) as mock_mypy,
-        patch.object(mypy_boost_with_pyproject, "_configure_mypy") as mock_configure,
-    ):
+    """Yield a MypyBoost with skip_config=True, reusing patched_mypy_apply mocks."""
+    patched_mypy_apply.boost.run_config = RunConfig(skip_config=True)
+    with patch.object(patched_mypy_apply.boost, "_configure_mypy") as mock_configure:
         yield PatchedMypyApplySkipConfig(
-            boost=mypy_boost_with_pyproject,
-            mock_uv=mock_uv,
-            mock_git=mock_git,
-            mock_mypy=mock_mypy,
+            boost=patched_mypy_apply.boost,
+            mock_uv=patched_mypy_apply.mock_uv,
+            mock_git=patched_mypy_apply.mock_git,
+            mock_mypy=patched_mypy_apply.mock_mypy,
             mock_configure=mock_configure,
         )
 

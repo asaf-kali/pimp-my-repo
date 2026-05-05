@@ -19,6 +19,7 @@ from pimp_my_repo.core.boosts.uv.detector import (
     detect_existing_configs,
 )
 from pimp_my_repo.core.boosts.uv.uv import UvBoost
+from pimp_my_repo.core.run_config import RunConfig
 from pimp_my_repo.core.tools.subprocess import CommandResult
 from pimp_my_repo.core.tools.uv import UvNotFoundError
 
@@ -151,7 +152,7 @@ def test_detect_all_integration_with_files(mock_repo: RepositoryController) -> N
 
 @pytest.fixture
 def uv_boost(boost_tools: BoostTools) -> UvBoost:
-    return UvBoost(boost_tools)
+    return UvBoost(boost_tools, RunConfig())
 
 
 @dataclass

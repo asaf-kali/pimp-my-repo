@@ -26,13 +26,13 @@ if TYPE_CHECKING:
 
 @pytest.fixture
 def ty_boost(boost_tools: BoostTools) -> TyBoost:
-    return TyBoost(boost_tools)
+    return TyBoost(boost_tools, RunConfig())
 
 
 @pytest.fixture
 def ty_boost_with_pyproject(boost_tools: BoostTools, repo_controller: RepositoryController) -> TyBoost:
     repo_controller.write_file("pyproject.toml", "[project]\nname = 'test'\nversion = '0.1.0'\n")
-    return TyBoost(boost_tools)
+    return TyBoost(boost_tools, RunConfig())
 
 
 @dataclass
@@ -585,22 +585,16 @@ class PatchedTyApplySkipConfig:
 
 @pytest.fixture
 def patched_ty_apply_skip_config(
-    ty_boost_with_pyproject: TyBoost,
-    ok_result: SubprocessResultFactory,
+    patched_ty_apply: PatchedTyApply,
 ) -> Generator[PatchedTyApplySkipConfig]:
-    """Yield a TyBoost with skip_config=True and all subprocess calls pre-mocked."""
-    ty_boost_with_pyproject.run_config = RunConfig(skip_config=True)
-    with (
-        patch.object(ty_boost_with_pyproject.tools.uv, "exec", return_value=ok_result()) as mock_uv,
-        patch.object(ty_boost_with_pyproject.tools.git, "commit") as mock_git,
-        patch.object(ty_boost_with_pyproject, "_run_ty_check", return_value=ok_result()) as mock_check,
-        patch.object(ty_boost_with_pyproject, "_configure_ty") as mock_configure,
-    ):
+    """Yield a TyBoost with skip_config=True, reusing patched_ty_apply mocks."""
+    patched_ty_apply.boost.run_config = RunConfig(skip_config=True)
+    with patch.object(patched_ty_apply.boost, "_configure_ty") as mock_configure:
         yield PatchedTyApplySkipConfig(
-            boost=ty_boost_with_pyproject,
-            mock_uv=mock_uv,
-            mock_git=mock_git,
-            mock_check=mock_check,
+            boost=patched_ty_apply.boost,
+            mock_uv=patched_ty_apply.mock_uv,
+            mock_git=patched_ty_apply.mock_git,
+            mock_check=patched_ty_apply.mock_check,
             mock_configure=mock_configure,
         )
 

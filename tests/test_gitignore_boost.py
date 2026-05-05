@@ -12,6 +12,7 @@ from pimp_my_repo.core.boosts.gitignore import (
     _GITIGNORE_HEADER,
     GitignoreBoost,
 )
+from pimp_my_repo.core.run_config import RunConfig
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -22,7 +23,7 @@ if TYPE_CHECKING:
 
 @pytest.fixture
 def gitignore_boost(boost_tools: BoostTools) -> GitignoreBoost:
-    return GitignoreBoost(boost_tools)
+    return GitignoreBoost(boost_tools, RunConfig())
 
 
 @pytest.fixture
