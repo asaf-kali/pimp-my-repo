@@ -36,10 +36,8 @@ class ExecutionContext:
     log_to_file: bool = True
 
 
-def run_boosts(run_config: RunConfig, context: ExecutionContext | None = None) -> BoostRunResult:
+def run_boosts(run_config: RunConfig, context: ExecutionContext) -> BoostRunResult:
     """Run boosts on a repository and return results and the log file path (if any)."""
-    if context is None:
-        context = ExecutionContext()
     return _run_boosts_with_dashboard(run_config=run_config, context=context)
 
 
