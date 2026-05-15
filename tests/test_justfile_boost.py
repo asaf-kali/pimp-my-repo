@@ -10,6 +10,7 @@ import pytest
 import pimp_my_repo.core.boosts.justfile as justfile_module
 from pimp_my_repo.core.boosts.base import BoostSkipped
 from pimp_my_repo.core.boosts.justfile import JustfileBoost
+from pimp_my_repo.core.run_config import RunConfig
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -20,7 +21,7 @@ if TYPE_CHECKING:
 
 @pytest.fixture
 def justfile_boost(boost_tools: BoostTools) -> JustfileBoost:
-    return JustfileBoost(boost_tools)
+    return JustfileBoost(boost_tools, RunConfig())
 
 
 @dataclass

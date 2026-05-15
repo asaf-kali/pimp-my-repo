@@ -280,17 +280,9 @@ class UvBoost(Boost):
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
-            func = node.func
-            is_setup = (isinstance(func, ast.Name) and func.id == "setup") or (
-                isinstance(func, ast.Attribute) and func.attr == "setup"
-            )
-            if not is_setup:
+            if not _is_setup_call(node):
                 continue
-            result: dict[str, str] = {}
-            for kw in node.keywords:
-                if kw.arg and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
-                    result[kw.arg] = kw.value.value
-            return result
+            return _extract_str_kwargs(node)
         return {}
 
     def _augment_setup_cfg_from_setup_py(self) -> None:
@@ -381,28 +373,38 @@ class UvBoost(Boost):
         # Add requirements files that migrate-to-uv did not consume (or that were skipped because
         # the repo already has a [project] table).  Process main first so that group files with
         # "-r requirements.txt" includes don't pull main deps into the wrong dependency group.
-        if self._has_requirements_to_add(requirements_files) and self._has_native_build_backend():
-            # uv add resolves the full dependency graph, which includes building the local package.
-            # For native-build repos (mesonpy, maturin, etc.) this invokes the native build backend
-            # (e.g. mesonpy.build_wheel) which fails without a C/C++ compiler.
-            # Strip the [build-system] and other native metadata so uv falls back to hatchling,
-            # which resolves static metadata without compiling anything.
-            logger.info("Native build backend detected; stripping native metadata before uv add")
-            pyproject_data = self.pyproject.read()
-            pyproject_data = self._strip_native_backend_metadata(pyproject_data)
-            self.pyproject.write(pyproject_data)
+        self._strip_native_metadata_before_add(requirements_files=requirements_files)
 
         if requirements_files.main is not None and requirements_files.main.exists():
             self.uv.add_from_requirements_file(requirements_files.main)
             requirements_files.main.unlink()
             logger.info(f"Added [{requirements_files.main}] to main dependencies and removed the file")
 
+        self._add_requirements_groups(requirements_files=requirements_files)
+
+    def _strip_native_metadata_before_add(self, requirements_files: ProjectRequirements) -> None:
+        if not self._has_requirements_to_add(requirements_files):
+            return
+        if not self._has_native_build_backend():
+            return
+        # uv add resolves the full dependency graph, which includes building the local package.
+        # For native-build repos (mesonpy, maturin, etc.) this invokes the native build backend
+        # (e.g. mesonpy.build_wheel) which fails without a C/C++ compiler.
+        # Strip the [build-system] and other native metadata so uv falls back to hatchling,
+        # which resolves static metadata without compiling anything.
+        logger.info("Native build backend detected; stripping native metadata before uv add")
+        pyproject_data = self.pyproject.read()
+        pyproject_data = self._strip_native_backend_metadata(pyproject_data)
+        self.pyproject.write(pyproject_data)
+
+    def _add_requirements_groups(self, requirements_files: ProjectRequirements) -> None:
         for group, files in requirements_files.groups.items():
             for file_path in files:
-                if file_path.exists():
-                    self.uv.add_from_requirements_file(file_path, group=group)
-                    file_path.unlink()
-                    logger.info(f"Added [{file_path}] to uv group [{group}] and removed the file")
+                if not file_path.exists():
+                    continue
+                self.uv.add_from_requirements_file(file_path, group=group)
+                file_path.unlink()
+                logger.info(f"Added [{file_path}] to uv group [{group}] and removed the file")
 
     def _ensure_pyproject_exists(self) -> None:
         pyproject_path = self.tools.repo_path / "pyproject.toml"
@@ -482,40 +484,40 @@ class UvBoost(Boost):
             self._ensure_upper_bound()
             if self._try_lock_and_sync():
                 return
-            # Lock failed with pre-existing requires-python (e.g. Python version unavailable);
-            # fall through to the search loop below with no skip.
             logger.info(f"Lock failed with pre-existing requires-python, searching from 3.{_MAX_PYTHON_MINOR} down...")
-            detected_minor = None
-        else:
-            initial = resolve_requires_python(repo_path=self.tools.repo_path)
-            if initial is None:
-                logger.debug("No Python version detected, locking without requires-python")
-                self._lock_and_sync()
-                return
+            self._search_requires_python(skip_minor=None)
+            return
+        self._resolve_and_lock_requires_python()
 
-            match = re.match(r">=3\.(\d+)", initial)
-            if not match:
-                self._write_requires_python(initial)
-                self._lock_and_sync()
-                return
+    def _resolve_and_lock_requires_python(self) -> None:
+        initial = resolve_requires_python(repo_path=self.tools.repo_path)
+        if initial is None:
+            logger.debug("No Python version detected, locking without requires-python")
+            self._lock_and_sync()
+            return
+        match = re.match(r">=3\.(\d+)", initial)
+        if not match:
+            self._write_requires_python(initial)
+            self._lock_and_sync()
+            return
+        detected_minor = int(match.group(1))
+        requires_python = f">=3.{detected_minor},<3.{detected_minor + 1}"
+        logger.info(f"Setting requires-python = '{requires_python}'")
+        self._write_requires_python(requires_python)
+        if self._try_lock_and_sync():
+            return
+        logger.info(f"Lock+sync failed for '{requires_python}', searching from 3.{_MAX_PYTHON_MINOR} down...")
+        self._search_requires_python(skip_minor=detected_minor)
 
-            detected_minor = int(match.group(1))
-            requires_python = f">=3.{detected_minor},<3.{detected_minor + 1}"
-            logger.info(f"Setting requires-python = '{requires_python}'")
-            self._write_requires_python(requires_python)
-            if self._try_lock_and_sync():
-                return
-            logger.info(f"Lock+sync failed for '{requires_python}', searching from 3.{_MAX_PYTHON_MINOR} down...")
-
+    def _search_requires_python(self, skip_minor: int | None) -> None:
         for minor in range(_MAX_PYTHON_MINOR, _MIN_PYTHON_MINOR - 1, -1):
-            if minor == detected_minor:
+            if minor == skip_minor:
                 continue
             requires_python = f">=3.{minor},<3.{minor + 1}"
             logger.info(f"Trying requires-python = '{requires_python}'")
             self._write_requires_python(requires_python)
             if self._try_lock_and_sync():
                 return
-
         logger.warning("No compatible requires-python found, removing constraint and locking")
         self._remove_requires_python()
         self._lock_and_sync()
@@ -542,15 +544,7 @@ class UvBoost(Boost):
             return pyproject_data
         dynamic = list(project_section.get("dynamic", []))
         if "version" in dynamic:
-            logger.info("Replacing dynamic version with static placeholder for native build backend")
-            dynamic.remove("version")
-            if dynamic:
-                project_section["dynamic"] = dynamic
-            else:
-                del project_section["dynamic"]
-            if not project_section.get("version"):
-                # Use a high placeholder so other packages' lower-bound version constraints are satisfied.
-                project_section["version"] = "999.0.0"
+            _replace_dynamic_version_with_placeholder(project_section, dynamic)
         return pyproject_data
 
     def _ensure_uv_config_present(self) -> None:
@@ -559,6 +553,18 @@ class UvBoost(Boost):
         if self._has_native_build_backend():
             pyproject_data = self._strip_native_backend_metadata(pyproject_data)
         self.pyproject.write(pyproject_data)
+
+    def _apply_setup_cfg_scripts(self, config: configparser.ConfigParser, pyproject_data: TOMLDocument) -> None:
+        """Add [project.scripts] to pyproject_data from setup.cfg console_scripts."""
+        console_scripts_str = config.get("options.entry_points", "console_scripts", fallback="")
+        scripts = _parse_cfg_scripts(console_scripts_str)
+        if not scripts:
+            return
+        scripts_tbl: Any = table()
+        for script_name, target in scripts.items():
+            scripts_tbl[script_name] = target
+        project_section: Any = pyproject_data["project"]
+        project_section["scripts"] = scripts_tbl
 
     def _migrate_from_setup_cfg(self) -> None:
         """Migrate a setup.cfg + setup.py project to pyproject.toml (PEP 621).
@@ -618,34 +624,25 @@ class UvBoost(Boost):
 
         return project_tbl
 
-    def _apply_setup_cfg_scripts(self, config: configparser.ConfigParser, pyproject_data: TOMLDocument) -> None:
-        """Add [project.scripts] to pyproject_data from setup.cfg console_scripts."""
-        console_scripts_str = config.get("options.entry_points", "console_scripts", fallback="")
-        scripts = _parse_cfg_scripts(console_scripts_str)
-        if not scripts:
-            return
-        scripts_tbl: Any = table()
-        for script_name, target in scripts.items():
-            scripts_tbl[script_name] = target
-        project_section: Any = pyproject_data["project"]
-        project_section["scripts"] = scripts_tbl
-
     def _lock_and_sync(self) -> None:
         logger.debug("Running uv lock...")
         self.uv.exec("lock")
         try:
             self.uv.sync_all()
         except subprocess.CalledProcessError as e:
-            stderr = e.stderr or ""
-            if _MULTI_TOP_LEVEL_PACKAGES_MSG in stderr:
-                logger.info("Multiple top-level packages detected; setting [tool.uv] package = false and retrying")
-            elif _MISSING_PYTHON_MODULE_MSG in stderr:
-                logger.info("Package module not found; setting [tool.uv] package = false and retrying")
-            else:
-                raise
-            self._set_uv_package_false()
-            self.uv.sync_all()
+            self._handle_sync_package_error(e)
         logger.debug("uv lock and sync completed successfully")
+
+    def _handle_sync_package_error(self, e: subprocess.CalledProcessError) -> None:
+        stderr = e.stderr or ""
+        if _MULTI_TOP_LEVEL_PACKAGES_MSG in stderr:
+            logger.info("Multiple top-level packages detected; setting [tool.uv] package = false and retrying")
+        elif _MISSING_PYTHON_MODULE_MSG in stderr:
+            logger.info("Package module not found; setting [tool.uv] package = false and retrying")
+        else:
+            raise e
+        self._set_uv_package_false()
+        self.uv.sync_all()
 
     def _set_uv_package_false(self) -> None:
         pyproject_data = self.pyproject.read()
@@ -653,6 +650,34 @@ class UvBoost(Boost):
         uv_section: Any = tool.setdefault("uv", {})
         uv_section["package"] = False
         self.pyproject.write(pyproject_data)
+
+
+def _is_setup_call(node: ast.Call) -> bool:
+    func = node.func
+    return (isinstance(func, ast.Name) and func.id == "setup") or (
+        isinstance(func, ast.Attribute) and func.attr == "setup"
+    )
+
+
+def _extract_str_kwargs(node: ast.Call) -> dict[str, str]:
+    return {
+        kw.arg: kw.value.value
+        for kw in node.keywords
+        if kw.arg and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str)
+    }
+
+
+def _replace_dynamic_version_with_placeholder(project_section: Any, dynamic: list[str]) -> None:  # noqa: ANN401
+    logger.info("Replacing dynamic version with static placeholder for native build backend")
+    dynamic.remove("version")
+    if dynamic:
+        project_section["dynamic"] = dynamic
+    else:
+        del project_section["dynamic"]
+    if project_section.get("version"):
+        return
+    # High placeholder so other packages' lower-bound version constraints are satisfied.
+    project_section["version"] = "999.0.0"
 
 
 def _parse_cfg_extras(config: configparser.ConfigParser) -> dict[str, list[str]]:

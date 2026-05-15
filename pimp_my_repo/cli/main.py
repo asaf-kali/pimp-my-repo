@@ -8,9 +8,10 @@ from rich.console import Console
 from rich.panel import Panel
 from typer import Exit
 
-from pimp_my_repo.cli.runner import run_boosts
+from pimp_my_repo.cli.runner import ExecutionContext, run_boosts
 from pimp_my_repo.core.registry import get_all_boosts, get_opt_in_boosts
 from pimp_my_repo.core.result import BoostResultStatus
+from pimp_my_repo.core.run_config import RunConfig
 
 if TYPE_CHECKING:
     from pimp_my_repo.core.boosts.base import Boost
@@ -29,6 +30,14 @@ _LIST_ARG = typer.Option(False, "--list", help="List available boosts and exit")
 _NO_LOG_FILE_ARG = typer.Option(False, "--no-log-file", help="Disable writing logs to file")  # noqa: FBT003
 _SHOW_NOTE_ARG = typer.Option(False, "--show-note", help="Print the post-run note and exit")  # noqa: FBT003
 _TY_ARG = typer.Option(False, "--ty", help="Use ty instead of mypy for type checking")  # noqa: FBT003
+_SKIP_CONFIG_ARG = typer.Option(
+    False,  # noqa: FBT003
+    "--skip-config",
+    help=(
+        "Skip tool configuration; only add per-line suppression comments (ruff/mypy/ty)."
+        " Configuration-only boosts (uv, gitignore, etc.) are unaffected."
+    ),
+)
 
 
 @app.command()
@@ -41,6 +50,7 @@ def run(  # noqa: PLR0913
     no_log_file: bool = _NO_LOG_FILE_ARG,  # noqa: FBT001
     show_note: bool = _SHOW_NOTE_ARG,  # noqa: FBT001
     ty: bool = _TY_ARG,  # noqa: FBT001
+    skip_config: bool = _SKIP_CONFIG_ARG,  # noqa: FBT001
 ) -> None:
     """Apply PMR boosts to a repository."""
     console = Console()
@@ -56,7 +66,8 @@ def run(  # noqa: PLR0913
     _validate_path(repo_path, console)
 
     run_result = run_boosts(
-        repo_path=repo_path, console=console, boost_classes=boost_classes, log_to_file=not no_log_file, branch=branch
+        run_config=RunConfig(repo_path=repo_path, branch=branch, skip_config=skip_config),
+        context=ExecutionContext(boost_classes=boost_classes, console=console, log_to_file=not no_log_file),
     )
     had_failures = _print_summary(run_result.results, console)
     if any(r.status == BoostResultStatus.APPLIED for r in run_result.results):
