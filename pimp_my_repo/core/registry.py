@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from pimp_my_repo.core.boosts.github_actions import GithubActionsBoost
 from pimp_my_repo.core.boosts.gitignore import GitignoreBoost
 from pimp_my_repo.core.boosts.justfile import JustfileBoost
 from pimp_my_repo.core.boosts.mypy import DmypyBoost, MypyBoost
@@ -23,6 +24,7 @@ _DEFAULT_BOOSTS: list[type[Boost]] = [
     MypyBoost,
     JustfileBoost,
     PreCommitBoost,
+    GithubActionsBoost,
 ]
 
 # Boosts that must be explicitly requested via --only.
