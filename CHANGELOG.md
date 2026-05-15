@@ -1,6 +1,69 @@
 # CHANGELOG
 
 
+## v0.5.2 (2026-05-15)
+
+### 🌴
+
+- 🌴 Add `--skip-config` flag to skip lint tool configuration phase
+  ([#64](https://github.com/asaf-kali/pimp-my-repo/pull/64),
+  [`856dde6`](https://github.com/asaf-kali/pimp-my-repo/commit/856dde6ffbbcefe69e40649299dba608c35d7e67))
+
+* Add --skip-config flag to skip lint tool configuration phase
+
+Introduces RunConfig dataclass to carry user-supplied run options. When --skip-config is passed,
+  ruff/mypy/ty boosts skip their _configure_* step (package install + pyproject.toml write + config
+  commit) and proceed directly to per-line suppression. Configuration-only boosts (uv, gitignore,
+  justfile, pre_commit) are unaffected.
+
+https://claude.ai/code/session_012pSsuoPFCYeKem6LuDzTFx
+
+* Refactor: move repo_path+branch into RunConfig, add ExecutionContext
+
+RunConfig now carries all user-supplied run options: skip_config, branch, and repo_path. A new
+  ExecutionContext dataclass (internal to the CLI runner) groups execution plumbing: boost_classes,
+  console, and log_to_file.
+
+run_boosts() and execute_boosts() now take these two dataclasses instead of individual
+  positional/keyword arguments, eliminating PLR0913 violations and making the call sites
+  self-documenting.
+
+* Make run_config required in Boost; refactor skip_config fixtures to reuse patched_*_apply
+
+- Remove None default from Boost.__init__ run_config param - Update all test fixtures to pass
+  RunConfig() explicitly - Refactor patched_*_apply_skip_config fixtures to compose from
+  patched_*_apply instead of duplicating patch.object calls - Fix _enable_mypy_pretty to guard
+  against missing [tool]/[tool.mypy] - Pass run_config to RuffBoost in mypy.py and ty.py suppress
+  helpers
+
+* Add tests for --skip-config flag and run_boosts default context
+
+- test_skip_config_flag_via_cli_runner: verifies --skip-config sets run_config.skip_config=True -
+  test_skip_config_defaults_to_false: verifies run_config.skip_config defaults to False -
+  test_run_boosts_default_context: covers runner.py:42 (context=ExecutionContext() default branch)
+
+* Make ExecutionContext required in run_boosts (remove None default)
+
+Same rationale as run_config in Boost: callers always provide it. Remove the if-None guard and the
+  test that existed only to cover it.
+
+* refactor: flatten UvBoost nested logic; add flatten skill
+
+- Extract sub-functions for early returns: _resolve_and_lock_requires_python,
+  _search_requires_python, _handle_sync_package_error, _strip_native_metadata_before_add,
+  _add_requirements_groups, _replace_dynamic_version_with_placeholder - Invert loop conditions (if
+  exists: continue instead of if not: nest) - Extract module-level helpers: _is_setup_call,
+  _extract_str_kwargs - Add .claude/skills/flatten with documented techniques and examples
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+* Make codecov optional
+
+---------
+
+Co-authored-by: Claude <noreply@anthropic.com>
+
+
 ## v0.5.1 (2026-05-01)
 
 ### Other
