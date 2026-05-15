@@ -29,12 +29,14 @@ jobs:
     - run: just install-test
     - run: just cover-xml
     - name: Upload coverage reports to Codecov
+      continue-on-error: true
       uses: codecov/codecov-action@v5
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
         slug: asaf-kali/pimp-my-repo
     - name: Upload test results to Codecov
       if: ${{ !cancelled() }}
+      continue-on-error: true
       uses: codecov/codecov-action@v5
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
