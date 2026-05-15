@@ -13,6 +13,7 @@ _FIXTURES = [
     "setup-cfg-package",
     "pre-commit",
     "with-extras",
+    "github-actions",
 ]
 
 
