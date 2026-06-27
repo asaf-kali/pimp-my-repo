@@ -22,7 +22,7 @@ _RUFF_DEPRECATED_KEY_RE = re.compile(r"^\s+-\s+'([^']+)'\s+->\s+'lint\.[^']+'", 
 
 # Rules that must never be suppressed via noqa:
 # - ERA001: treats the noqa comment itself as commented-out code → oscillation loop.
-# - RUF100: "unused noqa directive" — fired on file-level `# ruff: no-qa: CODE` lines.
+# - RUF100: "unused noqa directive" — fired on file-level `
 #   Adding `# no-qa: RUF100` to such lines doesn't suppress RUF100 (the file-level
 #   directive is still unused), causing an infinite oscillation loop.
 #   Both codes are added to ruff's ignore list in the config instead.
@@ -165,7 +165,7 @@ class RuffBoost(Boost):
         lint_section: Any = ruff_section["lint"]
         lint_section["select"] = ["ALL"]
         # ERA001: adding `# no-qa: ERA001` itself gets flagged as commented-out code.
-        # RUF100: "unused noqa" fires on pre-existing `# ruff: no-qa:` file-level directives;
+        # RUF100: "unused noqa" fires on pre-existing `
         #   inline `# no-qa: RUF100` doesn't suppress it → oscillation loop.
         # COM812, ISC001: conflict with ruff formatter, causing format/check oscillation.
         # D203, D212: incompatible with D211/D213 (ruff picks one but warns; be explicit).
