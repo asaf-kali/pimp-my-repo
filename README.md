@@ -6,7 +6,7 @@
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Type checked: mypy](https://img.shields.io/badge/type%20check-mypy-22aa11)](http://mypy-lang.org/)
 
-🧙🏼‍♂️ **One command to modernize them all**.
+🧙🏼‍♂️ **Turn "we should add linting" into a commit.**
 
 Strict linting, type checking, and CI for your legacy Python repo, with near-zero manual work. Run it once in your repo root — it creates its own local branch (nothing is pushed), so you can always walk away:
 
@@ -64,7 +64,7 @@ New code must comply from day one. Legacy violations are silenced but visible; f
 - ⚡ **[ty](https://docs.astral.sh/ty/)** _(opt-in via `--ty`)_ — Astral's fast type checker as a drop-in alternative to mypy
 - 🏖️ **[pre-commit](https://pre-commit.com/)** — hooks to enforce quality before every commit
 - 🎢 **[just](https://github.com/casey/just)** — task runner with `install`, `test`, and `lint` recipes out of the box
-- 🏗️ **CI** _(coming soon)_ — GitHub Actions or GitLab Pipeline configuration
+- 🏗️ **CI** — GitHub Actions workflow running lock, lint, type-check, and test steps (GitHub remotes only)
 
 ## Using ty instead of mypy
 

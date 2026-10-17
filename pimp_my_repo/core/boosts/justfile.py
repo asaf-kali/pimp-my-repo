@@ -1,7 +1,6 @@
 """Justfile boost implementation."""
 
 import platform
-import re
 import shutil
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -9,6 +8,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from pimp_my_repo.core.boosts.base import Boost, BoostSkipped
+from pimp_my_repo.core.tools.detect import get_justfile_recipes, has_tool_section
 from pimp_my_repo.core.tools.subprocess import run_command
 
 if TYPE_CHECKING:
@@ -84,16 +84,16 @@ class JustfileBoost(Boost):
                 raise BoostSkipped(msg)
 
         justfile_path = self.repo_path / "justfile"
-        existing_recipes = _get_existing_recipes(justfile_path) if justfile_path.exists() else set()
+        existing_recipes = get_justfile_recipes(justfile_path=justfile_path) if justfile_path.exists() else set()
 
         config = _JustfileConfig(
             existing_path=justfile_path if justfile_path.exists() else None,
             existing_recipes=existing_recipes,
             has_pyproject=(self.repo_path / "pyproject.toml").exists(),
             has_uv=(self.repo_path / "uv.lock").exists(),
-            has_ruff=_is_ruff_configured(self.repo_path),
-            has_mypy=_is_mypy_configured(self.repo_path),
-            has_ty=_is_ty_configured(self.repo_path),
+            has_ruff=has_tool_section(repo_path=self.repo_path, tool="ruff"),
+            has_mypy=has_tool_section(repo_path=self.repo_path, tool="mypy"),
+            has_ty=has_tool_section(repo_path=self.repo_path, tool="ty"),
             has_precommit=(self.repo_path / ".pre-commit-config.yaml").exists(),
             pmr_manages_precommit=_pmr_manages_precommit(self.repo_path),
         )
@@ -137,35 +137,6 @@ def _try_install_just() -> bool:
             logger.info(f"Installed just via {tool}")
             return True
     return False
-
-
-def _get_existing_recipes(justfile_path: Path) -> set[str]:
-    """Parse a justfile and return the set of defined recipe names."""
-    content = justfile_path.read_text(encoding="utf-8")
-    recipes: set[str] = set()
-    for line in content.splitlines():
-        m = re.match(r"^([a-zA-Z0-9][a-zA-Z0-9_-]*)", line)
-        if m and ":=" not in line and ":" in line:
-            recipes.add(m.group(1))
-    return recipes
-
-
-def _is_ruff_configured(repo_path: Path) -> bool:
-    """Return True if ruff is configured in pyproject.toml."""
-    pyproject = repo_path / "pyproject.toml"
-    return pyproject.exists() and "[tool.ruff" in pyproject.read_text(encoding="utf-8")
-
-
-def _is_mypy_configured(repo_path: Path) -> bool:
-    """Return True if mypy is configured in pyproject.toml."""
-    pyproject = repo_path / "pyproject.toml"
-    return pyproject.exists() and "[tool.mypy" in pyproject.read_text(encoding="utf-8")
-
-
-def _is_ty_configured(repo_path: Path) -> bool:
-    """Return True if ty is configured in pyproject.toml."""
-    pyproject = repo_path / "pyproject.toml"
-    return pyproject.exists() and "[tool.ty" in pyproject.read_text(encoding="utf-8")
 
 
 def _pmr_manages_precommit(repo_path: Path) -> bool:

@@ -1,17 +1,20 @@
 """Shared helpers for e2e tests (local fixtures and remote repos)."""
 
-import re
 import shutil
 import subprocess
 from pathlib import Path
 
+import yaml
 from loguru import logger
 
+from pimp_my_repo.core.tools.detect import get_justfile_recipes
 from pimp_my_repo.core.tools.repo import PMR_EMAIL
 from pimp_my_repo.core.tools.subprocess import run_command
 
 _PMR_ROOT = Path(__file__).parent.parent
 _TMP_BASE = Path("/tmp/pmr")  # noqa: S108
+_FAKE_GITHUB_ORIGIN = "https://github.com/pmr-e2e/{name}.git"
+_WORKFLOW_FILE = ".github/workflows/ci.yml"
 
 # Recipes PMR always creates (uv+ruff boosts always run; type checker varies)
 _EXPECTED_JUST_RECIPES_BASE = {"install", "check-lock", "check-ruff", "lint"}
@@ -33,6 +36,7 @@ def setup_local_fixture(fixture_name: str, *, fixtures_dir: Path) -> Path:
     dest.mkdir(parents=True)
     shutil.copytree(src, dest, dirs_exist_ok=True)
     _git_init(dest)
+    _git(dest, "remote", "add", "origin", _FAKE_GITHUB_ORIGIN.format(name=fixture_name))
     _git_commit_all(dest, message="Initial commit")
     return dest
 
@@ -73,6 +77,7 @@ def run_e2e_test(repo_path: Path, *, pmr_args: list[str] | None = None) -> None:
     else:
         assert_mypy_passes(repo_path)
     assert_pre_commit_passes(repo_path)
+    assert_github_workflow_valid(repo_path)
 
 
 # ── PMR runner ────────────────────────────────────────────────────────────────
@@ -137,7 +142,7 @@ def assert_just_commands_work(repo_path: Path, *, ty: bool = False) -> None:
     just = _require_exe("just")
     justfile_path = repo_path / "justfile"
     assert justfile_path.exists(), "justfile not created after pmr"
-    recipes = _get_just_recipes(justfile_path)
+    recipes = get_justfile_recipes(justfile_path=justfile_path)
     checker_recipe = "check-ty" if ty else "check-mypy"
     expected = _EXPECTED_JUST_RECIPES_BASE | {checker_recipe}
     missing = expected - recipes
@@ -159,6 +164,26 @@ def assert_pre_commit_passes(repo_path: Path) -> None:
     config_path = repo_path / ".pre-commit-config.yaml"
     assert config_path.exists(), ".pre-commit-config.yaml not found after pmr"
     run_command([str(_venv_exe(repo_path, "pre-commit")), "run", "--all-files"], cwd=repo_path)
+
+
+def assert_github_workflow_valid(repo_path: Path) -> None:
+    """Assert the generated CI workflow parses and only calls recipes that exist in the justfile."""
+    origin = _git(repo_path, "remote", "get-url", "origin").stdout.strip()
+    workflow_path = repo_path / _WORKFLOW_FILE
+    if "github.com" not in origin:
+        logger.info("Origin is not GitHub — skipping workflow validation")
+        return
+    if _has_preexisting_workflows(repo_path):
+        logger.info("Repo already had GitHub workflows — skipping workflow validation")
+        return
+    assert workflow_path.exists(), f"{_WORKFLOW_FILE} not created after pmr"
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+    steps = workflow["jobs"]["checks"]["steps"]
+    recipes = get_justfile_recipes(justfile_path=repo_path / "justfile")
+    just_commands = [step["run"] for step in steps if step.get("run", "").startswith("just ")]
+    assert just_commands, "workflow has no just steps"
+    missing = {cmd.removeprefix("just ") for cmd in just_commands} - recipes
+    assert not missing, f"workflow calls just recipes missing from justfile: {sorted(missing)}"
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
@@ -226,16 +251,20 @@ def _venv_exe(repo_path: Path, name: str) -> Path:
     return exe
 
 
+def _has_preexisting_workflows(repo_path: Path) -> bool:
+    """Return True if the repo had GitHub workflows before PMR ran (so the boost skipped)."""
+    workflows_dir = repo_path / ".github" / "workflows"
+    if not workflows_dir.is_dir():
+        return False
+    return not _pmr_created_workflow(repo_path)
+
+
+def _pmr_created_workflow(repo_path: Path) -> bool:
+    result = _git(repo_path, "log", "--format=%s", "--", _WORKFLOW_FILE)
+    return "Add GitHub Actions CI workflow" in result.stdout
+
+
 def _pmr_manages_pre_commit(repo_path: Path) -> bool:
     """Return True if the pre-commit config was created by PMR (has the PMR marker)."""
     config_path = repo_path / ".pre-commit-config.yaml"
     return config_path.exists() and "pimp-my-repo:pre-commit" in config_path.read_text(encoding="utf-8")
-
-
-def _get_just_recipes(justfile_path: Path) -> set[str]:
-    recipes: set[str] = set()
-    for line in justfile_path.read_text(encoding="utf-8").splitlines():
-        m = re.match(r"^([a-zA-Z0-9][a-zA-Z0-9_-]*)", line)
-        if m and ":=" not in line and ":" in line:
-            recipes.add(m.group(1))
-    return recipes
