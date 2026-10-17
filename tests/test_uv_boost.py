@@ -407,7 +407,7 @@ def test_apply_fixes_empty_project_name_before_adding_requirements(
 
     def record_name(*_args: object, **_kwargs: object) -> None:
         data = patched_uv_apply.boost.pyproject.read()
-        names_at_add.append(data["project"]["name"])  # type: ignore[index]
+        names_at_add.append(data["project"]["name"])
 
     patched_uv_apply.mock_exec_uvx.side_effect = migrate
     patched_uv_apply.mock_add_from_requirements.side_effect = record_name
