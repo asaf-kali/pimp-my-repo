@@ -369,6 +369,8 @@ class UvBoost(Boost):
             # which fails for old packages that have no pre-built wheel and can't be built with modern setuptools.
             self.uv.exec_uvx("migrate-to-uv", "--skip-lock")
             logger.info("Migration completed successfully")
+            # migrate-to-uv may write `name = ""`, which newer uv versions reject on any `uv add`.
+            self._fix_empty_project_name()
 
         # Add requirements files that migrate-to-uv did not consume (or that were skipped because
         # the repo already has a [project] table).  Process main first so that group files with
@@ -425,6 +427,8 @@ class UvBoost(Boost):
 
     def _fix_empty_project_name(self) -> None:
         """Fix empty project name left by migrate-to-uv (name must be a valid PEP 508 identifier)."""
+        if not (self.tools.repo_path / "pyproject.toml").exists():
+            return
         pyproject_data = self.pyproject.read()
         project_section: Any = pyproject_data.get("project")
         if not isinstance(project_section, dict):

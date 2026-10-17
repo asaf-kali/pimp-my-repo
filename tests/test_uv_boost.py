@@ -394,6 +394,28 @@ def test_apply_with_requirements_txt(mock_repo: RepositoryController, patched_uv
     patched_uv_apply.mock_exec_uvx.assert_called_once_with("migrate-to-uv", "--skip-lock")
 
 
+def test_apply_fixes_empty_project_name_before_adding_requirements(
+    mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply
+) -> None:
+    """migrate-to-uv may write `name = ""`; it must be fixed before `uv add` reads pyproject.toml."""
+    mock_repo.write_file("requirements.txt", "requests>=2.0.0\n")
+    mock_repo.write_file("dev-requirements.txt", "pytest>=7.0.0\n")
+    names_at_add: list[str] = []
+
+    def migrate(*_args: str) -> None:
+        mock_repo.write_file("pyproject.toml", '[project]\nname = ""\nversion = "0.0.1"\n')
+
+    def record_name(*_args: object, **_kwargs: object) -> None:
+        data = patched_uv_apply.boost.pyproject.read()
+        names_at_add.append(data["project"]["name"])  # type: ignore[index]
+
+    patched_uv_apply.mock_exec_uvx.side_effect = migrate
+    patched_uv_apply.mock_add_from_requirements.side_effect = record_name
+    patched_uv_apply.boost.apply()
+    assert names_at_add
+    assert all(names_at_add)
+
+
 def test_apply_pep621_with_requirements_dev_adds_to_dev_group(
     mock_repo: RepositoryController, patched_uv_apply: PatchedUvApply
 ) -> None:
