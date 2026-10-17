@@ -64,7 +64,7 @@ New code must comply from day one. Legacy violations are silenced but visible; f
 - ⚡ **[ty](https://docs.astral.sh/ty/)** _(opt-in via `--ty`)_ — Astral's fast type checker as a drop-in alternative to mypy
 - 🏖️ **[pre-commit](https://pre-commit.com/)** — hooks to enforce quality before every commit
 - 🎢 **[just](https://github.com/casey/just)** — task runner with `install`, `test`, and `lint` recipes out of the box
-- 🏗️ **CI** _(coming soon)_ — GitHub Actions or GitLab Pipeline configuration
+- 🏗️ **CI** — GitHub Actions workflow running lock, lint, type-check, and test steps (GitHub remotes only)
 
 ## Using ty instead of mypy
 

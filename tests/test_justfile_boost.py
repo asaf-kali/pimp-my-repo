@@ -11,6 +11,7 @@ import pimp_my_repo.core.boosts.justfile as justfile_module
 from pimp_my_repo.core.boosts.base import BoostSkipped
 from pimp_my_repo.core.boosts.justfile import JustfileBoost
 from pimp_my_repo.core.run_config import RunConfig
+from pimp_my_repo.core.tools.detect import get_justfile_recipes
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -307,25 +308,25 @@ def test_parses_simple_recipe_names(mock_repo: RepositoryController) -> None:
         "justfile",
         "install:\n    uv sync\n\nformat:\n    ruff format\n",
     )
-    recipes = justfile_module._get_existing_recipes(mock_repo.path / "justfile")  # noqa: SLF001
+    recipes = get_justfile_recipes(justfile_path=mock_repo.path / "justfile")
     assert recipes == {"install", "format"}
 
 
 def test_parses_recipe_with_dependencies(mock_repo: RepositoryController) -> None:
     mock_repo.write_file("justfile", "lint: format\n    ruff check\n")
-    recipes = justfile_module._get_existing_recipes(mock_repo.path / "justfile")  # noqa: SLF001
+    recipes = get_justfile_recipes(justfile_path=mock_repo.path / "justfile")
     assert "lint" in recipes
 
 
 def test_parses_recipe_with_args(mock_repo: RepositoryController) -> None:
     mock_repo.write_file("justfile", "test *args:\n    pytest {{ args }}\n")
-    recipes = justfile_module._get_existing_recipes(mock_repo.path / "justfile")  # noqa: SLF001
+    recipes = get_justfile_recipes(justfile_path=mock_repo.path / "justfile")
     assert "test" in recipes
 
 
 def test_does_not_parse_variable_assignment_as_recipe(mock_repo: RepositoryController) -> None:
     mock_repo.write_file("justfile", 'RUN := "uv run"\ninstall:\n    uv sync\n')
-    recipes = justfile_module._get_existing_recipes(mock_repo.path / "justfile")  # noqa: SLF001
+    recipes = get_justfile_recipes(justfile_path=mock_repo.path / "justfile")
     assert "RUN" not in recipes
     assert "install" in recipes
 
