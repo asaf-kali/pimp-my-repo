@@ -173,6 +173,9 @@ def assert_github_workflow_valid(repo_path: Path) -> None:
     if "github.com" not in origin:
         logger.info("Origin is not GitHub — skipping workflow validation")
         return
+    if _has_preexisting_workflows(repo_path):
+        logger.info("Repo already had GitHub workflows — skipping workflow validation")
+        return
     assert workflow_path.exists(), f"{_WORKFLOW_FILE} not created after pmr"
     workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
     steps = workflow["jobs"]["checks"]["steps"]
@@ -246,6 +249,19 @@ def _venv_exe(repo_path: Path, name: str) -> Path:
     exe = repo_path / ".venv" / "bin" / name
     assert exe.exists(), f"{name} not found in venv after pmr: {exe}"
     return exe
+
+
+def _has_preexisting_workflows(repo_path: Path) -> bool:
+    """Return True if the repo had GitHub workflows before PMR ran (so the boost skipped)."""
+    workflows_dir = repo_path / ".github" / "workflows"
+    if not workflows_dir.is_dir():
+        return False
+    return not _pmr_created_workflow(repo_path)
+
+
+def _pmr_created_workflow(repo_path: Path) -> bool:
+    result = _git(repo_path, "log", "--format=%s", "--", _WORKFLOW_FILE)
+    return "Add GitHub Actions CI workflow" in result.stdout
 
 
 def _pmr_manages_pre_commit(repo_path: Path) -> bool:
