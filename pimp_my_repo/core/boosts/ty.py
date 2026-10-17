@@ -149,7 +149,7 @@ class TyBoost(Boost):
         """Add paths to [tool.ty.src] exclude in pyproject.toml."""
         data = self.pyproject.read()
         data = self._ensure_ty_config(data)
-        ty_section: Any = data["tool"]["ty"]  # type: ignore[index]
+        ty_section: Any = data["tool"]["ty"]
         if "src" not in ty_section:
             ty_section["src"] = table()
         src_section: Any = ty_section["src"]

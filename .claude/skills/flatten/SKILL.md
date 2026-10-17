@@ -66,6 +66,7 @@ def run(config):
         return []
     return _collect_valid(config.inputs)
 
+
 def _collect_valid(inputs):
     return [transform(x) for x in inputs if x.valid]
 ```
@@ -126,6 +127,7 @@ def lock(project_section):
         return
     _resolve_and_lock()
 
+
 def _resolve_and_lock():
     initial = resolve(...)
     if initial is None:
@@ -135,6 +137,7 @@ def _resolve_and_lock():
     if _try(detected_minor):
         return
     _search(skip_minor=detected_minor)
+
 
 def _search(skip_minor):
     for minor in range(...):
@@ -167,6 +170,7 @@ try:
     self.uv.sync_all()
 except CalledProcessError as e:
     self._handle_sync_error(e)
+
 
 def _handle_sync_error(self, e):
     stderr = e.stderr or ""

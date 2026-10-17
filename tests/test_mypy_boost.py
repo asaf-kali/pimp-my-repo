@@ -797,7 +797,7 @@ def test_adds_tool_section_when_fully_absent(mock_repo: RepositoryController, my
     data = mypy_boost.tools.pyproject.read()
     data = mypy_boost._ensure_mypy_config(data)  # noqa: SLF001
     assert "tool" in data
-    assert "mypy" in data["tool"]  # type: ignore[operator]
+    assert "mypy" in data["tool"]
 
 
 def test_preserves_existing_tool_sections(mock_repo: RepositoryController, mypy_boost: MypyBoost) -> None:

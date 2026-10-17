@@ -41,7 +41,7 @@ _SKIP_CONFIG_ARG = typer.Option(
 
 
 @app.command()
-def run(  # noqa: PLR0913
+def run(  # noqa: PLR0917, PLR0913
     path: str = _PATH_ARG,
     only: list[str] = _ONLY_ARG,
     skip: list[str] = _SKIP_ARG,

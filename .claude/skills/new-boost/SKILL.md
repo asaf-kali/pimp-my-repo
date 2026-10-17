@@ -122,7 +122,7 @@ Register the fixture in `tests/test_e2e_local.py` by adding its name to
 _FIXTURES = [
     "minimal-package",
     "setup-cfg-package",
-    "<boost-name>",     # ← add here
+    "<boost-name>",  # ← add here
 ]
 ```
 
