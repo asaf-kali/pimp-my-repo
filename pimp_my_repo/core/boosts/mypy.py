@@ -111,6 +111,7 @@ def _apply_coded_error_line(
 
 
 def _apply_diagnostic_line(  # noqa: PLR0913
+    *,
     line: str,
     violations: ViolationsByLocation,
     syntax_files: set[str],
@@ -169,7 +170,12 @@ def _parse_mypy_output(*, raw_output: str) -> ParsedMypyOutput:
         # Category 1: Diagnostic line with line number (path:line: ...)
         if _MYPY_LINE_START_RE.match(line):
             _apply_diagnostic_line(
-                line, violations, syntax_files, uncoded_error_files, missing_plugins, unhandled_lines
+                line=line,
+                violations=violations,
+                syntax_files=syntax_files,
+                uncoded_error_files=uncoded_error_files,
+                missing_plugins=missing_plugins,
+                unhandled_lines=unhandled_lines,
             )
             continue
 

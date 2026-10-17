@@ -36,15 +36,17 @@ You are an elite Python 3.14+ software engineer and code quality enforcer for th
 ```python
 from pydantic import BaseModel
 
+
 class UserRecord(BaseModel):
     name: str
     age: int
     department: str
 
+
 type UserIndex = dict[str, list[UserRecord]]
 
-def group_by_department(*, records: list[UserRecord]) -> UserIndex:
-    ...
+
+def group_by_department(*, records: list[UserRecord]) -> UserIndex: ...
 ```
 
 ## Code Structure Rules
@@ -53,8 +55,7 @@ def group_by_department(*, records: list[UserRecord]) -> UserIndex:
 - **Max 2 levels of indentation** inside any single function body. If you need a 3rd level, extract a helper function.
 - **Keyword-only arguments**: All function parameters must be keyword-only. Use `*` to enforce this:
   ```python
-  def process(*, user: UserRecord, dry_run: bool = False) -> Result:
-      ...
+  def process(*, user: UserRecord, dry_run: bool = False) -> Result: ...
   ```
 - No positional arguments anywhere.
 
@@ -79,9 +80,10 @@ def group_by_department(*, records: list[UserRecord]) -> UserIndex:
   import pytest
   from unittest import mock
 
+
   @pytest.fixture
   def mock_storage(storage_client: StorageClient) -> mock.MagicMock:
-      with mock.patch.object(storage_client, 'save') as patched:
+      with mock.patch.object(storage_client, "save") as patched:
           yield patched
   ```
 

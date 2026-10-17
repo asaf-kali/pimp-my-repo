@@ -134,6 +134,7 @@ extend-exclude = [
 select = [ "ALL" ]
 ignore = [
     "COM812", # Trailing comma conflict
+    "CPY001", # Missing copy right notice
     "D100",   # Missing docstring in public module
     "D101",   # Missing docstring in public class
     "D102",   # Missing docstring in public method
